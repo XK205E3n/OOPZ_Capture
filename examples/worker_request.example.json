@@ -1,0 +1,18 @@
+{
+  "schema_version": "oopz.worker.request.v1",
+  "command": "record_and_transcribe",
+  "request_id": "6b467ff3-9efc-4867-a54e-220bb758659e",
+  "area_id": "01HZVPY9B86ZM5RE6905N7E3WB",
+  "channel_id": "01HZVPY9BM8D7MQB5X55T3132Y",
+  "duration_seconds": 90,
+  "consent_confirmed": true,
+  "language": "zh",
+  "processing_deadline_seconds": 900,
+  "retention_hours": 168,
+  "requested_by": {
+    "source": "qq",
+    "chat_type": "group",
+    "chat_id": "QQ群号",
+    "sender_id": "QQ用户号"
+  }
+}

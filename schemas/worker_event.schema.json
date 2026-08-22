@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.worker.event.v1",
+  "title": "OOPZ worker event",
+  "type": "object",
+  "required": ["schema_version", "event", "at", "request_id"],
+  "properties": {
+    "schema_version": {"const": "oopz.worker.event.v1"},
+    "event": {"type": "string"},
+    "at": {"type": "string", "format": "date-time"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "session_id": {"anyOf": [{"type": "null"}, {"type": "string", "format": "uuid"}, {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]}
+  }
+}

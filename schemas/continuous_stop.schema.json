@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.continuous.stop.v1",
+  "title": "Graceful continuous capture stop request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "session_id", "requested_at", "reason"],
+  "properties": {
+    "schema_version": {"const": "oopz.continuous.stop.v1"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "requested_at": {"type": "string", "format": "date-time"},
+    "reason": {"enum": ["qq_leave_command", "local_stop_command", "operator_request"]},
+    "requested_by": {"type": ["object", "null"]}
+  }
+}

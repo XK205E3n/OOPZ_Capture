@@ -1,0 +1,40 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://oopz.local/schemas/onebot_gateway_state.schema.json",
+  "title": "OOPZ OneBot gateway health state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode", "connected", "started_at", "updated_at", "counters"],
+  "properties": {
+    "schema_version": {"const": "oopz.onebot.gateway.state.v1"},
+    "mode": {"enum": ["controller", "diagnostic_echo"]},
+    "connected": {"type": "boolean"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "last_connected_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_event_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_reply_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_error": {"type": ["string", "null"], "maxLength": 600},
+    "qq_send_available": {"type": ["boolean", "null"]},
+    "last_qq_health_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_qq_health_error": {"type": ["string", "null"], "maxLength": 600},
+    "consecutive_send_failures": {"type": "integer", "minimum": 0},
+    "last_send_failure_at": {"type": ["string", "null"], "format": "date-time"},
+    "counters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["admin_private_accepted", "replies_sent", "reports_sent", "friend_requests_approved", "duplicate_events", "group_events_discarded", "unauthorized_private_discarded", "other_events_discarded", "failures"],
+      "properties": {
+        "admin_private_accepted": {"type": "integer", "minimum": 0},
+        "replies_sent": {"type": "integer", "minimum": 0},
+        "reports_sent": {"type": "integer", "minimum": 0},
+        "friend_requests_approved": {"type": "integer", "minimum": 0},
+        "duplicate_events": {"type": "integer", "minimum": 0},
+        "group_events_discarded": {"type": "integer", "minimum": 0},
+        "unauthorized_private_discarded": {"type": "integer", "minimum": 0},
+        "other_events_discarded": {"type": "integer", "minimum": 0},
+        "failures": {"type": "integer", "minimum": 0}
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "time": 1786630000,
+  "self_id": 111111111,
+  "post_type": "message",
+  "message_type": "private",
+  "sub_type": "friend",
+  "message_id": 24680,
+  "user_id": 123456789,
+  "message": [{"type": "text", "data": {"text": "/oopz状态"}}],
+  "raw_message": "/oopz状态"
+}

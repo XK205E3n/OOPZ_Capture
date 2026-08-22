@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.qq.outbox.v1",
+  "title": "Durable final-report delivery record",
+  "type": "object",
+  "required": [
+    "schema_version", "message_id", "session_id", "report_id", "status",
+    "attempt_count", "queued_at", "expires_at", "updated_at", "message"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.qq.outbox.v1"},
+    "message_id": {"type": "string", "format": "uuid"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "report_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["pending", "blocked", "sent", "failed"]},
+    "attempt_count": {"type": "integer", "minimum": 0},
+    "queued_at": {"type": "string", "format": "date-time"},
+    "expires_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "delivered_at": {"type": ["string", "null"], "format": "date-time"},
+    "last_error": {"type": ["string", "null"]},
+    "message": {"type": "object"}
+  }
+}

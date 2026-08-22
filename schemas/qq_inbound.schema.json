@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.qq.inbound.v1",
+  "title": "Normalized inbound QQ message",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "message_id", "received_at", "sender_id", "chat_type", "chat_id", "text"],
+  "properties": {
+    "schema_version": {"const": "oopz.qq.inbound.v1"},
+    "message_id": {"type": "string", "format": "uuid"},
+    "received_at": {"type": "string", "format": "date-time"},
+    "sender_id": {"type": "string", "pattern": "^[A-Za-z0-9:_-]{1,128}$"},
+    "chat_type": {"enum": ["group", "private"]},
+    "chat_id": {"type": "string", "pattern": "^[A-Za-z0-9:_-]{1,128}$"},
+    "text": {"type": "string", "minLength": 1, "maxLength": 200}
+  }
+}

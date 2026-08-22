@@ -1,0 +1,79 @@
+@page {
+  size: A4;
+  margin: 18mm 15mm 18mm 15mm;
+}
+
+html,
+body {
+  color: #1f2937;
+  font-family: "Microsoft YaHei", "Noto Sans CJK SC", "Segoe UI", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.6;
+}
+
+body {
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  color: #111827;
+  page-break-after: avoid;
+}
+
+h1 {
+  border-bottom: 2px solid #334155;
+  padding-bottom: 0.25em;
+}
+
+h2 {
+  border-bottom: 1px solid #cbd5e1;
+  padding-bottom: 0.15em;
+}
+
+table {
+  border-collapse: collapse;
+  font-size: 9pt;
+  margin: 0.8em 0;
+  width: 100%;
+}
+
+th,
+td {
+  border: 1px solid #cbd5e1;
+  padding: 5px 7px;
+  vertical-align: top;
+}
+
+th {
+  background: #f1f5f9;
+}
+
+pre,
+code {
+  font-family: Consolas, "Microsoft YaHei", monospace;
+}
+
+pre {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 0.7em;
+  white-space: pre-wrap;
+}
+
+blockquote {
+  border-left: 4px solid #94a3b8;
+  color: #475569;
+  margin-left: 0;
+  padding-left: 1em;
+}
+
+li {
+  margin-bottom: 0.25em;
+}
+
+a {
+  color: #1d4ed8;
+}

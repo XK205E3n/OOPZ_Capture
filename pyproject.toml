@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "oopz-voice-capture"
+version = "0.11.1"
+description = "Managed OOPZ capture, transcript, and analysis pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "oopz-sdk>=0.15,<0.16",
+]
+
+[project.optional-dependencies]
+speech = [
+  "numpy>=1.26,<3",
+  "scipy>=1.12,<2",
+  "onnxruntime>=1.16,<2",
+  "silero-vad>=6.2,<7",
+  "funasr==1.4.1",
+]
+qq = [
+  "websockets>=15,<18",
+]
+
+[project.scripts]
+oopz-capture = "oopz_capture.main:main"
+oopz-transcribe = "oopz_capture.speech_cli:main"
+oopz-worker = "oopz_capture.worker_cli:main"
+oopz-continuous = "oopz_capture.continuous_cli:main"
+oopz-analyzer = "oopz_capture.analyzer_cli:main"
+oopz-qq-controller = "oopz_capture.qq_controller_cli:main"
+oopz-onebot = "oopz_capture.onebot_cli:main"
+oopz-qq-watchdog = "oopz_capture.qq_watchdog:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
