@@ -13,15 +13,15 @@ from oopz_capture.continuous import ContinuousRequest, repair_continuous_session
 from oopz_capture.output import write_json, write_jsonl
 
 
-def test_model_path_can_be_explicit_or_configured_by_environment(tmp_path: Path, monkeypatch) -> None:
+def test_model_path_is_fixed_under_project_root(tmp_path: Path, monkeypatch) -> None:
     model = tmp_path / "SenseVoiceSmall"
     model.mkdir()
     (model / "model.pt").write_bytes(b"model")
-    assert resolve_sensevoice_model(str(model)) == model.resolve()
-    monkeypatch.setenv("OOPZ_SENSEVOICE_MODEL", str(model))
+    monkeypatch.setattr("oopz_capture.asr.SENSEVOICE_MODEL_PATH", model)
     assert resolve_sensevoice_model() == model.resolve()
-    with pytest.raises(RuntimeError, match="missing"):
-        resolve_sensevoice_model(str(tmp_path / "missing"))
+    monkeypatch.setattr("oopz_capture.asr.SENSEVOICE_MODEL_PATH", tmp_path / "missing")
+    with pytest.raises(RuntimeError, match="must be installed"):
+        resolve_sensevoice_model()
 
 
 def _write_chunk_transcript(chunk: Path, parent_id: str, index: int, offset_ms: int) -> None:
@@ -93,8 +93,6 @@ async def _repair_retries_only_failed_chunks_and_rebuilds_parent(tmp_path: Path)
         calls.append((chunk.name, reset_deadline))
         _write_chunk_transcript(chunk, session_id, 2, 300000)
         write_json(chunk / "lifecycle.json", {"status": "transcribed"})
-        (audio / "123.wav").unlink()
-        audio.rmdir()
         return {"chunk_dir": chunk, "ok": True, "segments": 1}
 
     await repair_continuous_session(tmp_path, session_id, chunk_processor=processor)
@@ -107,6 +105,51 @@ async def _repair_retries_only_failed_chunks_and_rebuilds_parent(tmp_path: Path)
     assert lifecycle["chunks_transcribed"] == 2
     assert lifecycle["chunks_failed"] == 0
     assert lifecycle["audio_deleted"] is True
+    assert not audio.exists()
+    repaired_chunk = json.loads((second / "lifecycle.json").read_text(encoding="utf-8"))
+    assert repaired_chunk["audio_deleted"] is True
+    assert repaired_chunk["deleted_audio_files"] == [f"chunks/{second.name}/audio/123.wav"]
     handoff = json.loads((session / "handoff" / "analyzer_request.json").read_text(encoding="utf-8"))
     assert handoff["inputs"]["segment_count"] == 2
     assert handoff["inputs"]["failed_chunk_ids"] == []
+
+
+def test_repair_preserves_audio_when_saved_request_requires_retention(tmp_path: Path) -> None:
+    asyncio.run(_repair_preserves_audio_when_saved_request_requires_retention(tmp_path))
+
+
+async def _repair_preserves_audio_when_saved_request_requires_retention(tmp_path: Path) -> None:
+    session_id = str(uuid4())
+    now = datetime.now(timezone.utc)
+    request = ContinuousRequest(
+        request_id=str(uuid4()), area_id="area", channel_id="channel",
+        consent_confirmed=True, retain_audio=True,
+    )
+    session = tmp_path / session_id
+    write_json(session / "request.json", request.to_dict())
+    write_json(session / "session.json", {
+        "session_id": session_id, "started_at": now.isoformat(),
+        "capture_clock_started_at": now.isoformat(), "duration_seconds": 300,
+    })
+    write_json(session / "users.json", [])
+    write_json(session / "lifecycle.json", {
+        "managed_by": "oopz-worker-v1", "mode": "continuous",
+        "status": "ready_for_analysis_with_errors", "stopped_at": now.isoformat(),
+        "delete_after": (now + timedelta(hours=168)).isoformat(),
+    })
+    chunk_id = str(uuid4())
+    chunk = session / "chunks" / f"000001-{chunk_id}"
+    chunk.mkdir(parents=True)
+    _write_chunk_transcript(chunk, session_id, 1, 0)
+    write_json(chunk / "lifecycle.json", {"status": "transcribed", "audio_deleted": False})
+    audio = chunk / "audio"
+    audio.mkdir()
+    (audio / "123.wav").write_bytes(b"RIFF")
+
+    await repair_continuous_session(tmp_path, session_id)
+
+    assert (audio / "123.wav").is_file()
+    lifecycle = json.loads((session / "lifecycle.json").read_text(encoding="utf-8"))
+    assert lifecycle["status"] == "ready_for_analysis"
+    assert lifecycle["audio_deleted"] is False
+    assert lifecycle["audio_retained_for_testing"] is True

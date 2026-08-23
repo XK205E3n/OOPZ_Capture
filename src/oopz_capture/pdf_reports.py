@@ -12,12 +12,7 @@ from typing import Iterable
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-NODE_PATH = Path(
-    os.environ.get(
-        "OOPZ_NODE_PATH",
-        r"C:\Users\xingk\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe",
-    )
-)
+NODE_PATH = PROJECT_ROOT / "tools" / "node" / "node.exe"
 RENDERER = PROJECT_ROOT / "tools" / "md_to_pdf.mjs"
 REPORT_ARCHIVE_SCHEMA = "oopz.report.archive.v1"
 
@@ -81,7 +76,7 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     if not RENDERER.is_file():
         raise FileNotFoundError(f"md-to-pdf renderer is missing: {RENDERER}")
     if not NODE_PATH.is_file():
-        raise FileNotFoundError(f"Node runtime is missing: {NODE_PATH}; set OOPZ_NODE_PATH")
+        raise FileNotFoundError(f"Project Node runtime is missing: {NODE_PATH}")
     if markdown_path.suffix.lower() != ".md":
         raise ValueError(f"expected Markdown input: {markdown_path}")
     result = subprocess.run(
@@ -131,18 +126,3 @@ def render_session_reports(session_dir: Path, reports: Iterable[tuple[Path, str]
     temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     temporary.replace(manifest_path)
     return rendered
-
-
-def render_matrix_reports(session_dir: Path) -> list[Path]:
-    """Render all existing matrix route reports and the comparison report."""
-    session_dir = session_dir.resolve()
-    reports: list[tuple[Path, str]] = []
-    variants_dir = session_dir / "analysis_variants"
-    for report in sorted(variants_dir.glob("*/summary.md")):
-        reports.append((report, report.parent.name))
-    review = session_dir / "analysis_matrix" / "review.md"
-    if review.is_file():
-        reports.append((review, "comparison"))
-    if not reports:
-        raise FileNotFoundError(f"no matrix Markdown reports found under {session_dir}")
-    return render_session_reports(session_dir, reports)

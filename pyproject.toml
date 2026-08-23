@@ -20,8 +20,8 @@ speech = [
   "silero-vad>=6.2,<7",
   "funasr==1.4.1",
 ]
-qq = [
-  "websockets>=15,<18",
+feishu = [
+  "lark-oapi>=1.7.1,<2",
 ]
 
 [project.scripts]
@@ -30,9 +30,7 @@ oopz-transcribe = "oopz_capture.speech_cli:main"
 oopz-worker = "oopz_capture.worker_cli:main"
 oopz-continuous = "oopz_capture.continuous_cli:main"
 oopz-analyzer = "oopz_capture.analyzer_cli:main"
-oopz-qq-controller = "oopz_capture.qq_controller_cli:main"
-oopz-onebot = "oopz_capture.onebot_cli:main"
-oopz-qq-watchdog = "oopz_capture.qq_watchdog:main"
+oopz-feishu = "oopz_capture.feishu_cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

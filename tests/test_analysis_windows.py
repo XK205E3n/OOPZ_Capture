@@ -72,7 +72,7 @@ def test_diagnostic_runtime_clamps_small_polling_overshoot(tmp_path: Path) -> No
 
 def test_non_diagnostic_duration_keeps_actual_tail(tmp_path: Path) -> None:
     write_json(tmp_path / "lifecycle.json", {
-        "stop_reason": "qq_leave_command",
+        "stop_reason": "operator_stop_command",
         "capture_started_at": "2026-08-13T00:00:00+00:00",
         "stopped_at": "2026-08-13T00:30:00.206+00:00",
     })

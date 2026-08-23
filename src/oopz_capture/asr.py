@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import re
-import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,29 +26,15 @@ class ASRBackend(ABC):
 _RICH_TAG = re.compile(r"<\|[^|>]+\|>")
 
 
-def resolve_sensevoice_model(model: str | None = None) -> Path:
-    explicit = model or os.environ.get("OOPZ_SENSEVOICE_MODEL")
-    if explicit:
-        path = Path(explicit).expanduser().resolve()
-        if not path.joinpath("model.pt").is_file():
-            raise RuntimeError(f"SenseVoice model is missing at {path}")
-        return path
-    module_path = Path(__file__).resolve()
-    candidates = [Path.cwd() / "models" / "SenseVoiceSmall"]
-    candidates.extend(parent / "models" / "SenseVoiceSmall" for parent in module_path.parents)
-    seen: set[Path] = set()
-    for candidate in candidates:
-        resolved = candidate.resolve()
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        if resolved.joinpath("model.pt").is_file():
-            return resolved
-    checked = ", ".join(str(path) for path in seen)
-    raise RuntimeError(
-        "SenseVoice model was not found. Set OOPZ_SENSEVOICE_MODEL to the directory "
-        f"containing model.pt. Checked: {checked}"
-    )
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+SENSEVOICE_MODEL_PATH = PROJECT_ROOT / "models" / "SenseVoiceSmall"
+
+
+def resolve_sensevoice_model() -> Path:
+    path = SENSEVOICE_MODEL_PATH.resolve()
+    if not path.joinpath("model.pt").is_file():
+        raise RuntimeError(f"SenseVoice model must be installed at {path}")
+    return path
 
 
 def clean_sensevoice_text(value: str) -> str:
@@ -59,12 +44,12 @@ def clean_sensevoice_text(value: str) -> str:
 class SenseVoiceBackend(ASRBackend):
     name = "sensevoice-small"
 
-    def __init__(self, *, device: str = "cpu", model: str | None = None):
+    def __init__(self, *, device: str = "cpu"):
         try:
             from funasr import AutoModel
         except ModuleNotFoundError as error:
             raise RuntimeError("FunASR is not installed. Run: pip install -e \".[speech]\"") from error
-        model_path = str(resolve_sensevoice_model(model))
+        model_path = str(resolve_sensevoice_model())
         self._model = AutoModel(
             model=model_path,
             trust_remote_code=False,

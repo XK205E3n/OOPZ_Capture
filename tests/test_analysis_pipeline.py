@@ -88,17 +88,6 @@ class ConcurrentOpenCodeClient(RecordingClient):
                 self.active_calls -= 1
 
 
-class InvalidBatchOpenCodeClient(ConcurrentOpenCodeClient):
-    def complete_json(self, **kwargs):
-        if "summaries" in kwargs["required_keys"]:
-            self.calls.append(kwargs)
-            return {
-                "content": {"summaries": []},
-                "metadata": {"provider": "opencode-go", "usage": {}},
-            }
-        return super().complete_json(**kwargs)
-
-
 def test_beijing_time_range_shows_both_dates_across_midnight() -> None:
     value = SimpleNamespace(session={"capture_clock_started_at": "2026-08-13T15:59:00+00:00"})
     assert _beijing_time_range(value, 0, 300_000) == (
@@ -156,40 +145,25 @@ def test_cloud_window_prompts_require_chronological_nickname_movements(tmp_path:
     assert "summary目标不超过1000个汉字" in long_prompt
 
 
-def test_opencode_short_windows_are_batched_with_compatible_outputs(monkeypatch, tmp_path: Path) -> None:
+def test_opencode_short_windows_use_one_api_request_each_with_parallel_execution(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.setenv("OOPZ_ANALYSIS_MAX_PARALLELISM", "4")
     client = ConcurrentOpenCodeClient()
-    output = run_analysis(make_session(tmp_path), client)
+    output = run_analysis(make_session(tmp_path, short_window_count=5), client)
 
     assert output["result"]["analysis_profile"]["window_parallelism"] == 4
-    assert output["result"]["analysis_profile"]["short_batch_size"] == 4
-    batch_calls = [call for call in client.calls if "summaries" in call["required_keys"]]
-    assert len(batch_calls) == 1
-    assert batch_calls[0]["max_tokens"] == 2048
-    assert len(output["result"]["short_summaries"]) == 2
-    assert output["result"]["model"]["usage_by_stage"]["short_summaries"]["api_calls"] == 1
-
-
-def test_invalid_short_batch_falls_back_to_individual_windows(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setenv("OOPZ_ANALYSIS_MAX_PARALLELISM", "4")
-    events: list[dict] = []
-    client = InvalidBatchOpenCodeClient()
-
-    output = run_analysis(make_session(tmp_path), client, progress_reporter=events.append)
-
-    assert output["result"]["status"] == "completed"
-    assert len(output["result"]["short_summaries"]) == 2
-    assert [event["stage"] for event in events].count("short_batch_fallback") == 1
-    batch_calls = [call for call in client.calls if "summaries" in call["required_keys"]]
-    individual_calls = [
+    assert output["result"]["analysis_profile"]["short_request_mode"] == "one_request_per_window"
+    short_calls = [
         call for call in client.calls
         if call["required_keys"] == SHORT_REQUIRED and call["max_tokens"] == 1024
     ]
-    assert len(batch_calls) == 1
-    assert len(individual_calls) == 2
+    assert len(short_calls) == 5
+    assert all("summaries" not in call["required_keys"] for call in client.calls)
+    assert client.peak_active_calls == 4
+    assert len(output["result"]["short_summaries"]) == 5
+    assert output["result"]["model"]["usage_by_stage"]["short_summaries"]["api_calls"] == 5
 
 
-def test_pipeline_normalizes_local_model_object_items_in_text_arrays() -> None:
+def test_pipeline_normalizes_object_items_in_text_arrays() -> None:
     content = _normalized_content({
         "summary": "测试摘要",
         "decisions": [{"decision": "继续录音", "confidence": 0.8}],
@@ -210,7 +184,13 @@ def test_pipeline_normalizes_local_model_object_items_in_text_arrays() -> None:
     assert content["uncertainties"] == ["术语含义未确认"]
 
 
-def make_session(tmp_path: Path, *, silent: bool = False, qq_target: bool = True) -> Path:
+def make_session(
+    tmp_path: Path,
+    *,
+    silent: bool = False,
+    delivery_target: bool = True,
+    short_window_count: int = 2,
+) -> Path:
     session_id = str(uuid4())
     request_id = str(uuid4())
     session = tmp_path / session_id
@@ -220,21 +200,19 @@ def make_session(tmp_path: Path, *, silent: bool = False, qq_target: bool = True
         "session_id": session_id,
         "started_at": now.isoformat(),
         "capture_clock_started_at": now.isoformat(),
-        "duration_seconds": 600,
+        "duration_seconds": 300 * short_window_count,
     })
     users = [{"nickname": "测试用户", "oopz_uid": "oopz-user", "agora_uid": 123}]
     write_json(session / "users.json", users)
+    labels = ["第一", "第二", "第三", "第四", "第五"]
     transcript = [] if silent else [
         {
             "segment_id": str(uuid4()), "session_id": session_id,
-            "start_ms": 1_000, "end_ms": 2_000, "agora_uid": 123,
-            "oopz_uid": "oopz-user", "speaker": "测试用户", "text": "第一段测试内容",
-        },
-        {
-            "segment_id": str(uuid4()), "session_id": session_id,
-            "start_ms": 301_000, "end_ms": 302_000, "agora_uid": 123,
-            "oopz_uid": "oopz-user", "speaker": "测试用户", "text": "第二段测试内容",
-        },
+            "start_ms": index * 300_000 + 1_000, "end_ms": index * 300_000 + 2_000, "agora_uid": 123,
+            "oopz_uid": "oopz-user", "speaker": "测试用户",
+            "text": f"{labels[index] if index < len(labels) else index + 1}段测试内容",
+        }
+        for index in range(short_window_count)
     ]
     write_jsonl(session / "transcript.jsonl", transcript)
     (session / "transcript.md").write_text(f"Session ID: {session_id}\n", encoding="utf-8")
@@ -256,7 +234,7 @@ def make_session(tmp_path: Path, *, silent: bool = False, qq_target: bool = True
         "required_outputs": {},
         "retention": {"delete_after": (now + timedelta(hours=168)).isoformat(), "maximum_hours": 168},
     })
-    if qq_target:
+    if delivery_target:
         write_json(session / "request.json", {
             "requested_by": {"chat_type": "group", "chat_id": "123456"},
         })
@@ -332,6 +310,8 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "用户：测试用户" in report and "Window ID:" not in report
     assert "OOPZ UID=" not in report and "Agora UID=" not in report
     assert "## 关键信息" in report and "## 关键信息（精简）" not in report and "\ufffd" not in report
+    assert "### 不确定内容" in report
+    assert "测试-uncertainties" in report
     assert "# 2026-08-13 13:10:03至2026-08-13 13:20:03OOPZ频道聊天整理与总结" in report
     assert "### 2026-08-13 13:10:03–13:15:03" in report
     assert "## Token 使用与费用估算" in report
@@ -343,19 +323,21 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "推理 Token 已包含在输出 Token 中，不重复计费" in report
     assert "官方价格文档：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/" in report
     assert report.rstrip().endswith("https://api-docs.deepseek.com/zh-cn/quick_start/pricing/")
-    assert result["report_format_version"] == "3.6.0"
+    assert result["report_format_version"] == "3.7.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 整体性总结" in public_report
     assert "### 按时间顺序的进展" in public_report
     assert "## 关键信息" in public_report
     assert all(title in public_report for title in (
-        "### 主要话题", "### 明确决定", "### 行动项", "### 未解决问题", "### 重要时间点", "### 不确定内容",
+        "### 主要话题", "### 明确决定", "### 行动项", "### 未解决问题", "### 重要时间点",
     ))
+    assert "### 不确定内容" not in public_report
+    assert "测试-uncertainties" not in public_report
     assert "## 每300秒短期总结" not in public_report
     assert "## Token 使用与费用估算" not in public_report
     text_report = output["report_path"].with_name("summary.text.md").read_text(encoding="utf-8")
     assert "## 整体性总结" in text_report and "## 按时间顺序的进展" in text_report
-    messages = [json.loads(line) for line in output["qq_path"].read_text(encoding="utf-8").splitlines()]
+    messages = [json.loads(line) for line in output["report_messages_path"].read_text(encoding="utf-8").splitlines()]
     assert all(item["target"] == {"type": "group", "id": "123456"} for item in messages)
     assert all(item["delivery_status"] == "pending" for item in messages)
     assert all(len(item["text"]) <= 3300 for item in messages)
@@ -394,7 +376,10 @@ def test_existing_analysis_is_rerendered_without_model_calls(tmp_path: Path) -> 
     assert "### 2026-08-13 13:10:03–13:15:03" in report
     assert "## Token 使用与费用估算" in report
     assert refreshed["result"]["model"]["cost_estimate"]["status"] == "estimated"
-    assert refreshed["result"]["report_format_version"] == "3.6.0"
+    assert refreshed["result"]["report_format_version"] == "3.7.0"
+    public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
+    assert "### 不确定内容" not in public_report
+    assert "测试-uncertainties" not in public_report
 
 
 def test_cost_estimate_splits_api_requests_across_peak_and_off_peak(tmp_path: Path) -> None:
@@ -433,13 +418,13 @@ def test_pipeline_resumes_after_window_failure(tmp_path: Path) -> None:
     assert [item["thinking"] for item in client.calls] == ["disabled", "disabled", "enabled"]
 
 
-def test_silent_session_uses_no_api_and_requires_qq_target(tmp_path: Path) -> None:
-    handoff = make_session(tmp_path, silent=True, qq_target=False)
+def test_silent_session_uses_no_api_and_requires_delivery_target(tmp_path: Path) -> None:
+    handoff = make_session(tmp_path, silent=True, delivery_target=False)
     client = RecordingClient()
     output = run_analysis(handoff, client)
     assert client.calls == []
     assert output["result"]["model"]["usage"]["api_calls"] == 0
-    messages = [json.loads(line) for line in output["qq_path"].read_text(encoding="utf-8").splitlines()]
+    messages = [json.loads(line) for line in output["report_messages_path"].read_text(encoding="utf-8").splitlines()]
     assert messages[0]["target"] == {"type": "unconfigured", "id": ""}
     assert messages[0]["delivery_status"] == "target_required"
 
@@ -454,41 +439,3 @@ def test_mock_profile_cannot_poison_real_profile_cache(tmp_path: Path) -> None:
     assert second.calls
     assert mock_output["result"]["analysis_fingerprint"] != real_output["result"]["analysis_fingerprint"]
     assert mock_output["result"]["report_id"] != real_output["result"]["report_id"]
-
-
-def test_variant_output_is_isolated_and_local_usage_is_not_billed(tmp_path: Path) -> None:
-    handoff = make_session(tmp_path)
-
-    class HybridClient(RecordingClient):
-        def analysis_profile(self):
-            return {
-                "client": "hybrid-test",
-                "model": "qwen3:8b+deepseek-v4-flash",
-                "base_url": "mixed",
-            }
-
-        def complete_json(self, **kwargs):
-            response = super().complete_json(**kwargs)
-            if kwargs["thinking"] == "disabled":
-                response["metadata"].update({
-                    "provider": "ollama-local",
-                    "api_called": False,
-                    "model_requested": "qwen3:8b",
-                    "model_returned": "qwen3:8b",
-                })
-            return response
-
-    output = run_analysis(handoff, HybridClient(), variant="qwen3-8b-hybrid")
-
-    assert "analysis_variants\\qwen3-8b-hybrid" in str(output["result_path"])
-    assert output["qq_path"].name == "qq_messages.qwen3-8b-hybrid.jsonl"
-    usage = output["result"]["model"]["usage_by_stage"]
-    assert usage["short_summaries"]["api_calls"] == 0
-    assert usage["short_summaries"]["local_calls"] == 2
-    assert usage["long_summaries"]["local_calls"] == 1
-    costs = output["result"]["model"]["cost_estimate"]
-    assert costs["status"] == "estimated"
-    assert costs["stages"]["short_summaries"]["estimated_cost_rmb"] == 0
-    assert costs["stages"]["long_summaries"]["estimated_cost_rmb"] == 0
-    assert costs["stages"]["final_overview"]["billing_records"] == 1
-    assert not (handoff.parents[1] / "analysis" / "result.json").exists()

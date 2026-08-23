@@ -145,8 +145,8 @@ def load_analyzer_input(handoff_path: Path) -> AnalyzerInput:
     if not isinstance(retention, dict):
         raise ValueError("retention must be an object")
     _aware_time(retention.get("delete_after"), "retention.delete_after")
-    if int(retention.get("maximum_hours", 0)) > 168:
-        raise ValueError("retention.maximum_hours may not exceed 168")
+    if int(retention.get("maximum_hours", 0)) > 360:
+        raise ValueError("retention.maximum_hours may not exceed 360")
 
     inputs = request.get("inputs")
     if not isinstance(inputs, dict):

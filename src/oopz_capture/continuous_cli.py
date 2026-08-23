@@ -39,7 +39,7 @@ def _parser() -> argparse.ArgumentParser:
     start.add_argument("--language", choices=["auto", "zh", "en", "yue", "ja", "ko"], default="auto")
     start.add_argument("--retain-audio", action="store_true", help="retain multitrack audio after transcription for ASR experiments")
     start.add_argument("--deadline-seconds", type=int, default=900, dest="processing_deadline_seconds")
-    start.add_argument("--retention-hours", type=int, default=168)
+    start.add_argument("--retention-hours", type=int, default=360)
     start.add_argument("--poll-interval", type=float, default=0.25, dest="poll_interval_seconds")
     start.add_argument("--membership-refresh-seconds", type=float, default=30.0)
     start.add_argument("--membership-timeout-seconds", type=float, default=10.0)
@@ -68,7 +68,7 @@ def _parser() -> argparse.ArgumentParser:
     stop = commands.add_parser("stop", help="request a graceful leave and final report handoff")
     stop.add_argument("--session", required=True, dest="session_id")
     stop.add_argument("--output-root", type=Path, default=Path("output"))
-    stop.add_argument("--reason", default="qq_leave_command")
+    stop.add_argument("--reason", default="operator_stop_command")
 
     status = commands.add_parser("status", help="show one continuous Session lifecycle")
     status.add_argument("--session", required=True, dest="session_id")

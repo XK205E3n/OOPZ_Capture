@@ -10,9 +10,9 @@
   "processing_deadline_seconds": 900,
   "retention_hours": 168,
   "requested_by": {
-    "source": "qq",
+    "source": "feishu",
     "chat_type": "group",
-    "chat_id": "QQ群号",
-    "sender_id": "QQ用户号"
+    "chat_id": "飞书群ID",
+    "sender_id": "飞书成员ID"
   }
 }

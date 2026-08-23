@@ -22,13 +22,11 @@ from .readable import identity_label
 from .recorder import CaptureRecorder
 from .session import _resolve_participants
 from .transcript import render_transcript_markdown
-from .transcript_reconcile import no_text_marker
 from .vad import VADConfig
 from .workflow import (
     WorkflowRequest,
     _is_reparse_point,
     _run_transcription_process,
-    cleanup_expired,
     emit_event as _emit_structured_event,
     utc_now,
     validate_transcript,
@@ -39,6 +37,31 @@ CONTINUOUS_REQUEST_SCHEMA = "oopz.continuous.request.v1"
 CONTINUOUS_STOP_SCHEMA = "oopz.continuous.stop.v1"
 MAX_CHUNK_SECONDS = 300
 LOGGER = logging.getLogger(__name__)
+
+
+def no_text_marker(session_dir: Path) -> dict[str, Any]:
+    """Represent an entirely silent chunk without relying on a model."""
+    session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
+    duration_ms = max(1, round(float(session.get("duration_seconds") or 0) * 1000))
+    started = datetime.fromisoformat(str(
+        session.get("capture_clock_started_at") or session.get("started_at")
+    ).replace("Z", "+00:00"))
+    return {
+        "segment_id": "no-speech",
+        "session_id": str(session.get("session_id") or session_dir.name),
+        "start_ms": 0,
+        "end_ms": duration_ms,
+        "start_time": started.isoformat(timespec="milliseconds"),
+        "end_time": (started + timedelta(milliseconds=duration_ms)).isoformat(timespec="milliseconds"),
+        "agora_uid": 0,
+        "oopz_uid": "",
+        "speaker": "系统",
+        "text": "[该时间段未检测到有效语音文本]",
+        "language": "none",
+        "asr_backend": "sensevoice-small",
+        "transcript_source": "no-speech-marker",
+        "overlap": False,
+    }
 
 
 def emit_event(event: str, request_id: str, **fields: Any) -> dict[str, Any]:
@@ -74,7 +97,7 @@ class ContinuousRequest:
     cutoff_local_hour: int = 4
     language: str = "auto"
     processing_deadline_seconds: int = 900
-    retention_hours: int = 168
+    retention_hours: int = 360
     poll_interval_seconds: float = 0.25
     membership_refresh_seconds: float = 30.0
     membership_timeout_seconds: float = 10.0
@@ -112,8 +135,8 @@ class ContinuousRequest:
             raise ValueError("cutoff_local_hour must be 0 to 23")
         if not 60 <= self.processing_deadline_seconds <= 3600:
             raise ValueError("processing_deadline_seconds must be 60 to 3600")
-        if not 1 <= self.retention_hours <= 168:
-            raise ValueError("retention_hours must be 1 to 168")
+        if not 1 <= self.retention_hours <= 360:
+            raise ValueError("retention_hours must be 1 to 360")
         if not 0.05 <= self.poll_interval_seconds <= 5:
             raise ValueError("poll_interval_seconds must be 0.05 to 5")
         if not 5 <= self.membership_refresh_seconds <= 600:
@@ -191,7 +214,7 @@ def request_stop(
     session_id: str,
     *,
     requested_by: dict[str, Any] | None = None,
-    reason: str = "qq_leave_command",
+    reason: str = "operator_stop_command",
 ) -> Path:
     session = _direct_session(output_root, session_id)
     lifecycle_path = session / "lifecycle.json"
@@ -224,26 +247,52 @@ def _purge_chunk_audio(session_dir: Path, chunk_dir: Path) -> list[str]:
     if chunk_dir.parent != chunks_root or chunks_root.parent != session_dir:
         raise ValueError("refusing unsafe chunk path")
     audio_dir = chunk_dir / "audio"
-    if not audio_dir.exists():
-        return []
-    if not audio_dir.is_dir() or _is_reparse_point(audio_dir):
-        raise ValueError("refusing unsafe chunk audio directory")
-    targets = list(audio_dir.iterdir())
-    for target in targets:
-        if not target.is_file() or _is_reparse_point(target):
-            raise ValueError(f"refusing unexpected chunk audio target: {target}")
-    deleted = [str(path.relative_to(session_dir)).replace("\\", "/") for path in targets]
-    for target in targets:
-        target.unlink()
-    audio_dir.rmdir()
+    deleted: list[str] = []
+    if audio_dir.exists():
+        if not audio_dir.is_dir() or _is_reparse_point(audio_dir):
+            raise ValueError("refusing unsafe chunk audio directory")
+        targets = list(audio_dir.iterdir())
+        for target in targets:
+            if not target.is_file() or _is_reparse_point(target):
+                raise ValueError(f"refusing unexpected chunk audio target: {target}")
+        deleted = [str(path.relative_to(session_dir)).replace("\\", "/") for path in targets]
+        for target in targets:
+            target.unlink()
+        audio_dir.rmdir()
     manifest_path = chunk_dir / "audio_manifest.json"
     if manifest_path.exists():
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         deleted_at = _iso(utc_now())
         for item in manifest:
+            raw_path = str(item.get("path") or "").strip()
+            if raw_path:
+                recorded_path = Path(raw_path).resolve()
+                if recorded_path.parent != audio_dir.resolve():
+                    raise ValueError(f"refusing audio manifest path outside managed directory: {recorded_path}")
+                if recorded_path.exists():
+                    raise RuntimeError(f"audio cleanup did not remove recorded file: {recorded_path}")
             item["audio_deleted"] = True
             item["audio_deleted_at"] = deleted_at
         write_json(manifest_path, manifest)
+    return deleted
+
+
+def _enforce_chunk_audio_policy(session_dir: Path, chunk_dir: Path, *, retain_audio: bool) -> list[str]:
+    """Reconcile disk, manifest and lifecycle after a normal or repaired transcript."""
+    if retain_audio:
+        return []
+    deleted = _purge_chunk_audio(session_dir, chunk_dir)
+    lifecycle_path = chunk_dir / "lifecycle.json"
+    lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
+    deleted_at = _iso(utc_now())
+    prior_deleted = [str(item) for item in lifecycle.get("deleted_audio_files", [])]
+    lifecycle.update({
+        "audio_deleted": True,
+        "audio_retained_for_testing": False,
+        "audio_deleted_at": lifecycle.get("audio_deleted_at") or deleted_at,
+        "deleted_audio_files": list(dict.fromkeys(prior_deleted + deleted)),
+    })
+    write_json(lifecycle_path, lifecycle)
     return deleted
 
 
@@ -439,7 +488,7 @@ def _write_final_handoff(
         "required_outputs": {
             "analysis_result": "analysis/result.json",
             "human_summary": "analysis/summary.md",
-            "qq_messages": "handoff/qq_messages.jsonl",
+            "report_messages": "handoff/report_messages.jsonl",
         },
         "retention": {
             "delete_after": _iso(delete_after),
@@ -490,6 +539,9 @@ async def repair_continuous_session(
         if chunk_lifecycle.get("status") == "transcribed":
             try:
                 validated = validate_transcript(chunk_dir)
+                _enforce_chunk_audio_policy(
+                    session_dir, chunk_dir, retain_audio=request.retain_audio,
+                )
                 results.append({"chunk_dir": chunk_dir, "ok": True, "segments": validated["segment_count"]})
             except Exception as error:
                 results.append({"chunk_dir": chunk_dir, "ok": False, "error": str(error)})
@@ -498,10 +550,18 @@ async def repair_continuous_session(
         if not audio_dir.is_dir() or _is_reparse_point(audio_dir):
             results.append({"chunk_dir": chunk_dir, "ok": False, "error": "retained audio is missing or unsafe"})
             continue
-        results.append(await chunk_processor(
+        result = await chunk_processor(
             session_dir, chunk_dir, request, vad_config or VADConfig(), device,
             reset_deadline=True,
-        ))
+        )
+        if result.get("ok"):
+            try:
+                _enforce_chunk_audio_policy(
+                    session_dir, chunk_dir, retain_audio=request.retain_audio,
+                )
+            except Exception as error:
+                result = {"chunk_dir": chunk_dir, "ok": False, "error": str(error)}
+        results.append(result)
     segment_count, markdown = _merge_transcripts(session_dir, results)
     stopped_at = datetime.fromisoformat(str(lifecycle["stopped_at"]).replace("Z", "+00:00"))
     delete_after = datetime.fromisoformat(str(lifecycle["delete_after"]).replace("Z", "+00:00"))
@@ -517,7 +577,8 @@ async def repair_continuous_session(
         "chunks_transcribed": len(results) - len(failed),
         "chunks_failed": len(failed),
         "transcript_segments": segment_count,
-        "audio_deleted": not failed,
+        "audio_deleted": not request.retain_audio and not failed,
+        "audio_retained_for_testing": request.retain_audio,
         "analyzer_handoff": str(handoff.relative_to(session_dir)).replace("\\", "/"),
         "repair_failures": [str(item.get("error") or "unknown") for item in failed],
     })
@@ -525,7 +586,9 @@ async def repair_continuous_session(
     emit_event(
         "continuous.repair_completed", request.request_id, session_id=session_id,
         chunks_total=len(results), chunks_failed=len(failed), transcript_segments=segment_count,
-        transcript_markdown=str(markdown), analyzer_request=str(handoff), audio_deleted=not failed,
+        transcript_markdown=str(markdown), analyzer_request=str(handoff),
+        audio_deleted=not request.retain_audio and not failed,
+        audio_retained_for_testing=request.retain_audio,
     )
     return session_dir
 
@@ -593,8 +656,8 @@ async def run_continuous_capture(
     request.validate()
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
-    removed = cleanup_expired(output_root)
-    emit_event("retention.completed", request.request_id, deleted_session_ids=[item.name for item in removed])
+    # Feishu owns retention deletion so it can remove the remote document and
+    # Base record before deleting the matching local Session and PDFs.
 
     started_at = utc_now()
     session_id = validate_session_id(session_id) if session_id else new_session_id(
@@ -827,7 +890,7 @@ async def run_continuous_capture(
         stop_path = session_dir / "control" / "stop.json"
         if stop_path.is_file():
             stop_value = json.loads(stop_path.read_text(encoding="utf-8"))
-            return str(stop_value.get("reason") or "qq_leave_command")
+            return str(stop_value.get("reason") or "operator_stop_command")
         if datetime.now(BEIJING_TZ) >= cutoff_local:
             return "automatic_03_00_cutoff"
         if (

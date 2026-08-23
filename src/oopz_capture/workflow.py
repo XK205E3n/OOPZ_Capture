@@ -47,7 +47,7 @@ class WorkflowRequest:
     consent_confirmed: bool
     language: str = "auto"
     processing_deadline_seconds: int = 900
-    retention_hours: int = 168
+    retention_hours: int = 360
     poll_interval_seconds: float = 0.25
     retain_audio: bool = False
     rtc_uid: str | None = None
@@ -72,15 +72,15 @@ class WorkflowRequest:
             raise ValueError("area_id and channel_id are required")
         duration = float(value.get("duration_seconds", 0))
         deadline = int(value.get("processing_deadline_seconds", 900))
-        retention = int(value.get("retention_hours", 168))
+        retention = int(value.get("retention_hours", 360))
         poll = float(value.get("poll_interval_seconds", 0.25))
         language = str(value.get("language", "auto"))
         if duration <= 0:
             raise ValueError("duration_seconds must be greater than zero for an automatic job")
         if not 60 <= deadline <= 3600:
             raise ValueError("processing_deadline_seconds must be 60 to 3600")
-        if not 1 <= retention <= 168:
-            raise ValueError("retention_hours must be 1 to 168")
+        if not 1 <= retention <= 360:
+            raise ValueError("retention_hours must be 1 to 360")
         if not 0.05 <= poll <= 5:
             raise ValueError("poll_interval_seconds must be 0.05 to 5")
         if language not in {"auto", "zh", "en", "yue", "ja", "ko"}:
@@ -219,7 +219,7 @@ def write_analyzer_handoff(
         "required_outputs": {
             "analysis_result": "analysis/result.json",
             "human_summary": "analysis/summary.md",
-            "qq_messages": "handoff/qq_messages.jsonl",
+            "report_messages": "handoff/report_messages.jsonl",
         },
         "retention": {
             "delete_after": _iso(delete_after),
@@ -384,8 +384,8 @@ async def run_workflow(
     del show_browser  # Browser visibility is already represented by the supplied OOPZ config.
     output_root = output_root.resolve()
     output_root.mkdir(parents=True, exist_ok=True)
-    removed = cleanup_expired(output_root)
-    emit_event("retention.completed", request.request_id, deleted_session_ids=[path.name for path in removed])
+    # Feishu owns retention deletion so it can remove matching remote reports
+    # before deleting the local Session and archived PDFs.
     emit_event("capture.started", request.request_id, area_id=request.area_id, channel_id=request.channel_id)
     session_dir: Path | None = output_root / new_session_id(output_root)
     try:

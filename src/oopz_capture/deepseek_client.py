@@ -12,12 +12,21 @@ from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
 
 
-class DeepSeekError(RuntimeError):
+class AnalysisAPIError(RuntimeError):
+    """Failure from the configured analysis API, regardless of provider."""
+
     pass
 
 
-class RetryableDeepSeekError(DeepSeekError):
+class RetryableAnalysisAPIError(AnalysisAPIError):
     pass
+
+
+# Backwards-compatible import aliases.  This module originally supported only
+# DeepSeek, but it now also drives OpenCode Go and generic OpenAI-compatible
+# APIs.  New user-visible errors must use the provider-neutral class name.
+DeepSeekError = AnalysisAPIError
+RetryableDeepSeekError = RetryableAnalysisAPIError
 
 
 @dataclass(frozen=True)
@@ -35,9 +44,9 @@ class DeepSeekConfig:
     # endpoint, so the pipeline can identify the billing source correctly.
     provider: str = "deepseek"
     # Generic OpenAI-compatible endpoints commonly reject vendor-specific
-    # ``thinking`` fields.  ``auto`` preserves them only for known compatible
-    # providers; ``enabled`` sends them to a compatible relay; ``disabled``
-    # omits them and uses normal chat-completions behaviour.
+    # ``thinking`` fields. ``auto`` preserves them only for the official
+    # DeepSeek API; OpenCode Go is documented as OpenAI-compatible and must
+    # therefore use normal chat-completions fields unless explicitly enabled.
     thinking_mode: str = "auto"
     json_mode: bool = True
 
@@ -46,35 +55,26 @@ class DeepSeekConfig:
         provider = os.environ.get("ANALYZER_PROVIDER", "opencode-go").strip().lower()
         if provider not in {"deepseek", "opencode-go", "openai-compatible"}:
             raise ValueError("ANALYZER_PROVIDER must be deepseek, opencode-go, or openai-compatible")
-        generic_key = os.environ.get("ANALYZER_API_KEY", "").strip()
-        generic_base_url = os.environ.get("ANALYZER_BASE_URL", "").strip()
-        generic_model = os.environ.get("ANALYZER_MODEL", "").strip()
+        api_key = os.environ.get("ANALYZER_API_KEY", "").strip()
+        base_url = os.environ.get("ANALYZER_BASE_URL", "").strip()
+        model = os.environ.get("ANALYZER_MODEL", "").strip()
         if provider == "opencode-go":
-            api_key = generic_key or os.environ.get("OPENCODE_API_KEY", "").strip() or os.environ.get("DEEPSEEK_API_KEY", "").strip()
-            base_url = generic_base_url or os.environ.get(
-                "OPENCODE_BASE_URL", "https://opencode.ai/zen/go/v1"
-            ).strip()
-            model = generic_model or os.environ.get("OPENCODE_MODEL", "mimo-v2.5").strip()
+            base_url = base_url or "https://opencode.ai/zen/go/v1"
+            model = model or "mimo-v2.5"
         elif provider == "deepseek":
-            api_key = generic_key or os.environ.get("DEEPSEEK_API_KEY", "").strip()
-            base_url = generic_base_url or os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com").strip()
-            model = generic_model or os.environ.get("DEEPSEEK_MODEL", "").strip()
-        else:
-            api_key = generic_key
-            base_url = generic_base_url
-            model = generic_model
+            base_url = base_url or "https://api.deepseek.com"
         base_url = base_url.rstrip("/")
         if not api_key:
-            raise ValueError("ANALYZER_API_KEY is required (or use the matching legacy provider key)")
+            raise ValueError("ANALYZER_API_KEY is required")
         if not model:
             raise ValueError("ANALYZER_MODEL is required; use the exact model ID from your API access")
         if not base_url.startswith("https://"):
             raise ValueError("ANALYZER_BASE_URL must use HTTPS")
-        timeout = float(os.environ.get("ANALYZER_TIMEOUT_SECONDS", os.environ.get("DEEPSEEK_TIMEOUT_SECONDS", "60")))
-        retries = int(os.environ.get("ANALYZER_MAX_RETRIES", os.environ.get("DEEPSEEK_MAX_RETRIES", "3")))
-        interval = float(os.environ.get("ANALYZER_MIN_INTERVAL_SECONDS", os.environ.get("DEEPSEEK_MIN_INTERVAL_SECONDS", "0.5")))
-        max_tokens = int(os.environ.get("ANALYZER_MAX_TOKENS", os.environ.get("DEEPSEEK_MAX_TOKENS", "2048")))
-        thinking_max_tokens = int(os.environ.get("ANALYZER_THINKING_MAX_TOKENS", os.environ.get("DEEPSEEK_THINKING_MAX_TOKENS", "16384")))
+        timeout = float(os.environ.get("ANALYZER_TIMEOUT_SECONDS", "60"))
+        retries = int(os.environ.get("ANALYZER_MAX_RETRIES", "3"))
+        interval = float(os.environ.get("ANALYZER_MIN_INTERVAL_SECONDS", "0.5"))
+        max_tokens = int(os.environ.get("ANALYZER_MAX_TOKENS", "2048"))
+        thinking_max_tokens = int(os.environ.get("ANALYZER_THINKING_MAX_TOKENS", "16384"))
         thinking_mode = os.environ.get("ANALYZER_THINKING_MODE", "auto").strip().lower()
         json_mode_raw = os.environ.get("ANALYZER_JSON_MODE", "true").strip().lower()
         if thinking_mode not in {"auto", "enabled", "disabled"}:
@@ -82,15 +82,15 @@ class DeepSeekConfig:
         if json_mode_raw not in {"true", "false"}:
             raise ValueError("ANALYZER_JSON_MODE must be true or false")
         if not 1 <= timeout <= 600:
-            raise ValueError("DEEPSEEK_TIMEOUT_SECONDS must be 1 to 600")
+            raise ValueError("ANALYZER_TIMEOUT_SECONDS must be 1 to 600")
         if not 0 <= retries <= 8:
-            raise ValueError("DEEPSEEK_MAX_RETRIES must be 0 to 8")
+            raise ValueError("ANALYZER_MAX_RETRIES must be 0 to 8")
         if not 0 <= interval <= 60:
-            raise ValueError("DEEPSEEK_MIN_INTERVAL_SECONDS must be 0 to 60")
+            raise ValueError("ANALYZER_MIN_INTERVAL_SECONDS must be 0 to 60")
         if not 128 <= max_tokens <= 384000:
-            raise ValueError("DEEPSEEK_MAX_TOKENS must be 128 to 384000")
+            raise ValueError("ANALYZER_MAX_TOKENS must be 128 to 384000")
         if not 128 <= thinking_max_tokens <= 384000:
-            raise ValueError("DEEPSEEK_THINKING_MAX_TOKENS must be 128 to 384000")
+            raise ValueError("ANALYZER_THINKING_MAX_TOKENS must be 128 to 384000")
         return cls(
             api_key=api_key, base_url=base_url, model=model,
             timeout_seconds=timeout, max_retries=retries, min_interval_seconds=interval,
@@ -109,24 +109,23 @@ MIMO_V25_MODEL = "mimo-v2.5"
 
 
 def opencode_go_client() -> "DeepSeekClient":
-    """Build the configurable OpenCode Go client used by QQ analysis route 5."""
+    """Build the configurable OpenCode Go client used by the analysis pipeline."""
     config = DeepSeekConfig.from_env()
     if config.provider != "opencode-go":
         raise ValueError(
-            "analysis route 5 requires ANALYZER_PROVIDER=opencode-go and an OpenCode Go API key"
+            "the fixed mimo-go route requires ANALYZER_PROVIDER=opencode-go and an OpenCode Go API key"
         )
     return DeepSeekClient(config)
 
 
 def configured_analysis_client() -> "DeepSeekClient":
-    """Build the configured OpenAI-compatible client used by QQ route 5."""
+    """Build the configured OpenAI-compatible analysis client."""
     return DeepSeekClient(DeepSeekConfig.from_env())
 
 
 def opencode_mimo_v25_client() -> "DeepSeekClient":
     """Build the fixed OpenCode Go MiMo-V2.5 client used by the explicit CLI route.
 
-    The QQ route uses :func:`opencode_go_client` and honors ``OPENCODE_MODEL``.
     This compatibility helper preserves the explicit CLI ``mimo-go`` route.
     """
     return DeepSeekClient(replace(opencode_go_client().config, model=MIMO_V25_MODEL))
@@ -148,10 +147,10 @@ def urllib_transport(endpoint: str, headers: dict[str, str], payload: dict[str, 
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
         if error.code == 429 or 500 <= error.code < 600:
-            raise RetryableDeepSeekError(f"DeepSeek HTTP {error.code}") from error
-        raise DeepSeekError(f"DeepSeek HTTP {error.code}") from error
+            raise RetryableAnalysisAPIError(f"analysis API HTTP {error.code}") from error
+        raise AnalysisAPIError(f"analysis API HTTP {error.code}") from error
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
-        raise RetryableDeepSeekError(f"DeepSeek transport failure: {type(error).__name__}") from error
+        raise RetryableAnalysisAPIError(f"analysis API transport failure: {type(error).__name__}") from error
 
 
 class RateLimiter:
@@ -176,10 +175,10 @@ class RateLimiter:
 def _validate_required_keys(value: dict[str, Any], required_keys: dict[str, type | tuple[type, ...]]) -> None:
     missing = [key for key in required_keys if key not in value]
     if missing:
-        raise RetryableDeepSeekError(f"model JSON is missing required keys: {missing}")
+        raise RetryableAnalysisAPIError(f"model JSON is missing required keys: {missing}")
     wrong = [key for key, expected in required_keys.items() if not isinstance(value[key], expected)]
     if wrong:
-        raise RetryableDeepSeekError(f"model JSON has invalid value types: {wrong}")
+        raise RetryableAnalysisAPIError(f"model JSON has invalid value types: {wrong}")
 
 
 def _merge_usage(total: dict[str, Any], current: Any) -> None:
@@ -239,7 +238,7 @@ class DeepSeekClient:
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         if "json" not in (system_prompt + user_prompt).lower():
-            raise ValueError("DeepSeek JSON mode requires the prompt to explicitly mention JSON")
+            raise ValueError("analysis API JSON mode requires the prompt to explicitly mention JSON")
         if thinking not in {"enabled", "disabled"}:
             raise ValueError("thinking must be enabled or disabled")
         if thinking == "enabled" and reasoning_effort not in {"high", "max"}:
@@ -247,7 +246,7 @@ class DeepSeekClient:
         if max_tokens is not None and not 128 <= max_tokens <= 384000:
             raise ValueError("max_tokens must be 128 to 384000")
         supports_thinking = self.config.thinking_mode == "enabled" or (
-            self.config.thinking_mode == "auto" and self.config.provider in {"deepseek", "opencode-go"}
+            self.config.thinking_mode == "auto" and self.config.provider == "deepseek"
         )
         effective_thinking = thinking if supports_thinking else "disabled"
         initial_max_tokens = max_tokens or (
@@ -294,7 +293,7 @@ class DeepSeekClient:
                     })
                 choices = response.get("choices")
                 if not isinstance(choices, list) or not choices:
-                    raise RetryableDeepSeekError("DeepSeek response has no choices")
+                    raise RetryableAnalysisAPIError("analysis API response has no choices")
                 message = choices[0].get("message") if isinstance(choices[0], dict) else None
                 content = message.get("content") if isinstance(message, dict) else None
                 finish_reason = str(choices[0].get("finish_reason") or "")
@@ -304,15 +303,15 @@ class DeepSeekClient:
                     else:
                         retry_cap = min(384000, max(8192, self.config.max_tokens))
                     payload["max_tokens"] = min(retry_cap, int(payload["max_tokens"]) * 2)
-                    raise RetryableDeepSeekError("DeepSeek JSON output was truncated at max_tokens")
+                    raise RetryableAnalysisAPIError("analysis API JSON output was truncated at max_tokens")
                 if not isinstance(content, str) or not content.strip():
-                    raise RetryableDeepSeekError("DeepSeek returned empty content")
+                    raise RetryableAnalysisAPIError("analysis API returned empty content")
                 try:
                     value = json.loads(content)
                 except json.JSONDecodeError as error:
-                    raise RetryableDeepSeekError("DeepSeek returned invalid JSON content") from error
+                    raise RetryableAnalysisAPIError("analysis API returned invalid JSON content") from error
                 if not isinstance(value, dict):
-                    raise RetryableDeepSeekError("DeepSeek JSON content must be an object")
+                    raise RetryableAnalysisAPIError("analysis API JSON content must be an object")
                 _validate_required_keys(value, required_keys)
                 return {
                     "content": value,
@@ -331,15 +330,19 @@ class DeepSeekClient:
                         "attempts": attempt + 1,
                     },
                 }
-            except RetryableDeepSeekError as error:
+            except RetryableAnalysisAPIError as error:
                 last_error = error
                 if attempt >= self.config.max_retries:
                     break
                 delay = min(30.0, (2 ** attempt) + self.random_source())
                 self.sleeper(delay)
-            except DeepSeekError:
+            except AnalysisAPIError:
                 raise
-        raise DeepSeekError(f"DeepSeek request failed after {self.config.max_retries + 1} attempts: {last_error}") from last_error
+        raise AnalysisAPIError(
+            "analysis API request "
+            f"({self.config.provider}/{self.config.model}) failed after "
+            f"{self.config.max_retries + 1} attempts: {last_error}"
+        ) from last_error
 
 
 class MockDeepSeekClient:

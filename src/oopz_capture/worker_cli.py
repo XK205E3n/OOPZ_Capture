@@ -10,7 +10,7 @@ from typing import Sequence
 from uuid import UUID, uuid4
 
 from .vad import VADConfig
-from .workflow import REQUEST_SCHEMA, WorkflowRequest, cleanup_expired, emit_event, run_workflow
+from .workflow import REQUEST_SCHEMA, WorkflowRequest, emit_event, run_workflow
 
 
 def _common_run_options(parser: argparse.ArgumentParser) -> None:
@@ -26,7 +26,7 @@ def _common_run_options(parser: argparse.ArgumentParser) -> None:
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="oopz-worker",
-        description="Managed OOPZ capture-to-transcript worker with safe retention",
+        description="Managed OOPZ capture-to-transcript worker",
     )
     parser.add_argument("--verbose", action="store_true")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -39,22 +39,19 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--language", choices=["auto", "zh", "en", "yue", "ja", "ko"], default="auto")
     run.add_argument("--retain-audio", action="store_true", help="retain multitrack audio after transcription for ASR experiments")
     run.add_argument("--deadline-seconds", type=int, default=900, dest="processing_deadline_seconds")
-    run.add_argument("--retention-hours", type=int, default=168)
+    run.add_argument("--retention-hours", type=int, default=360)
     run.add_argument("--poll-interval", type=float, default=0.25, dest="poll_interval_seconds")
     run.add_argument("--rtc-uid")
     run.add_argument("--consent-confirmed", action="store_true")
     _common_run_options(run)
 
-    request = commands.add_parser("run-request", help="consume a QQ/controller JSON request")
+    request = commands.add_parser("run-request", help="consume a controller JSON request")
     request.add_argument("request_file", type=Path)
     _common_run_options(request)
 
     validate = commands.add_parser("validate-request", help="validate and normalize a controller request")
     validate.add_argument("request_file", type=Path)
 
-    cleanup = commands.add_parser("cleanup", help="delete expired oopz-worker managed sessions")
-    cleanup.add_argument("--output-root", type=Path, default=Path("output"))
-    cleanup.add_argument("--dry-run", action="store_true")
     return parser
 
 
@@ -137,13 +134,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.command == "validate-request":
             request = _load_request(args.request_file)
             print(json.dumps(request.to_dict(), ensure_ascii=False, indent=2))
-            return 0
-        if args.command == "cleanup":
-            values = cleanup_expired(args.output_root, dry_run=args.dry_run)
-            action = "将删除" if args.dry_run else "已删除"
-            print(f"{action} {len(values)} 个过期 Session：")
-            for path in values:
-                print(f"- Session ID={path.name} | 路径={path}")
             return 0
         return asyncio.run(_async_main(args))
     except KeyboardInterrupt:

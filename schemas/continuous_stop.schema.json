@@ -9,7 +9,7 @@
     "schema_version": {"const": "oopz.continuous.stop.v1"},
     "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
     "requested_at": {"type": "string", "format": "date-time"},
-    "reason": {"enum": ["qq_leave_command", "local_stop_command", "operator_request"]},
+    "reason": {"enum": ["operator_stop_command", "local_stop_command", "operator_request"]},
     "requested_by": {"type": ["object", "null"]}
   }
 }

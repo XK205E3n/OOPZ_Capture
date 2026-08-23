@@ -14,12 +14,7 @@ def run_speech_pipeline(
     device: str = "cpu",
     language: str | None = None,
 ) -> tuple[int, int, Path]:
-    """Run one SenseVoice transcript; auto mode keeps Chinese/Cantonese/English only.
-
-    Production used to generate a forced-zh candidate and ask local Qwen to
-    select between them.  The default is now the auto candidate directly, so
-    no Qwen transcription-reconciliation request is made.
-    """
+    """Run one SenseVoice transcript; auto mode keeps Chinese/Cantonese/English only."""
     vad_segments = run_vad_session(session_dir, SileroVADBackend(), vad_config)
     backend = SenseVoiceBackend(device=device)
     is_auto = language is None

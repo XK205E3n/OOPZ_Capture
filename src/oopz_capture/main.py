@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -49,6 +50,9 @@ def _configure_logging(verbose: bool) -> None:
 
 async def _config(*, show_browser: bool = False) -> Any:
     from oopz_sdk import OopzConfig
+    # This deployment supports only phone/password login. Force the SDK route
+    # so inherited environment state cannot select a direct-credentials login.
+    os.environ["OOPZ_LOGIN_METHOD"] = "password"
     return await OopzConfig.from_env_async(voice_backend="browser", voice_browser_headless=not show_browser)
 
 

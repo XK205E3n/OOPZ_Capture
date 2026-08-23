@@ -1,80 +1,60 @@
-param(
+﻿param(
     [ValidateSet('shutdown', 'restarting')]
-    [string]$Notice = 'shutdown',
-    [switch]$PreserveNapCat
+    [string]$Notice = 'shutdown'
 )
 
 $ErrorActionPreference = 'Stop'
-$projectRootFull = Split-Path -Parent $PSScriptRoot
-$napCatRoot = Join-Path $projectRootFull 'NapCatQQ\NapCat.50969.Shell'
-$controllerPath = Join-Path $projectRootFull '.venv\Scripts\oopz-qq-controller.exe'
-$gatewayPath = Join-Path $projectRootFull '.venv\Scripts\oopz-onebot.exe'
-$watchdogModule = 'oopz_capture.qq_watchdog'
+$projectRoot = (Split-Path -Parent $PSScriptRoot)
+$python = Join-Path $projectRoot '.venv\Scripts\python.exe'
 
-$noticeSent = $false
-$noticeError = $null
-if (Test-Path -LiteralPath $gatewayPath -PathType Leaf) {
-    Push-Location $projectRootFull
+if (Test-Path -LiteralPath $python -PathType Leaf) {
+    $message = if ($Notice -eq 'restarting') {
+        'OOPZ 飞书机器人正在重启；恢复连接后会发送完成通知。'
+    } else {
+        'OOPZ 飞书机器人正在关闭。'
+    }
+    Push-Location $projectRoot
     try {
-        & $gatewayPath notify-admin --lifecycle $Notice 2>$null | Out-Null
-        $noticeSent = $LASTEXITCODE -eq 0
-        if (-not $noticeSent) {
-            $noticeError = "notify-admin exit code: $LASTEXITCODE"
+        & $python -m oopz_capture.feishu_cli notify $message
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "Feishu lifecycle notice failed (exit code $LASTEXITCODE); continuing with shutdown."
         }
     }
     catch {
-        $noticeError = $_.Exception.Message
+        Write-Warning "Feishu lifecycle notice failed: $($_.Exception.Message); continuing with shutdown."
     }
     finally {
         Pop-Location
     }
 }
 
-# NapCat acknowledges the OneBot action before the QQ client has necessarily
-# flushed the private message to Tencent. Keep the client alive briefly.
-if ($noticeSent) {
-    Start-Sleep -Seconds 3
-}
-
-function Get-OopzProcessIds {
-    @(Get-CimInstance Win32_Process | Where-Object {
-        $commandLine = $_.CommandLine
-        if ($_.ProcessId -eq $PID -or -not $commandLine) {
-            return $false
-        }
-        $isNapCat = $commandLine.Contains($napCatRoot)
-        $isProjectService = (
-            $commandLine.Contains($controllerPath) -or
-            $commandLine.Contains($gatewayPath) -or
-            $commandLine.Contains($watchdogModule)
-        )
-        $isProjectService -or ($isNapCat -and -not $PreserveNapCat)
-    } | Select-Object -ExpandProperty ProcessId)
-}
-
-$stopped = [System.Collections.Generic.List[int]]::new()
-for ($pass = 1; $pass -le 5; $pass++) {
-    $ids = @(Get-OopzProcessIds | Select-Object -Unique)
-    if ($ids.Count -eq 0) {
-        break
+function Test-OopzFullStackProcess($Process) {
+    if ($Process.ProcessId -eq $PID -or -not $Process.CommandLine) { return $false }
+    if ($Process.Name -ieq 'python.exe') {
+        return $Process.CommandLine -match '(?i)(?:^|\s)-m\s+oopz_capture\.feishu_cli\s+serve(?:\s|$)'
     }
-    foreach ($processId in ($ids | Sort-Object -Descending)) {
-        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
-        $stopped.Add([int]$processId)
+    if ($Process.Name -ieq 'powershell.exe' -or $Process.Name -ieq 'pwsh.exe') {
+        return $Process.CommandLine -match '(?i)(?:^|\s)-File\s+(?:"[^"]*watch_feishu_(?:runtime_status|messages)\.ps1"|[^\s"]*watch_feishu_(?:runtime_status|messages)\.ps1)(?:\s|$)'
     }
-    Start-Sleep -Seconds 1
+    return $false
 }
 
-$remaining = Get-OopzProcessIds
+$ids = @(Get-CimInstance Win32_Process | Where-Object {
+    Test-OopzFullStackProcess $_
+} | Select-Object -ExpandProperty ProcessId -Unique)
+
+foreach ($processId in $ids) {
+    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+}
+
+Start-Sleep -Seconds 1
+$remaining = @(Get-CimInstance Win32_Process | Where-Object {
+    Test-OopzFullStackProcess $_
+} | Select-Object -ExpandProperty ProcessId -Unique)
+
 [pscustomobject]@{
-    stopped_processes = @($stopped | Select-Object -Unique)
-    remaining_processes = @($remaining)
+    stopped_processes = $ids
+    remaining_processes = $remaining
     lifecycle_notice = $Notice
-    lifecycle_notice_sent = $noticeSent
-    lifecycle_notice_error = $noticeError
-    napcat_preserved = [bool]$PreserveNapCat
 } | ConvertTo-Json -Compress
-
-if ($remaining.Count -gt 0) {
-    exit 1
-}
+if ($remaining.Count -gt 0) { exit 1 }

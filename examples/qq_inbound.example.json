@@ -1,9 +1,0 @@
-{
-  "schema_version": "oopz.qq.inbound.v1",
-  "message_id": "80a11671-4d7f-4c15-a647-a2db2bb5da17",
-  "received_at": "2026-08-13T05:00:00.000+00:00",
-  "sender_id": "10001",
-  "chat_type": "private",
-  "chat_id": "10001",
-  "text": "/oopz 状态"
-}

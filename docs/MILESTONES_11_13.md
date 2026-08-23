@@ -1,6 +1,6 @@
 # Part 2 — Milestones 11–13
 
-> 历史里程碑记录：当前默认值以根目录 README 和 `docs/CURRENT_ARCHITECTURE.md` 为准。
+> **历史归档，不是当前运行说明。** 本文记录当时仅支持 DeepSeek 的开发阶段，所列 `DEEPSEEK_*` 变量、验收状态和功能边界均已被当前通用分析 API 与飞书生产链路替代。当前默认值、模型行为和运维步骤以根目录 README、`docs/CURRENT_ARCHITECTURE.md`、`docs/OPERATIONS.md` 为准。
 
 ## 完成范围
 

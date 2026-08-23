@@ -1,6 +1,6 @@
 # Milestones 7-10: local speech pipeline
 
-> 历史里程碑记录：当前默认值以根目录 README 和 `docs/CURRENT_ARCHITECTURE.md` 为准。
+> **历史归档，不是当前运行说明。** 本文只记录本地语音流水线的开发阶段与验收方法；当前远程控制、分析 API、发布和运维行为以根目录 README、`docs/CURRENT_ARCHITECTURE.md`、`docs/OPERATIONS.md` 为准。
 
 This stage processes an existing capture Session. It does not join OOPZ and does not upload audio.
 

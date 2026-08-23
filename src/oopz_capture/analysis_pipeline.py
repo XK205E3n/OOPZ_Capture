@@ -52,7 +52,6 @@ SHORT_REQUIRED = {
     "open_questions": list,
     "uncertainties": list,
 }
-SHORT_BATCH_REQUIRED = {"summaries": list}
 LONG_REQUIRED = {
     "summary": str,
     "decisions": list,
@@ -71,8 +70,8 @@ FINAL_REQUIRED = {
     "important_moments": list,
     "uncertainties": list,
 }
-ANALYSIS_PIPELINE_VERSION = "2.6.0"
-REPORT_FORMAT_VERSION = "3.6.0"
+ANALYSIS_PIPELINE_VERSION = "2.7.0"
+REPORT_FORMAT_VERSION = "3.7.0"
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 FINAL_THINKING_MAX_TOKENS = 4096
 SHORT_MAX_TOKENS = 1024
@@ -138,12 +137,6 @@ def _window_parallelism(client: JSONModelClient) -> int:
     return workers
 
 
-def _short_batch_size(client: JSONModelClient) -> int:
-    """Batch four short windows only on the production OpenCode Go route."""
-    config = getattr(client, "config", None)
-    return 4 if str(getattr(config, "provider", "")) == OPENCODE_GO_PROVIDER else 1
-
-
 def _analysis_fingerprint(value: AnalyzerInput, profile: dict[str, Any]) -> str:
     serialized = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return sha256(f"{value.fingerprint}\n{serialized}".encode("utf-8")).hexdigest()
@@ -185,13 +178,7 @@ def _acquire_run_lock(path: Path) -> None:
 
 
 def _model_list_item_text(value: Any) -> str:
-    """Recover a readable item when a local model returns an object in a text list.
-
-    Qwen occasionally emits e.g. ``{\"decision\": \"…\"}`` despite the prompt
-    asking for a string array.  This is a representational error, not a reason to
-    discard an otherwise usable five-minute analysis window.  Prefer its human
-    readable values, never identifiers or arbitrary JSON syntax.
-    """
+    """Recover readable text when an API returns an object in a text list."""
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, dict):
@@ -326,26 +313,6 @@ def _short_prompt(value: AnalyzerInput, window: dict[str, Any]) -> tuple[str, st
         'JSON格式示例：{"summary":"...","decisions":[],"action_items":[],"open_questions":[],"uncertainties":[]}。'
     )
     user = "请总结以下300秒时间窗口。JSON证据：\n" + json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
-    return system, user
-
-
-def _short_batch_prompt(value: AnalyzerInput, windows: list[dict[str, Any]]) -> tuple[str, str]:
-    evidence = {
-        "windows": [
-            {"window_id": window["window_id"], "minutes": _minute_grouped_turns(value, window["segments"])}
-            for window in windows
-        ],
-    }
-    system = (
-        _short_system_prompt()
-        + "这是批量任务。输出一个JSON对象且顶层只能包含summaries数组；数组数量、顺序和window_id必须与输入windows完全一致。"
-        "summaries每项必须包含 window_id, summary, decisions, action_items, open_questions, uncertainties；"
-        "除window_id和summary外均为字符串数组。每个窗口必须独立总结，禁止把不同窗口内容合并或互相挪用。"
-        'JSON格式示例：{"summaries":[{"window_id":"...","summary":"...","decisions":[],"action_items":[],"open_questions":[],"uncertainties":[]}]}。'
-    )
-    user = "请依次总结以下多个300秒时间窗口。JSON证据：\n" + json.dumps(
-        evidence, ensure_ascii=False, separators=(",", ":")
-    )
     return system, user
 
 
@@ -611,7 +578,6 @@ def render_final_markdown(
     report_id: str,
     usage_by_stage: dict[str, dict[str, Any]],
     cost_estimate: dict[str, Any],
-    runtime_metrics: dict[str, Any] | None = None,
 ) -> Path:
     recording_start, recording_end = _recording_time_range(value)
     report_title = (
@@ -652,7 +618,7 @@ def render_final_markdown(
             f"用户：{_speaker_nicknames(item['speakers'])}", "",
             item["summary"], "",
         ])
-    _render_usage_summary(lines, usage_by_stage, cost_estimate, runtime_metrics)
+    _render_usage_summary(lines, usage_by_stage, cost_estimate)
     public_lines = [
         f"# {report_title}", "",
         f"## {subtitle}", "",
@@ -672,7 +638,6 @@ def render_final_markdown(
     _render_compact_field(public_lines, "行动项", overview["action_items"])
     _render_compact_field(public_lines, "未解决问题", overview["open_questions"])
     _render_compact_field(public_lines, "重要时间点", overview["important_moments"])
-    _render_compact_field(public_lines, "不确定内容", overview["uncertainties"])
     public_lines.extend(["", "## 每60分钟长期摘要", ""])
     for item in long_values:
         public_lines.extend([
@@ -726,50 +691,6 @@ def _render_pdf_best_effort(
         }
 
 
-def refresh_analysis_report(
-    output: dict[str, Any],
-    value: AnalyzerInput,
-    *,
-    runtime_metrics: dict[str, Any] | None = None,
-    render_pdf: bool = False,
-) -> dict[str, Any]:
-    """Re-render a completed report after an outer benchmark has collected metrics."""
-    result = output["result"]
-    report_path = Path(output["report_path"])
-    usage_by_stage = result["model"]["usage_by_stage"]
-    cost_estimate = result["model"]["cost_estimate"]
-    render_final_markdown(
-        report_path,
-        value,
-        result["summary"],
-        result["short_summaries"],
-        result["long_summaries"],
-        result["report_id"],
-        usage_by_stage,
-        cost_estimate,
-        runtime_metrics,
-    )
-    messages = _write_qq_messages(
-        Path(output["qq_path"]), value, result["report_id"], _text_report_text(report_path)
-    )
-    result["report_format_version"] = REPORT_FORMAT_VERSION
-    result["outputs"]["qq_message_count"] = len(messages)
-    if runtime_metrics is not None:
-        result["runtime_metrics"] = runtime_metrics
-    _atomic_json(Path(output["result_path"]), result)
-    output["result"] = result
-    output["pdf_path"] = None
-    if render_pdf:
-        output["pdf_path"], pdf_error = _render_pdf_best_effort(
-            value, _public_report_path(report_path),
-            f"{result.get('analysis_profile', {}).get('variant', 'default')}-report",
-        )
-        if pdf_error:
-            result.setdefault("errors", []).append(pdf_error)
-            _atomic_json(Path(output["result_path"]), result)
-    return output
-
-
 def _delivery_target(value: AnalyzerInput) -> dict[str, str]:
     request_path = value.session_dir / "request.json"
     if request_path.is_file() and not _is_reparse_point(request_path):
@@ -804,7 +725,7 @@ def _split_report(text: str, max_chars: int = 3000) -> list[str]:
     return chunks or [text]
 
 
-def _write_qq_messages(path: Path, value: AnalyzerInput, report_id: str, report_text: str) -> list[dict[str, Any]]:
+def _write_report_messages(path: Path, value: AnalyzerInput, report_id: str, report_text: str) -> list[dict[str, Any]]:
     pieces = _split_report(report_text)
     target = _delivery_target(value)
     created_at = _iso()
@@ -812,7 +733,7 @@ def _write_qq_messages(path: Path, value: AnalyzerInput, report_id: str, report_
     for index, piece in enumerate(pieces, start=1):
         prefix = f"[最终报告 | Report ID={report_id} | Session ID={value.session_id} | {index}/{len(pieces)}]\n"
         messages.append({
-            "schema_version": "oopz.qq.message.v1",
+            "schema_version": "oopz.controller.message.v1",
             "message_id": str(uuid5(NAMESPACE_URL, f"{report_id}:{REPORT_FORMAT_VERSION}:{index}")),
             "request_id": value.request_id,
             "session_id": value.session_id,
@@ -840,8 +761,6 @@ def _aggregate_usage(*groups: list[dict[str, Any]]) -> dict[str, Any]:
         "api_calls": 0,
     }
     modes = {"disabled": 0, "enabled": 0, "deterministic": 0}
-    local_calls = 0
-    reasoning_unreported_calls = 0
     for group in groups:
         for item in group:
             model = item.get("model") or {}
@@ -851,16 +770,12 @@ def _aggregate_usage(*groups: list[dict[str, Any]]) -> dict[str, Any]:
             if provider == "deterministic":
                 modes["deterministic"] += 1
                 continue
-            if model.get("api_called") is False:
-                local_calls += 1
-            else:
+            if model.get("api_called") is not False:
                 totals["api_calls"] += 1
             thinking = str(model.get("thinking") or "")
             if thinking in modes:
                 modes[thinking] += 1
             usage = model.get("usage") or {}
-            if model.get("reasoning_tokens_unreported") is True:
-                reasoning_unreported_calls += 1
             totals["prompt_tokens"] += int(usage.get("prompt_tokens", 0))
             totals["prompt_cache_hit_tokens"] += int(usage.get("prompt_cache_hit_tokens", 0))
             totals["prompt_cache_miss_tokens"] += int(usage.get("prompt_cache_miss_tokens", 0))
@@ -868,10 +783,6 @@ def _aggregate_usage(*groups: list[dict[str, Any]]) -> dict[str, Any]:
             totals["total_tokens"] += int(usage.get("total_tokens", 0))
             details = usage.get("completion_tokens_details") or {}
             totals["reasoning_tokens"] += int(details.get("reasoning_tokens", 0))
-    if local_calls:
-        totals["local_calls"] = local_calls
-    if reasoning_unreported_calls:
-        totals["reasoning_tokens_unreported_calls"] = reasoning_unreported_calls
     return {**totals, "mode_calls": modes}
 
 
@@ -1169,7 +1080,6 @@ def _render_usage_summary(
     lines: list[str],
     usage_by_stage: dict[str, dict[str, Any]],
     cost_estimate: dict[str, Any],
-    runtime_metrics: dict[str, Any] | None = None,
 ) -> None:
     lines.extend(["## Token 使用与费用估算", ""])
     if cost_estimate.get("status") == "subscription_estimate":
@@ -1245,42 +1155,10 @@ def _render_usage_summary(
         lines.append(
             f"本次请求模型为 `{cost_estimate['requested_model']}`，与计价模型不一致，因此费用不作估算。"
         )
-    has_local = any(int(value.get("local_calls", 0)) for value in usage_by_stage.values())
-    if has_local:
-        lines.append(
-            "本报告同时包含本地模型Token；本地调用仅用于吞吐对比，不按DeepSeek单价计费，"
-            "费用表只累计实际由 `deepseek-v4-flash` 返回的计费记录。"
-        )
-    reasoning_unreported = int(usage_by_stage["total"].get("reasoning_tokens_unreported_calls", 0))
-    if reasoning_unreported:
-        lines.append(
-            f"有 {reasoning_unreported} 次本地思考调用；Ollama未拆分报告思考Token，"
-            "表格中的“其中推理”不包含这些未单列的本地思考Token。"
-        )
-    if runtime_metrics is not None:
-        gpu = runtime_metrics.get("gpu") if isinstance(runtime_metrics, dict) else None
-        has_local = any(int(value.get("local_calls", 0) or 0) for value in usage_by_stage.values())
-        if isinstance(gpu, dict) and not has_local:
-            lines.append("本路线未调用本地模型；GPU采样不计入模型或费用消耗。")
-        elif isinstance(gpu, dict) and gpu.get("available"):
-            lines.append(
-                "本地运行概况：整张 NVIDIA GPU 平均/峰值利用率 "
-                f"{gpu.get('average_utilization_pct', '—')}% / {gpu.get('peak_utilization_pct', '—')}%，"
-                f"平均/峰值功率 {gpu.get('average_power_w', '—')} W / {gpu.get('peak_power_w', '—')} W，"
-                f"估算能耗 {gpu.get('estimated_energy_wh', '—')} Wh。"
-            )
-            lines.append("GPU 指标为整张显卡采样，包含其他桌面负载；不能等同于模型进程独占消耗。")
-        elif isinstance(gpu, dict):
-            lines.append(f"本地 GPU 运行概况：本次未取得有效采样（{gpu.get('reason', '未知原因')}）。")
-    lines.extend(["", (
-        "| 阶段 | API调用 | 本地调用 | 输入 | 缓存命中输入 | 缓存未命中输入 | 未分类输入 | 输出 | 其中推理 | 总Token | 输入费用 | 输出费用 | 合计 |"
-        if has_local else
-        "| 阶段 | API调用 | 输入 | 缓存命中输入 | 缓存未命中输入 | 未分类输入 | 输出 | 其中推理 | 总Token | 输入费用 | 输出费用 | 合计 |"
-    ), (
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
-        if has_local else
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
-    )])
+    lines.extend(["",
+        "| 阶段 | API调用 | 输入 | 缓存命中输入 | 缓存未命中输入 | 未分类输入 | 输出 | 其中推理 | 总Token | 输入费用 | 输出费用 | 合计 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+    ])
     stage_labels = (
         ("short_summaries", "300秒总结"),
         ("long_summaries", "60分钟摘要"),
@@ -1296,9 +1174,8 @@ def _render_usage_summary(
             total_cost = f"¥{cost['estimated_cost_rmb']:.6f}"
         else:
             input_cost = output_cost = total_cost = "—"
-        local_column = f" {usage.get('local_calls', 0)} |" if has_local else ""
         lines.append(
-            f"| {label} | {usage['api_calls']} |{local_column} {usage['prompt_tokens']} | "
+            f"| {label} | {usage['api_calls']} | {usage['prompt_tokens']} | "
             f"{usage['prompt_cache_hit_tokens']} | {usage['prompt_cache_miss_tokens']} | "
             f"{cost['prompt_cache_unclassified_tokens']} | {usage['completion_tokens']} | "
             f"{usage['reasoning_tokens']} | {usage['total_tokens']} | {input_cost} | {output_cost} | {total_cost} |"
@@ -1335,13 +1212,13 @@ def _render_usage_summary(
 
 def _variant_paths(value: AnalyzerInput, variant: str) -> tuple[Path, Path, str]:
     if variant == "default":
-        return value.session_dir / "analysis", value.session_dir / "handoff" / "qq_messages.jsonl", "analysis"
+        return value.session_dir / "analysis", value.session_dir / "handoff" / "report_messages.jsonl", "analysis"
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", variant):
         raise ValueError("analysis variant must contain only lowercase letters, digits, dot, underscore, or dash")
     relative = f"analysis_variants/{variant}"
     return (
         value.session_dir / "analysis_variants" / variant,
-        value.session_dir / "handoff" / f"qq_messages.{variant}.jsonl",
+        value.session_dir / "handoff" / f"report_messages.{variant}.jsonl",
         relative,
     )
 
@@ -1356,15 +1233,14 @@ def run_analysis(
 ) -> dict[str, Any]:
     prepared = prepare_analysis(handoff_path)
     value = load_analyzer_input(handoff_path)
-    analysis_dir, qq_path, output_prefix = _variant_paths(value, variant)
+    analysis_dir, report_messages_path, output_prefix = _variant_paths(value, variant)
     lock_path = analysis_dir / ".run.lock"
     lifecycle_path = analysis_dir / "lifecycle.json"
     checkpoint_path = analysis_dir / "checkpoint.json"
     analysis_profile = _client_profile(client)
     window_parallelism = _window_parallelism(client)
-    short_batch_size = _short_batch_size(client)
     analysis_profile["window_parallelism"] = window_parallelism
-    analysis_profile["short_batch_size"] = short_batch_size
+    analysis_profile["short_request_mode"] = "one_request_per_window"
     if variant != "default":
         analysis_profile["variant"] = variant
     analysis_fingerprint = _analysis_fingerprint(value, analysis_profile)
@@ -1378,8 +1254,7 @@ def run_analysis(
             variant=variant,
             short_completed=0,
             short_total=len(windows["short_windows"]),
-            short_batch_size=short_batch_size,
-            short_batch_total=(len(windows["short_windows"]) + short_batch_size - 1) // short_batch_size,
+            short_request_total=len(windows["short_windows"]),
             long_completed=0,
             long_total=len(windows["long_windows"]),
             parallelism=window_parallelism,
@@ -1399,7 +1274,7 @@ def run_analysis(
             })
         if (
             checkpoint.get("final_report_completed") is True
-            and result_path.is_file() and report_path.is_file() and qq_path.is_file()
+            and result_path.is_file() and report_path.is_file() and report_messages_path.is_file()
         ):
             existing = _read_json(result_path)
             if existing.get("analysis_fingerprint") == analysis_fingerprint and existing.get("status") == "completed":
@@ -1435,17 +1310,17 @@ def run_analysis(
                         usage_by_stage,
                         cost_estimate,
                     )
-                    messages = _write_qq_messages(
-                        qq_path,
+                    messages = _write_report_messages(
+                        report_messages_path,
                         value,
                         existing["report_id"],
                         _text_report_text(report_path),
                     )
                     existing["report_format_version"] = REPORT_FORMAT_VERSION
-                    existing["outputs"]["qq_message_count"] = len(messages)
+                    existing["outputs"]["report_message_count"] = len(messages)
                     _atomic_json(result_path, existing)
                     lifecycle = _read_json(lifecycle_path)
-                    lifecycle.update({"updated_at": _iso(), "qq_messages": len(messages)})
+                    lifecycle.update({"updated_at": _iso(), "report_messages": len(messages)})
                     _atomic_json(lifecycle_path, lifecycle)
                 pdf_path = None
                 pdf_error = None
@@ -1460,7 +1335,7 @@ def run_analysis(
                     "result": existing,
                     "result_path": result_path,
                     "report_path": report_path,
-                    "qq_path": qq_path,
+                    "report_messages_path": report_messages_path,
                     "reused": True,
                     "rerendered": rerendered,
                     "pdf_path": pdf_path,
@@ -1468,122 +1343,51 @@ def run_analysis(
                 }
 
         lifecycle = _read_json(lifecycle_path)
-        for stale_field in ("completed_at", "report_id", "short_summaries", "long_summaries", "qq_messages"):
+        for stale_field in ("completed_at", "report_id", "short_summaries", "long_summaries", "report_messages"):
             lifecycle.pop(stale_field, None)
         lifecycle.update({"status": "analyzing_short_windows", "updated_at": _iso(), "failure": None})
         _atomic_json(lifecycle_path, lifecycle)
 
         short_values_by_id: dict[str, dict[str, Any]] = {}
         short_dir = analysis_dir / "short"
-        def summarize_short_batch(batch: list[dict[str, Any]]) -> list[tuple[dict[str, Any], dict[str, Any]]]:
-            completed: dict[str, dict[str, Any]] = {}
-            pending: list[dict[str, Any]] = []
-            for window in batch:
-                output = short_dir / f"{window['index']:06d}-{window['window_id']}.json"
-                if _summary_file_valid(
-                    output, analysis_fingerprint, window["window_id"], "oopz.analysis.short_summary.v1"
-                ):
-                    completed[window["window_id"]] = _read_json(output)
-                elif window["silent"]:
-                    summary = _silent_short(value, window, analysis_fingerprint)
-                    _atomic_json(output, summary)
-                    completed[window["window_id"]] = summary
-                else:
-                    pending.append(window)
-            if pending:
-                def request_individually() -> list[dict[str, Any]]:
-                    items: list[dict[str, Any]] = []
-                    for window in pending:
-                        system, user = _short_prompt(value, window)
-                        response = client.complete_json(
-                            system_prompt=system, user_prompt=user, required_keys=SHORT_REQUIRED,
-                            thinking="disabled", reasoning_effort=None, max_tokens=SHORT_MAX_TOKENS,
-                        )
-                        items.append({
-                            "window": window,
-                            "content": response["content"],
-                            "metadata": response["metadata"],
-                        })
-                    return items
+        def summarize_short(window: dict[str, Any]) -> dict[str, Any]:
+            output = short_dir / f"{window['index']:06d}-{window['window_id']}.json"
+            if _summary_file_valid(
+                output, analysis_fingerprint, window["window_id"], "oopz.analysis.short_summary.v1"
+            ):
+                return _read_json(output)
+            if window["silent"]:
+                summary = _silent_short(value, window, analysis_fingerprint)
+            else:
+                system, user = _short_prompt(value, window)
+                response = client.complete_json(
+                    system_prompt=system,
+                    user_prompt=user,
+                    required_keys=SHORT_REQUIRED,
+                    thinking="disabled",
+                    reasoning_effort=None,
+                    max_tokens=SHORT_MAX_TOKENS,
+                )
+                summary = _make_short(value, window, response, analysis_fingerprint)
+            _atomic_json(output, summary)
+            return summary
 
-                if short_batch_size == 1:
-                    response_items = request_individually()
-                else:
-                    try:
-                        system, user = _short_batch_prompt(value, pending)
-                        response = client.complete_json(
-                            system_prompt=system, user_prompt=user, required_keys=SHORT_BATCH_REQUIRED,
-                            thinking="disabled", reasoning_effort=None, max_tokens=SHORT_MAX_TOKENS * len(pending),
-                        )
-                        raw_items = response["content"]["summaries"]
-                        if not isinstance(raw_items, list) or len(raw_items) != len(pending):
-                            raise ValueError("short summary batch returned an incorrect item count")
-                        by_id = {
-                            str(item.get("window_id") or ""): item
-                            for item in raw_items if isinstance(item, dict)
-                        }
-                        expected_ids = [window["window_id"] for window in pending]
-                        if set(by_id) != set(expected_ids):
-                            raise ValueError("short summary batch returned missing or unexpected window_id values")
-                        batch_request_id = str(uuid5(
-                            NAMESPACE_URL, "short-batch:" + analysis_fingerprint + ":" + ":".join(expected_ids)
-                        ))
-                        response_items = []
-                        for position, window in enumerate(pending):
-                            metadata = dict(response["metadata"])
-                            metadata.update({
-                                "batch_request_id": batch_request_id,
-                                "batch_size": len(pending),
-                                "usage_counted": position == 0,
-                            })
-                            if position:
-                                metadata["usage"] = {}
-                                metadata["usage_by_request"] = []
-                            response_items.append({
-                                "window": window,
-                                "content": _normalized_content(by_id[window["window_id"]], SHORT_REQUIRED),
-                                "metadata": metadata,
-                            })
-                    except Exception as batch_error:
-                        _report_progress(
-                            progress_reporter,
-                            stage="short_batch_fallback",
-                            batch_size=len(pending),
-                            error=f"{type(batch_error).__name__}: {str(batch_error)[:300]}",
-                        )
-                        response_items = request_individually()
-                for item in response_items:
-                    window = item["window"]
-                    summary = _make_short(
-                        value, window, {"content": item["content"], "metadata": item["metadata"]},
-                        analysis_fingerprint,
-                    )
-                    output = short_dir / f"{window['index']:06d}-{window['window_id']}.json"
-                    _atomic_json(output, summary)
-                    completed[window["window_id"]] = summary
-            return [(window, completed[window["window_id"]]) for window in batch]
-
-        short_batches = [
-            windows["short_windows"][index:index + short_batch_size]
-            for index in range(0, len(windows["short_windows"]), short_batch_size)
-        ]
         with ThreadPoolExecutor(max_workers=window_parallelism, thread_name_prefix="oopz-short") as executor:
             futures = {
-                executor.submit(summarize_short_batch, batch): batch
-                for batch in short_batches
+                executor.submit(summarize_short, window): window
+                for window in windows["short_windows"]
             }
-            completed_count = 0
-            for future in as_completed(futures):
-                for window, summary in future.result():
-                    completed_count += 1
-                    short_values_by_id[window["window_id"]] = summary
-                    if window["window_id"] not in checkpoint["completed_short_window_ids"]:
-                        checkpoint["completed_short_window_ids"].append(window["window_id"])
-                        _save_checkpoint(checkpoint_path, checkpoint)
-                    _report_progress(
-                        progress_reporter, stage="short", completed=completed_count,
-                        total=len(windows["short_windows"]), window_index=window["index"],
-                    )
+            for completed_count, future in enumerate(as_completed(futures), start=1):
+                window = futures[future]
+                summary = future.result()
+                short_values_by_id[window["window_id"]] = summary
+                if window["window_id"] not in checkpoint["completed_short_window_ids"]:
+                    checkpoint["completed_short_window_ids"].append(window["window_id"])
+                    _save_checkpoint(checkpoint_path, checkpoint)
+                _report_progress(
+                    progress_reporter, stage="short", completed=completed_count,
+                    total=len(windows["short_windows"]), window_index=window["index"],
+                )
         short_values = [short_values_by_id[window["window_id"]] for window in windows["short_windows"]]
         write_jsonl(analysis_dir / "short_summaries.jsonl", short_values)
 
@@ -1700,7 +1504,7 @@ def run_analysis(
             )
         _report_progress(progress_reporter, stage="report_rendered", pdf_path=str(pdf_path or ""))
         report_text = _text_report_text(report_path)
-        messages = _write_qq_messages(qq_path, value, report_id, report_text)
+        messages = _write_report_messages(report_messages_path, value, report_id, report_text)
         completed_at = _iso()
         result = {
             "schema_version": "oopz.analyzer.result.v1",
@@ -1729,8 +1533,8 @@ def run_analysis(
                 "human_summary": f"{output_prefix}/summary.md",
                 "short_summaries": f"{output_prefix}/short_summaries.jsonl",
                 "long_summaries": f"{output_prefix}/long_summaries.jsonl",
-                "qq_messages": str(qq_path.relative_to(value.session_dir)).replace("\\", "/"),
-                "qq_message_count": len(messages),
+                "report_messages": str(report_messages_path.relative_to(value.session_dir)).replace("\\", "/"),
+                "report_message_count": len(messages),
             },
             "errors": [pdf_error] if pdf_error else [],
         }
@@ -1739,13 +1543,13 @@ def run_analysis(
         checkpoint["report_id"] = report_id
         _save_checkpoint(checkpoint_path, checkpoint)
         lifecycle.update({
-            "status": "ready_for_qq",
+            "status": "ready_for_delivery",
             "updated_at": completed_at,
             "completed_at": completed_at,
             "report_id": report_id,
             "short_summaries": len(short_values),
             "long_summaries": len(long_values),
-            "qq_messages": len(messages),
+            "report_messages": len(messages),
             "failure": None,
         })
         _atomic_json(lifecycle_path, lifecycle)
@@ -1754,7 +1558,7 @@ def run_analysis(
             "result": result,
             "result_path": result_path,
             "report_path": report_path,
-            "qq_path": qq_path,
+            "report_messages_path": report_messages_path,
             "reused": False,
             "pdf_path": pdf_path,
             "pdf_error": pdf_error,
