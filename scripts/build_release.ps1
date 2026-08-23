@@ -56,8 +56,12 @@ try {
             [System.IO.Compression.ZipArchiveMode]::Create
         )
         try {
+            $stagingPrefix = $staging.TrimEnd('\') + '\'
             Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
-                $entryName = [System.IO.Path]::GetRelativePath($staging, $_.FullName).Replace('\', '/')
+                if (-not $_.FullName.StartsWith($stagingPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                    throw "Release source escaped the staging directory: $($_.FullName)"
+                }
+                $entryName = $_.FullName.Substring($stagingPrefix.Length).Replace('\', '/')
                 [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
                     $archive,
                     $_.FullName,
