@@ -9,12 +9,12 @@
 | 项目 | 本地开发环境 | 生产服务器 | 是否需同步 |
 | --- | --- | --- | --- |
 | Git 提交 | `main` 跟踪私有 GitHub 仓库；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：发布并部署首个 GitHub Release 后登记发布 ID |
-| 应用版本 | `0.11.1` | 尚未部署 | 是 |
+| 应用版本 | `0.11.2` | 尚未部署 | 是 |
 | 操作系统 | Windows | 目标为 Windows Server 2022/2025 x64 Desktop Experience | 待实施 |
 | Python | 3.12.13 | 未安装/未确认 | 是：建议 3.12 x64 |
 | Node.js | 本地已安装，版本待确认 | 未安装/未确认 | 是：建议当前 LTS x64 |
 | 应用依赖 | `pip install -e ".[speech,feishu]"`、`npm ci` | 未安装 | 是 |
-| ASR 模型 | `models/SenseVoiceSmall`（不进 Git） | 未复制 | 是：首次部署单独传输并校验 |
+| ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 计划由服务器从魔搭 `iic/SenseVoiceSmall` 自动下载固定修订版并校验 | 首次安装待实施 |
 | 生产配置 | 本地 `.env`（不进 Git） | 尚未创建 | 是：服务器独立配置，不复制本地密钥文件作为长期同步方式 |
 | 输出/状态/日志 | `output`、`feishu_state`、`logs` | 尚未创建 | 否：属于各环境持久数据，禁止互相覆盖 |
 | 启动方式 | 交互式批处理 | 目标为任务计划程序调用稳定 `current` 路径 | 待实施 |
@@ -51,7 +51,7 @@ C:\OOPZ\
 - [x] 将已审查、测试的当前版本生成并上传为首个 GitHub Release（Release ID 以发布清单为准）。
 - [x] 建立私有 Git 远端并推送 `main`。
 - [ ] 准备 Windows Server，安装 Python 3.12 x64、Node.js LTS、Git、Chrome/Edge。
-- [ ] 建立 `C:\OOPZ\shared`，安全创建生产 `.env`，单独复制并校验 SenseVoiceSmall 模型。
+- [ ] 建立 `C:\OOPZ\shared`，安全创建生产 `.env`，由安装脚本从魔搭社区下载并校验 SenseVoiceSmall。
 - [ ] 本地生成首个发布包及 SHA-256，传到 `C:\OOPZ\artifacts`。
 - [ ] 执行服务器安装脚本，验证飞书长连接、录音、转写、分析和发布。
 - [ ] 创建开机/登录启动任务，并执行一次服务器重启演练。

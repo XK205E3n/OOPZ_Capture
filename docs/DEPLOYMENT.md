@@ -10,7 +10,7 @@
 
 1. 使用私有 GitHub、GitLab 或自建 Git 建立 `origin`。主分支只接收通过测试的提交；不要提交 `.env`、模型和运行数据。
 2. 准备 Windows Server 2022/2025 x64 Desktop Experience（建议 8 vCPU/16 GiB；最低 4 vCPU/8 GiB），安装 Python 3.12 x64、Node.js LTS、Chrome 或 Edge，并启用系统管理页面文件。
-3. 在服务器创建 `C:\OOPZ\shared\config`、`models`、`output`、`feishu_state`、`logs` 和 `C:\OOPZ\artifacts`。从 `.env.example` 创建 `shared\config\.env`；通过 RDP、SFTP 或云盘加密通道单独上传 `SenseVoiceSmall` 到 `shared\models`。
+3. 在服务器创建 `C:\OOPZ\shared\config`、`models`、`output`、`feishu_state`、`logs` 和 `C:\OOPZ\artifacts`。从 `.env.example` 创建 `shared\config\.env`。首次安装时，服务器自动从魔搭社区官方 `iic/SenseVoiceSmall` 下载项目固定修订版到 `shared\models` 并校验 SHA-256；不从本地复制模型。
 4. 云防火墙只开放管理所需的 RDP，并限制来源 IP。应用本身只需出站访问 OOPZ、飞书和分析 API，不开放业务入站端口。
 
 ## 本地开发与发布
@@ -26,7 +26,7 @@ git commit
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1
 ```
 
-脚本会拒绝脏工作区，重新运行测试，从 `HEAD` 生成 `artifacts\oopz-capture-v<version>-<commit>.zip` 和同名 `.sha256`。只上传这两个文件；模型仅首次部署或模型版本变化时另行传输。
+脚本会拒绝脏工作区，重新运行测试，从 `HEAD` 生成 `artifacts\oopz-capture-v<version>-<commit>.zip` 和同名 `.sha256`。只上传这两个文件；模型不进入发布包，由服务器从指定开源仓库获取。
 
 推荐把 ZIP 和 SHA-256 作为同一标签的 GitHub Release 附件。服务器可在完成私有仓库认证后下载指定版本：
 
@@ -46,7 +46,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\admin\install_releas
   -Artifact C:\OOPZ\artifacts\<artifact.zip>
 ```
 
-安装脚本执行以下事务：校验 SHA-256、解压到新版本目录、创建独立虚拟环境、安装锁定声明范围内的 Python/Node 依赖、连接共享配置/模型/数据、运行导入检查、停止旧进程、切换 `current`、启动新版本并等待飞书长连接就绪。健康检查失败时自动把 `current` 切回旧版本并重启。
+安装脚本执行以下事务：校验发布包 SHA-256、解压到新版本目录、创建独立虚拟环境、安装声明范围内的 Python 依赖、从魔搭社区下载或校验固定修订版 SenseVoiceSmall、安装锁定的 Node 依赖、连接共享配置/模型/数据、运行导入检查、停止旧进程、切换 `current`、启动新版本并等待飞书长连接就绪。模型下载或校验失败不会切换版本；切换后的健康检查失败时自动把 `current` 切回旧版本并重启。
 
 当前 Python 依赖是版本范围而不是完整 lock，因此不同日期部署可能解析出不同的间接依赖。正式长期运行前应增加受审查的 Python 锁文件；在此之前，发布记录必须保留实际 `pip freeze`（安装脚本写入每个发布目录的 `DEPLOYED_PYTHON_PACKAGES.txt`）。Node 依赖由 `pnpm-lock.yaml` 锁定，服务器通过固定版本的 pnpm 和 `--frozen-lockfile` 安装。
 

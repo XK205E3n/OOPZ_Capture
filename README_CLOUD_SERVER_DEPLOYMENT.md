@@ -14,7 +14,7 @@
   → 健康检查；失败则回滚
 ```
 
-GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 ZIP 和校验文件。生产 `.env`、SenseVoice 模型、会话数据、飞书状态和日志永远不进入 GitHub。
+GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 ZIP 和校验文件。生产 `.env`、SenseVoice 模型、会话数据、飞书状态和日志永远不进入 GitHub。SenseVoice 模型由服务器在首次安装时从魔搭社区官方仓库下载并校验。
 
 不要在服务器直接修改 `current`、`releases` 或执行无版本约束的 `git pull`。生产运行的代码必须能对应到一个 Release ID 和完整 Git 提交。
 
@@ -23,7 +23,7 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 - Windows Server 2022/2025 x64 Desktop Experience；
 - 最低 4 vCPU、8 GiB 内存、80 GiB SSD，建议 8 vCPU、16 GiB 内存、120 GiB SSD；
 - 系统管理页面文件，系统盘长期至少保留 20 GiB；
-- 稳定出站网络，可访问 GitHub、PyPI、npm、OOPZ、飞书和分析 API；
+- 稳定出站网络，可访问 GitHub、PyPI、npm、魔搭社区、OOPZ、飞书和分析 API；
 - 不需要 GPU，也不需要开放应用业务入站端口；
 - RDP 仅允许可信管理 IP。
 
@@ -154,21 +154,26 @@ notepad C:\OOPZ\shared\config\.env
 
 生产 `.env` 只保存在 `C:\OOPZ\shared\config\.env`。不要用 Git 在本地和服务器之间同步它。飞书应用的完整配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。
 
-## 8. 复制 SenseVoice 模型
+## 8. SenseVoice 模型自动下载
 
-通过 RDP 磁盘映射、SFTP 或云厂商的加密文件传输功能，把本地 `models\SenseVoiceSmall` 复制到：
+不要从开发机复制模型，也不要把模型上传 GitHub。首次执行第 9 节的安装脚本时，服务器会通过发布虚拟环境中的 ModelScope，从魔搭社区官方模型仓库下载：
 
 ```text
-C:\OOPZ\shared\models\SenseVoiceSmall
+模型：iic/SenseVoiceSmall
+来源：https://modelscope.cn/models/iic/SenseVoiceSmall
+许可证：Apache-2.0
+目标：C:\OOPZ\shared\models\SenseVoiceSmall
 ```
 
-确认：
+下载脚本固定使用当前项目审核过的模型修订版，并校验 `model.pt`、配置、CMVN 和分词模型等 5 个必需文件的 SHA-256。下载或校验失败会中止安装，不会切换 `current`。成功后会写入：
 
-```powershell
-Test-Path C:\OOPZ\shared\models\SenseVoiceSmall\model.pt
+```text
+C:\OOPZ\shared\models\SenseVoiceSmall\MODEL_SOURCE.json
 ```
 
-结果必须为 `True`。模型不随普通代码更新重复传输；只有模型版本变化时才单独更新并记录校验值。
+其中记录模型 ID、固定修订版、来源、许可证和文件哈希，不包含凭据。该模型约 0.94 GB，首次安装必须保证魔搭社区网络可访问并预留足够时间；后续版本会复用已通过校验的共享模型，不重复下载。
+
+如果模型目录已经存在但文件不完整或哈希不一致，安装会拒绝继续。不要用未知来源文件覆盖；应先保留现场并确认原因，再由运维人员移走无效目录后重新执行安装。
 
 ## 9. 安装并切换版本
 
@@ -184,14 +189,15 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 
 1. 校验发布包 SHA-256；
 2. 解压到新的 `releases\<release-id>`；
-3. 创建该版本独立的 Python 虚拟环境和 Node 依赖；
-4. 将 `.env`、模型、输出、状态和日志连接到 `shared`；
-5. 运行 Python 导入检查；
-6. 停止旧网关并切换 `current`；
-7. 启动新网关并等待飞书长连接就绪；
-8. 健康检查失败时自动恢复旧版本。
+3. 创建该版本独立的 Python 虚拟环境；
+4. 从魔搭社区下载或校验固定修订版 SenseVoiceSmall；
+5. 安装 Node 依赖，并将 `.env`、模型、输出、状态和日志连接到 `shared`；
+6. 运行 Python 导入检查；
+7. 停止旧网关并切换 `current`；
+8. 启动新网关并等待飞书长连接就绪；
+9. 健康检查失败时自动恢复旧版本。
 
-首次安装依赖耗时可能较长。不要在安装过程中关闭 PowerShell 或重启服务器。
+首次安装依赖和约 0.94 GB 模型耗时可能较长。不要在安装过程中关闭 PowerShell 或重启服务器。
 
 ## 10. 部署后验证
 
@@ -245,7 +251,7 @@ Get-Content C:\OOPZ\shared\logs\feishu_runtime.err.log -Tail 100
 → 构建新 ZIP/SHA-256 → 创建新 GitHub Release
 ```
 
-服务器更新只需要重复第 5、6、9、10 节。生产 `.env`、模型和业务数据保持不变。
+服务器更新只需要重复第 5、6、9、10 节。生产 `.env`、已校验模型和业务数据保持不变。模型修订版只有在项目代码、校验值和部署变更记录同时更新时才会变化。
 
 如果配置契约发生变化，先按新版本 `.env.example` 人工合并到生产 `.env`，禁止用模板直接覆盖生产文件。
 
@@ -272,6 +278,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 - 云防火墙不开放应用业务入站端口；
 - RDP 仅允许可信管理 IP，并启用强密码和多因素认证；
 - GitHub、飞书、OOPZ 和分析服务凭据不写进仓库或命令历史；
+- 语音模型只从项目指定的官方开源仓库获取并执行哈希校验；
 - 生产服务器不作为开发机，不在服务器热修代码；
 - 每个线上版本必须能追溯到 GitHub Release、SHA-256 和完整 Git 提交；
 - 删除旧 Release 目录前至少保留当前版和两个经过验证的回滚版本，并确认业务数据备份有效。

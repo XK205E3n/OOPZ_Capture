@@ -50,6 +50,8 @@ OOPZ_LOGIN_PASSWORD=...
 
 当前发布脚本和运维入口是 Windows PowerShell/批处理，PDF 渲染也显式查找 Windows Chrome/Edge，因此不改代码时应使用 64 位 Windows Server 2022 或更新版本，并安装 Chrome 或 Edge。服务器只需主动访问 OOPZ、飞书和分析 API，不需要开放业务入站端口。
 
+首次安装还需允许出站访问魔搭社区。安装脚本会从官方 `iic/SenseVoiceSmall` 下载项目固定修订版并校验必需文件 SHA-256；模型保存在 `C:\OOPZ\shared\models\SenseVoiceSmall`，不通过 GitHub、本地复制或发布包分发。
+
 最低可接受规格：
 
 ```text

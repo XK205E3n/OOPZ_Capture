@@ -28,7 +28,6 @@ $currentPath = Join-Path $installRootPath 'current'
 $envPath = Join-Path $sharedRoot 'config\.env'
 $modelPath = Join-Path $sharedRoot 'models\SenseVoiceSmall'
 if (-not (Test-Path -LiteralPath $envPath -PathType Leaf)) { throw "Production config is missing: $envPath" }
-if (-not (Test-Path -LiteralPath $modelPath -PathType Container)) { throw "ASR model is missing: $modelPath" }
 
 $inspectRoot = Join-Path $installRootPath ('.inspect-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $inspectRoot | Out-Null
@@ -62,6 +61,11 @@ try {
     try {
         & $releasePython -m pip install -e '.[speech,feishu]'
         if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed.' }
+        & $releasePython (Join-Path $releasePath 'scripts\download_sensevoice_model.py') --target $modelPath
+        if ($LASTEXITCODE -ne 0) { throw 'SenseVoiceSmall download or checksum verification failed.' }
+        if (-not (Test-Path -LiteralPath (Join-Path $modelPath 'model.pt') -PathType Leaf)) {
+            throw "SenseVoiceSmall setup did not create the expected model: $modelPath"
+        }
         & npx.cmd --yes pnpm@10.15.0 install --frozen-lockfile --ignore-scripts
         if ($LASTEXITCODE -ne 0) { throw 'Node dependency installation failed.' }
         & $releasePython -m pip freeze | Set-Content -LiteralPath (Join-Path $releasePath 'DEPLOYED_PYTHON_PACKAGES.txt') -Encoding utf8
