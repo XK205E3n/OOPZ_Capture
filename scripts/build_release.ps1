@@ -50,7 +50,47 @@ try {
             source = 'clean committed HEAD via git archive'
         }
         $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging 'RELEASE_MANIFEST.json') -Encoding utf8
-        Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $artifact -CompressionLevel Optimal
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $archive = [System.IO.Compression.ZipFile]::Open(
+            $artifact,
+            [System.IO.Compression.ZipArchiveMode]::Create
+        )
+        try {
+            Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
+                $entryName = [System.IO.Path]::GetRelativePath($staging, $_.FullName).Replace('\', '/')
+                [System.IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
+                    $archive,
+                    $_.FullName,
+                    $entryName,
+                    [System.IO.Compression.CompressionLevel]::Optimal
+                ) | Out-Null
+            }
+        }
+        finally {
+            $archive.Dispose()
+        }
+
+        $verification = [System.IO.Compression.ZipFile]::OpenRead($artifact)
+        try {
+            foreach ($requiredEntry in @(
+                'RELEASE_MANIFEST.json',
+                'scripts/install_release.ps1',
+                'scripts/download_sensevoice_model.py'
+            )) {
+                if ($null -eq $verification.GetEntry($requiredEntry)) {
+                    throw "Release entry is missing: $requiredEntry"
+                }
+            }
+            $blockedEntries = @($verification.Entries | Where-Object {
+                $_.FullName -match '(^|[\\/])(\.env$|\.venv[\\/]|models[\\/]|output[\\/]|feishu_state[\\/]|logs[\\/]|node_modules[\\/]|artifacts[\\/])'
+            })
+            if ($blockedEntries.Count -gt 0) {
+                throw "Release contains protected runtime content: $($blockedEntries[0].FullName)"
+            }
+        }
+        finally {
+            $verification.Dispose()
+        }
     }
     finally {
         if (Test-Path -LiteralPath $temporaryRoot) {
