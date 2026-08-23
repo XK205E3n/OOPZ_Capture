@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-08-22",
+  "reviewed_head": "cdfe7408e8ae011e9897ab95fbde3035754b769a",
+  "notes": "只记录已人工复核的误报指纹和必须隔离的路径，不记录任何匹配文本或密钥值。指纹变化后必须重新复核。",
+  "ignored_paths": [
+    ".env",
+    ".venv/check",
+    "models/check",
+    "output/check",
+    "feishu_state/check",
+    "logs/check",
+    "tmp/check",
+    "node_modules/check",
+    "artifacts/check"
+  ],
+  "history_pathspecs": [
+    ".env",
+    "*.pem",
+    "*.key",
+    "models/**",
+    "output/**",
+    "feishu_state/**",
+    "logs/**"
+  ],
+  "large_file_threshold_bytes": 5242880,
+  "known_findings": [
+    {
+      "path": "docs/MILESTONES_11_13.md",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "f92d73e875de47a8",
+      "reason": "文档中的短占位示例，不是真实 API Key。"
+    },
+    {
+      "path": "src/oopz_capture/deepseek_client.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "5e08830f0254af73",
+      "reason": "从进程环境读取 API Key 的代码引用。"
+    },
+    {
+      "path": "src/oopz_capture/deepseek_client.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "568d5311b812b9cf",
+      "reason": "把局部 API Key 变量传给客户端，不含常量密钥。"
+    },
+    {
+      "path": "src/oopz_capture/feishu_cli.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "d53e3a08e80d561c",
+      "reason": "把局部 app_secret 变量传给飞书连接对象。"
+    },
+    {
+      "path": "src/oopz_capture/feishu_cli.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "368b10dd29bb260e",
+      "reason": "从进程环境读取飞书应用密钥的代码引用；同一指纹可能在本文件多次出现。"
+    },
+    {
+      "path": "src/oopz_capture/feishu_cli.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "bf8a416121b886ae",
+      "reason": "把局部 app_secret 变量传给飞书 SDK，不含常量密钥。"
+    },
+    {
+      "path": "src/oopz_capture/feishu_cli.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "5c00172c02767321",
+      "reason": "把局部 app_secret 变量传给配置对象，不含常量密钥。"
+    },
+    {
+      "path": "src/oopz_capture/feishu_cli.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "e89454ed2d43ee11",
+      "reason": "把已加载的 app_secret 变量传给 SDK，不含常量密钥。"
+    },
+    {
+      "path": "src/oopz_capture/feishu_gateway.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "368b10dd29bb260e",
+      "reason": "从进程环境读取飞书应用密钥的代码引用。"
+    },
+    {
+      "path": "tests/test_feishu_cli.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "e79e64f2bad103a3",
+      "reason": "单元测试使用的固定虚构值。"
+    },
+    {
+      "path": "tests/test_final_m11_13_fixes.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "d3e6e7200c789f09",
+      "reason": "单元测试使用的固定虚构值。"
+    },
+    {
+      "path": "tests/test_settings.py",
+      "signature": "nonempty-secret-assignment",
+      "fingerprint": "52ff0e455cd363a8",
+      "reason": "单元测试使用的固定虚构值。"
+    }
+  ]
+}

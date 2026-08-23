@@ -22,9 +22,9 @@ OOPZ Capture 用于录制 OOPZ 语音频道、分片转写并生成会话报告�
 1. 复制 `.env.example` 为 `.env`，至少填写飞书应用、OOPZ 手机号/密码和分析 API Key；不要提交 `.env`。
 2. 安装依赖：`pip install -e ".[speech,feishu]"`。
 3. 确认 `models/SenseVoiceSmall/model.pt` 存在，并安装 64 位 Chrome 或 Edge 供 OOPZ 浏览器音频和 PDF 渲染使用。
-4. 运行 [启动OOPZ全流程.bat](</D:/Codex/OOPZ_Capture/启动OOPZ全流程.bat>)。
+4. 运行 [启动OOPZ全流程.bat](启动OOPZ全流程.bat)。
 
-启动后会打开两个可见窗口：飞书收发记录，以及录音/转写/分析进度。首次启动会在群内发送启动提示与帮助；重启只发送生命周期状态，不重复帮助。关闭和重启分别使用 [一键关闭OOPZ全流程.bat](</D:/Codex/OOPZ_Capture/一键关闭OOPZ全流程.bat>)、[一键重启OOPZ全流程.bat](</D:/Codex/OOPZ_Capture/一键重启OOPZ全流程.bat>)。
+启动后会打开两个可见窗口：飞书收发记录，以及录音/转写/分析进度。首次启动会在群内发送启动提示与帮助；重启只发送生命周期状态，不重复帮助。关闭和重启分别使用 [一键关闭OOPZ全流程.bat](一键关闭OOPZ全流程.bat)、[一键重启OOPZ全流程.bat](一键重启OOPZ全流程.bat)。
 
 `OOPZ_FEISHU_ADMIN_CHAT_ID` 可以留空。首次启动后将机器人邀请进目标群，程序会自动保存首次邀请对应的群 ID，且以后不会被其他邀请覆盖。若机器人已经在群内、无法再次产生邀请事件，可手动运行：
 
@@ -71,6 +71,6 @@ ANALYZER_MODEL=mimo-v2.5
 
 保持当前 Windows 脚本、本地 CPU 转写和 PDF 渲染逻辑不变时，最低可接受配置为：Windows Server 2022/2025 64 位、4 vCPU、8 GiB 内存、80 GiB SSD、稳定 10 Mbps 出站网络、系统管理页面文件；无需 GPU。4 GiB 内存或 2 vCPU 突发型实例不满足当前本地 ASR 和 900 秒处理期限的生产余量。详细依据见运维文档。
 
-更多部署和故障处理见 [docs/OPERATIONS.md](</D:/Codex/OOPZ_Capture/docs/OPERATIONS.md>)；架构与数据生命周期见 [docs/CURRENT_ARCHITECTURE.md](</D:/Codex/OOPZ_Capture/docs/CURRENT_ARCHITECTURE.md>)。
+更多部署和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)；架构与数据生命周期见 [docs/CURRENT_ARCHITECTURE.md](docs/CURRENT_ARCHITECTURE.md)。
 
-云服务器迁移、版本化更新和回滚流程见 [docs/DEPLOYMENT.md](</D:/Codex/OOPZ_Capture/docs/DEPLOYMENT.md>)；本地与服务器的当前差异以 [docs/DEPLOYMENT_STATE.md](</D:/Codex/OOPZ_Capture/docs/DEPLOYMENT_STATE.md>) 为准，部署相关修改必须登记到 [docs/DEPLOYMENT_CHANGELOG.md](</D:/Codex/OOPZ_Capture/docs/DEPLOYMENT_CHANGELOG.md>)。
+Windows 云服务器从零部署见 [README_CLOUD_SERVER_DEPLOYMENT.md](README_CLOUD_SERVER_DEPLOYMENT.md)；飞书应用从零配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。版本化更新和回滚原理见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)；本地与服务器的当前差异以 [docs/DEPLOYMENT_STATE.md](docs/DEPLOYMENT_STATE.md) 为准，部署相关修改必须登记到 [docs/DEPLOYMENT_CHANGELOG.md](docs/DEPLOYMENT_CHANGELOG.md)。

@@ -28,13 +28,14 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1
 
 脚本会拒绝脏工作区，重新运行测试，从 `HEAD` 生成 `artifacts\oopz-capture-v<version>-<commit>.zip` 和同名 `.sha256`。只上传这两个文件；模型仅首次部署或模型版本变化时另行传输。
 
-如果尚未建立自动化流水线，Windows OpenSSH 的示例传输命令为：
+推荐把 ZIP 和 SHA-256 作为同一标签的 GitHub Release 附件。服务器可在完成私有仓库认证后下载指定版本：
 
 ```powershell
-scp .\artifacts\oopz-capture-*.zip* deploy@SERVER:C:/OOPZ/artifacts/
+gh release download <release-id> --repo XK205E3n/OOPZ_Capture `
+  --dir C:\OOPZ\artifacts --pattern '*.zip' --pattern '*.sha256'
 ```
 
-服务器地址应放在个人 SSH 配置或密码管理器中，不写进仓库。建立私有 Git 远端后，可进一步用 CI 自动执行测试并产出同样的发布包，但生产切换仍建议保留人工批准。
+不能或不希望在服务器保存 GitHub 读取凭据时，也可以从本地通过 RDP 磁盘映射、SFTP 或 OpenSSH `scp` 安全传输这两个文件。服务器地址应放在个人 SSH 配置或密码管理器中，不写进仓库。可进一步用 CI 自动执行测试并产出同样的发布包，但生产切换仍建议保留人工批准。完整命令见根目录 `README_CLOUD_SERVER_DEPLOYMENT.md`。
 
 ## 服务器更新
 
@@ -42,7 +43,7 @@ scp .\artifacts\oopz-capture-*.zip* deploy@SERVER:C:/OOPZ/artifacts/
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\admin\install_release.ps1 `
-  -Artifact C:\OOPZ\artifacts\oopz-capture-v0.11.1-abcdef0.zip
+  -Artifact C:\OOPZ\artifacts\<artifact.zip>
 ```
 
 安装脚本执行以下事务：校验 SHA-256、解压到新版本目录、创建独立虚拟环境、安装锁定声明范围内的 Python/Node 依赖、连接共享配置/模型/数据、运行导入检查、停止旧进程、切换 `current`、启动新版本并等待飞书长连接就绪。健康检查失败时自动把 `current` 切回旧版本并重启。
@@ -55,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\admin\install_releas
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\admin\rollback_release.ps1 `
-  -ReleaseId v0.11.1-abcdef0
+  -ReleaseId <previous-release-id>
 ```
 
 回滚只切换代码与依赖，不回滚共享 `.env` 和业务数据。如果新版本做了不可逆的数据迁移，必须在对应 `DEPLOYMENT_CHANGELOG.md` 条目中写出备份与恢复步骤；没有可行回滚方案时不得发布。

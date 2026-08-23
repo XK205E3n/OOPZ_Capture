@@ -8,7 +8,7 @@
 
 | 项目 | 本地开发环境 | 生产服务器 | 是否需同步 |
 | --- | --- | --- | --- |
-| Git 提交 | 飞书迁移与部署工作流候选版本；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：生成首个正式发布包后登记发布 ID |
+| Git 提交 | `main` 跟踪私有 GitHub 仓库；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：发布并部署首个 GitHub Release 后登记发布 ID |
 | 应用版本 | `0.11.1` | 尚未部署 | 是 |
 | 操作系统 | Windows | 目标为 Windows Server 2022/2025 x64 Desktop Experience | 待实施 |
 | Python | 3.12.13 | 未安装/未确认 | 是：建议 3.12 x64 |
@@ -18,7 +18,7 @@
 | 生产配置 | 本地 `.env`（不进 Git） | 尚未创建 | 是：服务器独立配置，不复制本地密钥文件作为长期同步方式 |
 | 输出/状态/日志 | `output`、`feishu_state`、`logs` | 尚未创建 | 否：属于各环境持久数据，禁止互相覆盖 |
 | 启动方式 | 交互式批处理 | 目标为任务计划程序调用稳定 `current` 路径 | 待实施 |
-| 代码远端 | 未配置 Git remote | 无 | 是：建议建立私有 Git 远端作为代码事实源 |
+| 代码远端 | `origin=https://github.com/XK205E3n/OOPZ_Capture.git`（Private） | 计划通过只读认证下载指定 Release | 首次服务器配置待实施 |
 
 ## 生产目录约定
 
@@ -48,8 +48,8 @@ C:\OOPZ\
 
 ## 首次部署待办
 
-- [ ] 将已审查、测试的飞书迁移版本生成首个正式发布包。
-- [ ] 建立私有 Git 远端并推送受保护的主分支。
+- [x] 将已审查、测试的当前版本生成并上传为首个 GitHub Release（Release ID 以发布清单为准）。
+- [x] 建立私有 Git 远端并推送 `main`。
 - [ ] 准备 Windows Server，安装 Python 3.12 x64、Node.js LTS、Git、Chrome/Edge。
 - [ ] 建立 `C:\OOPZ\shared`，安全创建生产 `.env`，单独复制并校验 SenseVoiceSmall 模型。
 - [ ] 本地生成首个发布包及 SHA-256，传到 `C:\OOPZ\artifacts`。

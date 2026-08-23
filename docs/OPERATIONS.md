@@ -23,9 +23,9 @@ OOPZ_LOGIN_PASSWORD=...
 
 ## 启停
 
-- 首次启动：[启动OOPZ全流程.bat](</D:/Codex/OOPZ_Capture/启动OOPZ全流程.bat>)
-- 正常关闭：[一键关闭OOPZ全流程.bat](</D:/Codex/OOPZ_Capture/一键关闭OOPZ全流程.bat>)
-- 重启：[一键重启OOPZ全流程.bat](</D:/Codex/OOPZ_Capture/一键重启OOPZ全流程.bat>)
+- 首次启动：[启动OOPZ全流程.bat](../启动OOPZ全流程.bat)
+- 正常关闭：[一键关闭OOPZ全流程.bat](../一键关闭OOPZ全流程.bat)
+- 重启：[一键重启OOPZ全流程.bat](../一键重启OOPZ全流程.bat)
 
 启动程序运行 `oopz_capture.feishu_cli serve`，并显示“飞书消息收发记录”与“录音、转写与分析状态”两个窗口。关闭/重启脚本先尝试发送群通知，随后停止网关和两个监视窗口。
 
