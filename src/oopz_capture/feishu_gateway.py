@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from .feishu_protocol import FeishuInbound, display_intent, normalize_intent, synthetic_controller_id
 from .feishu_publisher import FeishuPublisher, PublicationConfig, public_report_fingerprint, recording_title
+from .jsonio import atomic_json as _atomic_json, iso_utc as _iso
 from .controller import ControllerConfig, ControllerService, _env_bool
 from .controller_protocol import SenderPolicy
 from .reports import find_pending_sessions, find_recent_reports
@@ -72,7 +73,7 @@ LOCAL_ONLY_SETTING_INFO: dict[str, tuple[str, str]] = {
     ),
     "ANALYZER_BASE_URL": (
         "分析 API 地址",
-        "未设置，按供应商使用默认地址",
+        "未设置，分析不可用",
     ),
     "OOPZ_FEISHU_ADMIN_CHAT_ID": (
         "唯一接受控制指令的飞书群 ID",
@@ -150,6 +151,8 @@ def adapt_controller_reply_for_feishu(text: str) -> str:
         flags=re.IGNORECASE,
     )
     replacements = (
+        (r"(?:请)?回复\s*[：:]\s*是\s*/\s*否[。.]?", "请点击下方按钮选择“开始分析”或“暂不分析”。"),
+        (r"格式：\s*/oopz\s*设置\s*变量名=值；可用变量见\s*/oopz\s*设置状态。", "格式：发送“设置 变量名=值”；可用变量请发送“设置状态”查看。"),
         (r"如需结束当前录音，请发送\s*/oopz\s*(?:离开|leave|stop)。", "如需结束当前录音，请在本群 @OOPZ 后发送“停止”。"),
         (r"请用\s*/oopz\s*状态\s*查看进度。", "请在本群 @OOPZ 后发送“状态”查看进度。"),
         (r"发送\s*/oopz\s*状态\s*可查看详情。", "请在本群 @OOPZ 后发送“状态”查看详情。"),
@@ -174,17 +177,6 @@ def adapt_controller_reply_for_feishu(text: str) -> str:
     return adapted
 
 
-def _iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-
-
-def _atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
 class FeishuChannel(Protocol):
     async def send(self, to: str, message: Any, opts: Any = None) -> Any: ...
 
@@ -200,11 +192,16 @@ class FeishuGatewayConfig:
 
     @classmethod
     def from_env(cls) -> "FeishuGatewayConfig":
+        from .deepseek_client import DeepSeekConfig
+
         app_id = os.environ.get("OOPZ_FEISHU_APP_ID", "").strip()
         app_secret = os.environ.get("OOPZ_FEISHU_APP_SECRET", "").strip()
         chat_id = os.environ.get("OOPZ_FEISHU_ADMIN_CHAT_ID", "").strip()
         if not app_id or not app_secret or not chat_id:
             raise ValueError("OOPZ_FEISHU_APP_ID, OOPZ_FEISHU_APP_SECRET and OOPZ_FEISHU_ADMIN_CHAT_ID are required")
+        # Production startup must fail early when the analysis API contract is
+        # incomplete. No provider, endpoint, model, or tuning value is implied.
+        DeepSeekConfig.from_env()
         state_root = Path(os.environ.get("OOPZ_FEISHU_STATE_ROOT", "feishu_state"))
         # Keep recording settings in their existing OOPZ_* variables.
         controller = ControllerConfig(
@@ -410,11 +407,14 @@ class FeishuGateway:
             "config": {"wide_screen_mode": True},
             "header": {"title": {"tag": "plain_text", "content": "选择待分析录音"}},
             "elements": [
-                {"tag": "markdown", "content": "选择后会重新开始分析；分析完成后报告将发送到本群。"},
+                {"tag": "markdown", "content": "选择后会重新开始分析；若机器人曾异常退出，会从已保存的窗口检查点继续，避免重复 API 请求。分析完成后报告将发送到本群。"},
                 {"tag": "action", "actions": [
                     {
                         "tag": "button",
-                        "text": {"tag": "plain_text", "content": self._session_label(str(item["session_id"]))[:80]},
+                        "text": {"tag": "plain_text", "content": (
+                            self._session_label(str(item["session_id"]))
+                            + ("（中断可恢复）" if item.get("interrupted") else "")
+                        )[:80]},
                         "type": "primary",
                         "value": {"action_id": f"pending:analyze:{item['session_id']}"},
                     }
@@ -589,6 +589,8 @@ class FeishuGateway:
             number = action_id.removeprefix("selection:")
             if number.isdigit():
                 await self.handle_message(FeishuInbound(event_id, self.config.admin_chat_id, open_id, number))
+            elif number == "cancel":
+                await self.handle_message(FeishuInbound(event_id, self.config.admin_chat_id, open_id, "取消"))
             return
         if action_id.startswith(("report:", "pending:", "delete:")):
             await self._handle_extended_card_action(action_id=action_id, open_id=open_id, event_id=event_id)
@@ -760,7 +762,7 @@ class FeishuGateway:
             try:
                 source = str(item.get("source") or "")
                 if source == "analysis_decision":
-                    await self._send_card(self._analysis_card(adapt_controller_reply_for_feishu(str(item.get("text") or ""))))
+                    await self._send_card(self._analysis_card(str(item.get("text") or "")))
                 elif source == "publication_review:prompt":
                     await self._send_card(self._publication_card())
                 elif item.get("file_path"):
@@ -966,23 +968,26 @@ class FeishuGateway:
         # reply hint.  The list becomes buttons, so remove its surrounding blank
         # lines instead of leaving a large empty Markdown area in the card.
         prompt_lines: list[str] = []
-        hint_lines: list[str] = []
         for line in text.splitlines():
             if re.fullmatch(r"\d+\.\s+.+", line):
                 continue
             if line.strip().startswith("回复编号"):
-                hint_lines.append(line.strip())
+                continue
             elif line.strip():
                 prompt_lines.append(line.strip())
+        actions = [
+            {"tag": "button", "text": {"tag": "plain_text", "content": label[:80]}, "value": {"action_id": f"selection:{number}"}}
+            for number, label in choices[:20]
+        ]
+        actions.append({
+            "tag": "button",
+            "text": {"tag": "plain_text", "content": "取消选择"},
+            "value": {"action_id": "selection:cancel"},
+        })
         elements: list[dict[str, Any]] = [
             {"tag": "markdown", "content": "\n".join(prompt_lines)},
-            {"tag": "action", "actions": [
-                {"tag": "button", "text": {"tag": "plain_text", "content": label[:80]}, "value": {"action_id": f"selection:{number}"}}
-                for number, label in choices[:20]
-            ]},
+            {"tag": "action", "actions": actions},
         ]
-        if hint_lines:
-            elements.append({"tag": "markdown", "content": "\n".join(hint_lines)})
         await self._send_card({
             "config": {"wide_screen_mode": True},
             "header": {"title": {"tag": "plain_text", "content": "OOPZ 请选择录音目标"}},
@@ -998,7 +1003,8 @@ class FeishuGateway:
 
     @staticmethod
     def _analysis_card(text: str) -> dict[str, Any]:
-        return {"config": {"wide_screen_mode": True}, "header": {"title": {"tag": "plain_text", "content": "录音已结束：是否开始分析"}}, "elements": [{"tag": "markdown", "content": text}, {"tag": "action", "actions": [{"tag": "button", "text": {"tag": "plain_text", "content": "开始分析"}, "type": "primary", "value": {"action_id": "analysis_yes"}}, {"tag": "button", "text": {"tag": "plain_text", "content": "暂不分析"}, "value": {"action_id": "analysis_no"}}]}]}
+        body = adapt_controller_reply_for_feishu(text)
+        return {"config": {"wide_screen_mode": True}, "header": {"title": {"tag": "plain_text", "content": "录音已结束：是否开始分析"}}, "elements": [{"tag": "markdown", "content": body}, {"tag": "action", "actions": [{"tag": "button", "text": {"tag": "plain_text", "content": "开始分析"}, "type": "primary", "value": {"action_id": "analysis_yes"}}, {"tag": "button", "text": {"tag": "plain_text", "content": "暂不分析"}, "value": {"action_id": "analysis_no"}}]}]}
 
     def _publication_card(self) -> dict[str, Any]:
         state = getattr(self.controller, "_state", {})

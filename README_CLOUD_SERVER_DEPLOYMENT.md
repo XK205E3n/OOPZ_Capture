@@ -148,11 +148,13 @@ notepad C:\OOPZ\shared\config\.env
 
 - `OOPZ_FEISHU_APP_ID`、`OOPZ_FEISHU_APP_SECRET`；
 - `OOPZ_LOGIN_PHONE`、`OOPZ_LOGIN_PASSWORD`；
-- `ANALYZER_API_KEY`；
+- 全部 `ANALYZER_*` 项：Provider、API Key、Base URL、模型、超时、重试、请求间隔、普通/思考 Token 上限、思考模式和 JSON 模式；程序不提供默认值；
 - 控制群 ID，或首次启动时保持为空并执行自动绑定；
 - 启用公开发布时所需的文件夹和 Base 四项配置。
 
 生产 `.env` 只保存在 `C:\OOPZ\shared\config\.env`。不要用 Git 在本地和服务器之间同步它。飞书应用的完整配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。
+
+分析 API 必须由服务器运维人员按实际账户填写。当前项目推荐 OpenCode Go + `mimo-v2.5`，现有实测中成本较低、总结效果较好，但发布包不会自动选择该供应商或模型；供应商价格和模型可用性应在部署时重新确认。
 
 ## 8. SenseVoice 模型自动下载
 

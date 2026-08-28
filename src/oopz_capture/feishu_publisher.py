@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from hashlib import sha256
 import re
 from dataclasses import dataclass

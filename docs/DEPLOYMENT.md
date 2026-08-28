@@ -10,7 +10,7 @@
 
 1. 使用私有 GitHub、GitLab 或自建 Git 建立 `origin`。主分支只接收通过测试的提交；不要提交 `.env`、模型和运行数据。
 2. 准备 Windows Server 2022/2025 x64 Desktop Experience（建议 8 vCPU/16 GiB；最低 4 vCPU/8 GiB），安装 Python 3.12 x64、Node.js LTS、Chrome 或 Edge，并启用系统管理页面文件。
-3. 在服务器创建 `C:\OOPZ\shared\config`、`models`、`output`、`feishu_state`、`logs` 和 `C:\OOPZ\artifacts`。从 `.env.example` 创建 `shared\config\.env`。首次安装时，服务器自动从魔搭社区官方 `iic/SenseVoiceSmall` 下载项目固定修订版到 `shared\models` 并校验 SHA-256；不从本地复制模型。
+3. 在服务器创建 `C:\OOPZ\shared\config`、`models`、`output`、`feishu_state`、`logs` 和 `C:\OOPZ\artifacts`。从 `.env.example` 创建 `shared\config\.env`，并显式填写全部 `ANALYZER_*` 项；模板和程序均不提供分析供应商、API 地址、模型或运行参数默认值。首次安装时，服务器自动从魔搭社区官方 `iic/SenseVoiceSmall` 下载项目固定修订版到 `shared\models` 并校验 SHA-256；不从本地复制模型。
 4. 云防火墙只开放管理所需的 RDP，并限制来源 IP。应用本身只需出站访问 OOPZ、飞书和分析 API，不开放业务入站端口。
 
 ## 本地开发与发布

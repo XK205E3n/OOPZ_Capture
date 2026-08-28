@@ -10,7 +10,7 @@ from .browser_probe import AgoraBrowserProbe, PROBE_VERSION
 from .identity import build_identity_mappings
 from .identifiers import new_session_id, validate_session_id
 from .output import write_json, write_jsonl
-from .readable import identity_label, readable_nickname
+from .readable import identity_label
 from .recorder import CaptureRecorder
 from .session import _resolve_participants
 
@@ -103,7 +103,7 @@ async def run_capture(
     try:
         backend_status = await bot.voice.backend.get_status()
     except Exception:
-        pass
+        logger.debug("voice backend status unavailable; continuing without it", exc_info=True)
     mappings = build_identity_mappings(
         participants,
         snapshot,

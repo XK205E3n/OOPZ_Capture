@@ -99,3 +99,28 @@ def test_controller_reconciles_stale_failure_with_completed_capture(tmp_path: Pa
     assert service._state["last_job"]["status"] == "ready_for_analysis"
     assert service._state["last_job"]["chunks_transcribed"] == 38
     assert "error" not in service._state["last_job"]
+
+
+def test_controller_startup_recovers_interrupted_analysis_for_status(tmp_path: Path) -> None:
+    session_id = "2026-08-27_19-14-12_BJT"
+    session = tmp_path / "output" / session_id
+    state = tmp_path / "feishu_state"
+    state.mkdir()
+    (session / "handoff").mkdir(parents=True)
+    variant = session / "analysis_variants" / "configured-api"
+    variant.mkdir(parents=True)
+    (session / "handoff" / "analyzer_request.json").write_text("{}", encoding="utf-8")
+    (variant / ".run.lock").write_text(json.dumps({"pid": 99999999}), encoding="utf-8")
+    (variant / "lifecycle.json").write_text(json.dumps({
+        "status": "analyzing_short_windows", "updated_at": "2026-08-27T01:29:42+00:00",
+    }), encoding="utf-8")
+    (state / "controller.json").write_text(json.dumps({
+        "schema_version": "oopz.controller.controller.state.v1",
+        "active": None,
+        "last_job": {"session_id": session_id, "status": "analyzing"},
+    }), encoding="utf-8")
+
+    service = ControllerService(controller_config(tmp_path))
+
+    assert service._state["last_job"]["status"] == "analysis_interrupted_recoverable"
+    assert not (variant / ".run.lock").exists()

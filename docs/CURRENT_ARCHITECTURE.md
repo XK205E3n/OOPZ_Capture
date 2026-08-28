@@ -22,9 +22,9 @@
 
 ## 分析模型
 
-`configured-api` 是控制器的生产入口，读取 `ANALYZER_PROVIDER`、`ANALYZER_BASE_URL`、`ANALYZER_MODEL` 与 API Key。默认值是 OpenCode Go 的 `mimo-v2.5`。
+`configured-api` 是控制器的生产入口。全部 `ANALYZER_*` 配置必须由用户显式提供，程序不推断供应商、不补全 API 地址、不选择模型，也不为超时、重试、Token、思考模式或 JSON 模式提供环境默认值；缺少任意一项时生产网关拒绝启动。
 
-流水线将转录分为短窗口、长窗口和最终综合。每个非静音的 300 秒短窗口单独调用一次 API，不进行多窗口文本合并；默认 OpenCode Go 路线最多并行 4 个窗口请求。默认请求使用标准 OpenAI-compatible JSON Chat Completions：`ANALYZER_THINKING_MODE=auto` 不发送供应商私有推理字段。若改为其他供应商，只有明确支持时才应设为 `enabled`。
+当前项目推荐 OpenCode Go + `mimo-v2.5`，因为现有实测中成本较低且总结效果较好，但它是文档建议而非代码默认。流水线将转录分为短窗口、长窗口和最终综合；每个非静音的 300 秒短窗口单独调用一次 API，不进行多窗口文本合并。`OOPZ_ANALYSIS_MAX_PARALLELISM=4` 仍是独立的窗口并行默认。用户应根据所选供应商明确配置兼容的思考与 JSON 模式。
 
 ## 发布、撤回与删除
 

@@ -6,9 +6,6 @@ import logging
 import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, time, timedelta, timezone
-
-
-BEIJING_TZ = timezone(timedelta(hours=8))
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -18,7 +15,7 @@ from .identity import build_identity_mappings
 from .models import ProbeSnapshot
 from .output import write_json, write_jsonl
 from .identifiers import new_session_id, validate_session_id
-from .readable import identity_label
+from .jsonio import iso_utc as _iso
 from .recorder import CaptureRecorder
 from .session import _resolve_participants
 from .transcript import render_transcript_markdown
@@ -33,6 +30,7 @@ from .workflow import (
 )
 
 
+BEIJING_TZ = timezone(timedelta(hours=8))
 CONTINUOUS_REQUEST_SCHEMA = "oopz.continuous.request.v1"
 CONTINUOUS_STOP_SCHEMA = "oopz.continuous.stop.v1"
 MAX_CHUNK_SECONDS = 300
@@ -79,10 +77,6 @@ class VoiceConnectionLost(RuntimeError):
 
 class ReconnectWindowExpired(RuntimeError):
     """Voice could not be restored within the configured Session window."""
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 @dataclass(frozen=True)
@@ -1030,7 +1024,7 @@ async def run_continuous_capture(
                     probe.stop_audio_capture(), timeout=request.browser_operation_timeout_seconds,
                 )
             except Exception:
-                pass
+                LOGGER.debug("audio capture stop failed during connect cleanup", exc_info=True)
             capture_started = False
             raise
         joined = True
@@ -1360,7 +1354,7 @@ async def run_continuous_capture(
         try:
             await bot.stop()
         except Exception:
-            pass
+            LOGGER.debug("bot.stop failed during final cleanup", exc_info=True)
         await queue.put(None)
         await queue.join()
         await consumer_task

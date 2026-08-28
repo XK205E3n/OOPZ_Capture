@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from .jsonio import atomic_json as _atomic_json
+from .process_utils import pid_is_running
 from .workflow import _is_reparse_point
 
 
@@ -117,6 +120,103 @@ def _has_analysis(session_dir: Path) -> bool:
     return False
 
 
+def _analysis_lock_paths(session_dir: Path) -> list[Path]:
+    paths = [session_dir / "analysis" / ".run.lock"]
+    variants = session_dir / "analysis_variants"
+    if variants.is_dir() and not _is_reparse_point(variants):
+        paths.extend(
+            variant / ".run.lock"
+            for variant in variants.iterdir()
+            if variant.is_dir() and not _is_reparse_point(variant)
+        )
+    return paths
+
+
+def _lock_is_active(lock_path: Path) -> bool:
+    """Return true only for a safe lock whose owning process is still alive."""
+    if not lock_path.exists():
+        return False
+    if _is_reparse_point(lock_path) or not lock_path.is_file():
+        # An unsafe lock must not be deleted or offered for concurrent recovery.
+        return True
+    try:
+        value = json.loads(lock_path.read_text(encoding="utf-8"))
+        pid = int(value.get("pid", 0)) if isinstance(value, dict) else 0
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        return False
+    return pid_is_running(pid)
+
+
+def _has_active_analysis_lock(session_dir: Path) -> bool:
+    return any(_lock_is_active(path) for path in _analysis_lock_paths(session_dir))
+
+
+def _has_interrupted_analysis(session_dir: Path) -> bool:
+    for lock_path in _analysis_lock_paths(session_dir):
+        lifecycle_path = lock_path.parent / "lifecycle.json"
+        if not lifecycle_path.is_file() or _is_reparse_point(lifecycle_path):
+            continue
+        try:
+            value = json.loads(lifecycle_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError, json.JSONDecodeError):
+            continue
+        if isinstance(value, dict) and value.get("status") == "interrupted":
+            return True
+    return False
+
+
+def recover_interrupted_analysis_sessions(output_root: Path) -> list[dict[str, Any]]:
+    """Release dead analysis locks and persist an explicit resumable checkpoint state.
+
+    A live lock is never touched.  The analysis pipeline already persists every
+    completed window, so a later retry reuses valid summaries instead of making
+    duplicate API calls.
+    """
+    output_root = output_root.resolve()
+    if not output_root.is_dir():
+        return []
+    recovered: list[dict[str, Any]] = []
+    for session_dir in output_root.iterdir():
+        if not session_dir.is_dir() or _is_reparse_point(session_dir):
+            continue
+        handoff = session_dir / "handoff" / "analyzer_request.json"
+        if not handoff.is_file() or _is_reparse_point(handoff) or _has_analysis(session_dir):
+            continue
+        locks = [path for path in _analysis_lock_paths(session_dir) if path.exists()]
+        if not locks or _has_active_analysis_lock(session_dir):
+            continue
+        safe_locks = [path for path in locks if path.is_file() and not _is_reparse_point(path)]
+        if len(safe_locks) != len(locks):
+            continue
+        for lock_path in safe_locks:
+            lock_path.unlink()
+            lifecycle_path = lock_path.parent / "lifecycle.json"
+            try:
+                value = json.loads(lifecycle_path.read_text(encoding="utf-8")) if lifecycle_path.is_file() else {}
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                value = {}
+            if not isinstance(value, dict):
+                value = {}
+            previous_status = str(value.get("status") or "unknown")
+            value.update({
+                "schema_version": "oopz.analysis.lifecycle.v1",
+                "session_id": session_dir.name,
+                "status": "interrupted",
+                "updated_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                "interrupted_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
+                "recovery_reason": "analysis_process_not_running",
+                "previous_status": previous_status,
+            })
+            _atomic_json(lifecycle_path, value)
+        try:
+            modified = session_dir.stat().st_mtime
+        except OSError:
+            modified = 0.0
+        recovered.append({"session_id": session_dir.name, "modified_ts": modified, "recovered_locks": len(safe_locks)})
+    recovered.sort(key=lambda item: item["modified_ts"], reverse=True)
+    return recovered
+
+
 def find_pending_sessions(output_root: Path) -> list[dict[str, Any]]:
     """Sessions with an analyzer handoff but no completed analysis yet."""
     output_root = output_root.resolve()
@@ -131,17 +231,19 @@ def find_pending_sessions(output_root: Path) -> list[dict[str, Any]]:
             continue
         if _has_analysis(session_dir):
             continue
-        if (session_dir / "analysis" / ".run.lock").is_file():
-            continue
-        if (session_dir / "analysis_variants").is_dir() and any(
-            (session_dir / "analysis_variants" / d / ".run.lock").is_file()
-            for d in (session_dir / "analysis_variants").iterdir() if d.is_dir()
-        ):
+        # A lock is only authoritative while its owner PID is alive.  A dead
+        # lock is recoverable by run_analysis and must remain visible in the
+        # bot instead of making the session disappear after a process crash.
+        if _has_active_analysis_lock(session_dir):
             continue
         try:
             modified = session_dir.stat().st_mtime
         except OSError:
             modified = 0.0
-        records.append({"session_id": session_dir.name, "modified_ts": modified})
+        records.append({
+            "session_id": session_dir.name,
+            "modified_ts": modified,
+            "interrupted": _has_interrupted_analysis(session_dir),
+        })
     records.sort(key=lambda item: item["modified_ts"], reverse=True)
     return records

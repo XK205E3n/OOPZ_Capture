@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import threading
 import time
@@ -12,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
 
+from .jsonio import atomic_json as _atomic_json, iso_utc as _iso
 from .workflow import _is_reparse_point
 
 
@@ -22,23 +22,12 @@ _enqueue_lock = threading.Lock()
 _last_enqueue_order_ns = 0
 
 
-def _iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-
-
 def _next_enqueue_order_ns() -> int:
     """Return a process-local strictly increasing order for adjacent sends."""
     global _last_enqueue_order_ns
     with _enqueue_lock:
         _last_enqueue_order_ns = max(time.time_ns(), _last_enqueue_order_ns + 1)
         return _last_enqueue_order_ns
-
-
-def _atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
 
 
 def _request_path(state_root: Path, request_id: str) -> Path:
@@ -190,18 +179,3 @@ def reschedule_send_request(
         value["next_attempt_at"] = (now + timedelta(seconds=delay)).isoformat(timespec="milliseconds")
     _atomic_json(path, value)
     return value
-
-
-def expedite_pending_send_requests(state_root: Path) -> int:
-    """Make retained transient notifications eligible immediately after recovery."""
-    changed = 0
-    for value in list_send_requests(state_root, statuses={"pending"}):
-        request_id = str(value.get("send_request_id") or "")
-        if not request_id:
-            continue
-        path = _request_path(state_root, request_id)
-        value["next_attempt_at"] = _iso()
-        value["updated_at"] = _iso()
-        _atomic_json(path, value)
-        changed += 1
-    return changed

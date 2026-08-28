@@ -50,16 +50,16 @@ analysis/
 
 ### Milestone 13：DeepSeek API适配器
 
-适配器使用官方OpenAI兼容的 `POST /chat/completions` 契约和JSON Output模式，但不依赖OpenAI SDK。配置全部来自环境变量：
+适配器使用官方OpenAI兼容的 `POST /chat/completions` 契约和JSON Output模式，但不依赖OpenAI SDK。以下变量与默认值仅记录当时的里程碑设计，不代表当前配置契约；当前版本的全部 `ANALYZER_*` 项均须显式配置：
 
 ```text
 DEEPSEEK_API_KEY              必填
 DEEPSEEK_MODEL               必填，必须是账户获准的精确模型ID
-DEEPSEEK_BASE_URL            默认 https://api.deepseek.com
-DEEPSEEK_TIMEOUT_SECONDS     默认60
-DEEPSEEK_MAX_RETRIES         默认3
-DEEPSEEK_MIN_INTERVAL_SECONDS 默认0.5
-DEEPSEEK_MAX_TOKENS          默认2048
+DEEPSEEK_BASE_URL            历史默认 https://api.deepseek.com
+DEEPSEEK_TIMEOUT_SECONDS     历史默认60
+DEEPSEEK_MAX_RETRIES         历史默认3
+DEEPSEEK_MIN_INTERVAL_SECONDS 历史默认0.5
+DEEPSEEK_MAX_TOKENS          历史默认2048
 ```
 
 实现包括：

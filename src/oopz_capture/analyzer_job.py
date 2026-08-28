@@ -17,13 +17,10 @@ from .analysis_windows import (
     plan_windows,
     write_window_plan,
 )
+from .jsonio import iso_utc as _iso, read_json as _read_json
 from .output import write_json
 from .identifiers import validate_session_id
 from .workflow import _is_reparse_point, utc_now
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _aware_time(value: Any, field: str) -> datetime:
@@ -40,10 +37,6 @@ def _uuid(value: Any, field: str) -> str:
     except ValueError as error:
         raise ValueError(f"{field} must be a UUID") from error
     return text
-
-
-def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _safe_session_file(session_dir: Path, relative: Any, field: str) -> Path:

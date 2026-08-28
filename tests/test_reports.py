@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import os
+import json
 from pathlib import Path
 
-from oopz_capture.reports import find_recent_reports
+from oopz_capture.reports import (
+    find_pending_sessions,
+    find_recent_reports,
+    recover_interrupted_analysis_sessions,
+)
 
 
 def test_find_recent_reports_chooses_newest_variant_within_session(tmp_path: Path) -> None:
@@ -21,3 +26,40 @@ def test_find_recent_reports_chooses_newest_variant_within_session(tmp_path: Pat
 
     assert len(reports) == 1
     assert reports[0]["full_summary_path"] == new
+
+
+def test_dead_analysis_lock_remains_visible_and_is_recovered(tmp_path: Path) -> None:
+    session = tmp_path / "2026-08-27_19-14-12_BJT"
+    handoff = session / "handoff" / "analyzer_request.json"
+    lock = session / "analysis_variants" / "configured-api" / ".run.lock"
+    lifecycle = lock.with_name("lifecycle.json")
+    handoff.parent.mkdir(parents=True)
+    lock.parent.mkdir(parents=True)
+    handoff.write_text("{}", encoding="utf-8")
+    lock.write_text(json.dumps({"pid": 99999999}), encoding="utf-8")
+    lifecycle.write_text(json.dumps({"status": "analyzing_short_windows"}), encoding="utf-8")
+
+    assert [item["session_id"] for item in find_pending_sessions(tmp_path)] == [session.name]
+
+    recovered = recover_interrupted_analysis_sessions(tmp_path)
+
+    assert recovered[0]["session_id"] == session.name
+    assert not lock.exists()
+    saved_lifecycle = json.loads(lifecycle.read_text(encoding="utf-8"))
+    assert saved_lifecycle["status"] == "interrupted"
+    assert saved_lifecycle["recovery_reason"] == "analysis_process_not_running"
+    assert find_pending_sessions(tmp_path)[0]["interrupted"] is True
+
+
+def test_live_analysis_lock_is_not_exposed_or_recovered(tmp_path: Path) -> None:
+    session = tmp_path / "2026-08-27_19-14-12_BJT"
+    handoff = session / "handoff" / "analyzer_request.json"
+    lock = session / "analysis" / ".run.lock"
+    handoff.parent.mkdir(parents=True)
+    lock.parent.mkdir(parents=True)
+    handoff.write_text("{}", encoding="utf-8")
+    lock.write_text(json.dumps({"pid": os.getpid()}), encoding="utf-8")
+
+    assert find_pending_sessions(tmp_path) == []
+    assert recover_interrupted_analysis_sessions(tmp_path) == []
+    assert lock.is_file()

@@ -2,6 +2,8 @@ import asyncio
 import json
 from pathlib import Path
 
+import pytest
+
 from oopz_capture.feishu_gateway import (
     FEISHU_SETTING_KEYS, LOCAL_ONLY_SETTING_KEYS, FeishuGateway,
     FeishuGatewayConfig, adapt_controller_reply_for_feishu,
@@ -106,6 +108,22 @@ def config(tmp_path: Path) -> FeishuGatewayConfig:
     return FeishuGatewayConfig("app", "secret", "oc_admins", tmp_path / "feishu_state", controller)
 
 
+def test_production_gateway_rejects_incomplete_analyzer_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("OOPZ_FEISHU_APP_ID", "app")
+    monkeypatch.setenv("OOPZ_FEISHU_APP_SECRET", "secret")
+    monkeypatch.setenv("OOPZ_FEISHU_ADMIN_CHAT_ID", "oc_admins")
+    for key in (
+        "ANALYZER_PROVIDER", "ANALYZER_API_KEY", "ANALYZER_BASE_URL", "ANALYZER_MODEL",
+        "ANALYZER_TIMEOUT_SECONDS", "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS",
+        "ANALYZER_MAX_TOKENS", "ANALYZER_THINKING_MAX_TOKENS",
+        "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+
+    with pytest.raises(ValueError, match="required analyzer settings are missing"):
+        FeishuGatewayConfig.from_env()
+
+
 def test_every_member_of_configured_group_reaches_controller(tmp_path: Path) -> None:
     async def run():
         channel, controller = FakeChannel(), FakeController()
@@ -202,12 +220,22 @@ def test_progress_prompts_are_rewritten_for_feishu() -> None:
     assert adapt_controller_reply_for_feishu("Session=session-1 已在分析中，请用 /oopz 状态 查看进度。") == "Session=session-1 已在分析中，请在本群 @OOPZ 后发送“状态”查看进度。"
     assert adapt_controller_reply_for_feishu("另一位管理员正在选择录音目标；发送 /oopz 状态 可查看详情。") == "另一位群成员正在选择录音目标；请在本群 @OOPZ 后发送“状态”查看详情。"
     assert "/oopz" not in adapt_controller_reply_for_feishu("不支持的指令；发送 /oopz 帮助 查看可用指令。")
+    analysis_prompt = adapt_controller_reply_for_feishu(
+        "录音已结束（原因：operator_stop_command）；Session ID=session-1。转写完成：81/81；"
+        "是否开始分析（opencode-go / mimo-v2.5）？回复：是 / 否。"
+    )
+    assert "回复" not in analysis_prompt
+    assert "请点击下方按钮选择“开始分析”或“暂不分析”" in analysis_prompt
+    setting_prompt = adapt_controller_reply_for_feishu("格式：/oopz设置 变量名=值；可用变量见 /oopz 设置状态。")
+    assert "/oopz" not in setting_prompt
+    assert "设置状态" in setting_prompt
 
 
 def test_recording_target_card_omits_list_spacing_from_markdown(tmp_path: Path) -> None:
     async def run():
         channel = FakeChannel()
-        gateway = FeishuGateway(config(tmp_path), channel, controller=FakeController())
+        controller = FakeController()
+        gateway = FeishuGateway(config(tmp_path), channel, controller=controller)
         await gateway._send_reply(
             "已选择域：粘合国\n请选择语音频道：\n"
             "1. 无分类 / 尼古喵喵\n2. 无分类 / yy dz\n\n"
@@ -215,8 +243,35 @@ def test_recording_target_card_omits_list_spacing_from_markdown(tmp_path: Path) 
         )
         card = channel.sent[-1][1]["card"]
         assert card["elements"][0] == {"tag": "markdown", "content": "已选择域：粘合国\n请选择语音频道："}
-        assert [button["text"]["content"] for button in card["elements"][1]["actions"]] == ["无分类 / 尼古喵喵", "无分类 / yy dz"]
-        assert card["elements"][2] == {"tag": "markdown", "content": "回复编号；回复 取消 可退出选择。"}
+        assert [button["text"]["content"] for button in card["elements"][1]["actions"]] == ["无分类 / 尼古喵喵", "无分类 / yy dz", "取消选择"]
+        assert len(card["elements"]) == 2
+        await gateway.handle_card_action(
+            action_id="selection:cancel", open_id="ou_admin",
+            event_id="evt_cancel_selection", chat_id="oc_admins",
+        )
+        assert controller.received[-1]["text"] == "取消"
+    asyncio.run(run())
+
+
+def test_analysis_outbox_card_never_requests_yes_no_reply(tmp_path: Path) -> None:
+    async def run():
+        channel = FakeChannel()
+        gateway = FeishuGateway(config(tmp_path), channel, controller=FakeController())
+        enqueue_send_request(
+            gateway.state_root,
+            target_type="private",
+            target_id=synthetic_controller_id("ou_admin"),
+            text=("录音已结束；Session ID=session-1。转写完成：81/81；"
+                  "是否开始分析（opencode-go / mimo-v2.5）？回复：是 / 否。"),
+            source="analysis_decision",
+        )
+
+        assert await gateway.drain_outbox() == 1
+        card = channel.sent[-1][1]["card"]
+        body = card["elements"][0]["content"]
+        assert "回复" not in body
+        assert "请点击下方按钮选择“开始分析”或“暂不分析”" in body
+        assert [button["text"]["content"] for button in card["elements"][1]["actions"]] == ["开始分析", "暂不分析"]
     asyncio.run(run())
 
 

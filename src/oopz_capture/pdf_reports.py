@@ -10,19 +10,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
+from .jsonio import read_json as _read_json
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 NODE_PATH = PROJECT_ROOT / "tools" / "node" / "node.exe"
 RENDERER = PROJECT_ROOT / "tools" / "md_to_pdf.mjs"
+NODE_MODULES = PROJECT_ROOT / "node_modules"
 REPORT_ARCHIVE_SCHEMA = "oopz.report.archive.v1"
+PDF_SETUP_HINT = "run `pnpm install` in the project root to restore PDF reports"
 
 
 def _safe_name(value: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "-", value).strip("-._") or "report"
-
-
-def _read_json(path: Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _duration_label(seconds: float) -> str:
@@ -77,6 +77,8 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
         raise FileNotFoundError(f"md-to-pdf renderer is missing: {RENDERER}")
     if not NODE_PATH.is_file():
         raise FileNotFoundError(f"Project Node runtime is missing: {NODE_PATH}")
+    if not NODE_MODULES.is_dir():
+        raise FileNotFoundError(f"md-to-pdf dependencies are not installed; {PDF_SETUP_HINT}")
     if markdown_path.suffix.lower() != ".md":
         raise ValueError(f"expected Markdown input: {markdown_path}")
     result = subprocess.run(

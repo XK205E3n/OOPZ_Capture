@@ -28,16 +28,3 @@ def resample_audio(samples, source_rate: int, target_rate: int = 16000):
     divisor = math.gcd(source_rate, target_rate)
     output = resample_poly(values, target_rate // divisor, source_rate // divisor)
     return np.asarray(output, dtype=np.float32)
-
-
-def write_mono_pcm16(path: Path, samples, sample_rate: int) -> None:
-    import numpy as np
-    values = np.asarray(samples, dtype=np.float32)
-    pcm = np.clip(values, -1.0, 1.0)
-    pcm = np.where(pcm < 0, pcm * 32768.0, pcm * 32767.0).astype("<i2")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with wave.open(str(path), "wb") as stream:
-        stream.setnchannels(1)
-        stream.setsampwidth(2)
-        stream.setframerate(sample_rate)
-        stream.writeframes(pcm.tobytes())

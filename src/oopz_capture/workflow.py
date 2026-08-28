@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import shutil
 import sys
@@ -9,10 +10,11 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Awaitable, Callable
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from .capture_session import run_capture
 from .identifiers import new_session_id
+from .jsonio import iso_utc as _iso
 from .output import write_json
 from .vad import VADConfig
 
@@ -21,14 +23,11 @@ REQUEST_SCHEMA = "oopz.worker.request.v1"
 EVENT_SCHEMA = "oopz.worker.event.v1"
 ANALYZER_SCHEMA = "oopz.analyzer.request.v1"
 _REPARSE_POINT = 0x0400
+logger = logging.getLogger(__name__)
 
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _iso(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat(timespec="milliseconds")
 
 
 def _parse_time(value: str) -> datetime:
@@ -478,15 +477,6 @@ async def run_workflow(
                 lifecycle.setdefault("delete_after", _iso(utc_now() + timedelta(hours=request.retention_hours)))
                 write_json(lifecycle_path, lifecycle)
             except Exception:
-                pass
+                logger.warning("failed to persist failure lifecycle for %s", session_dir.name, exc_info=True)
         emit_event("session.failed", request.request_id, session_id=session_dir.name if session_dir else None, error_type=type(error).__name__, error=str(error), audio_retained=True)
         raise
-
-
-def new_request(**values: Any) -> WorkflowRequest:
-    return WorkflowRequest.from_dict({
-        "schema_version": REQUEST_SCHEMA,
-        "command": "record_and_transcribe",
-        "request_id": str(uuid4()),
-        **values,
-    })

@@ -32,6 +32,25 @@ def config(**changes) -> DeepSeekConfig:
     return DeepSeekConfig(**values)
 
 
+def set_analyzer_env(monkeypatch, **changes) -> None:
+    values = {
+        "ANALYZER_PROVIDER": "opencode-go",
+        "ANALYZER_API_KEY": "go-secret",
+        "ANALYZER_BASE_URL": "https://opencode.ai/zen/go/v1",
+        "ANALYZER_MODEL": "mimo-v2.5",
+        "ANALYZER_TIMEOUT_SECONDS": "60",
+        "ANALYZER_MAX_RETRIES": "3",
+        "ANALYZER_MIN_INTERVAL_SECONDS": "0.5",
+        "ANALYZER_MAX_TOKENS": "2048",
+        "ANALYZER_THINKING_MAX_TOKENS": "16384",
+        "ANALYZER_THINKING_MODE": "auto",
+        "ANALYZER_JSON_MODE": "true",
+    }
+    values.update(changes)
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+
+
 def success(content: dict) -> dict:
     return {
         "id": "response-id",
@@ -243,32 +262,30 @@ def test_non_thinking_output_budget_doubles_after_length_truncation() -> None:
     assert result["metadata"]["max_tokens"] == 2048
 
 
-def test_opencode_go_config_uses_provider_specific_defaults(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "opencode-go")
-    monkeypatch.setenv("ANALYZER_API_KEY", "go-secret")
+def test_analyzer_environment_requires_explicit_endpoint_and_model(monkeypatch) -> None:
+    set_analyzer_env(monkeypatch)
     monkeypatch.delenv("ANALYZER_BASE_URL", raising=False)
     monkeypatch.delenv("ANALYZER_MODEL", raising=False)
-    value = DeepSeekConfig.from_env()
-    assert value.provider == "opencode-go"
-    assert value.base_url == "https://opencode.ai/zen/go/v1"
-    assert value.endpoint == "https://opencode.ai/zen/go/v1/chat/completions"
-    assert value.model == "mimo-v2.5"
-    assert "go-secret" not in repr(value)
+    with pytest.raises(ValueError, match="ANALYZER_BASE_URL, ANALYZER_MODEL"):
+        DeepSeekConfig.from_env()
+
+
+def test_analyzer_environment_requires_every_analyzer_setting(monkeypatch) -> None:
+    set_analyzer_env(monkeypatch)
+    monkeypatch.delenv("ANALYZER_TIMEOUT_SECONDS", raising=False)
+    with pytest.raises(ValueError, match="ANALYZER_TIMEOUT_SECONDS"):
+        DeepSeekConfig.from_env()
 
 
 def test_route_five_client_fixes_model_to_mimo_v25(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "opencode-go")
-    monkeypatch.setenv("ANALYZER_API_KEY", "go-secret")
-    monkeypatch.setenv("ANALYZER_MODEL", "deepseek-v4-flash")
+    set_analyzer_env(monkeypatch, ANALYZER_MODEL="deepseek-v4-flash")
     client = opencode_mimo_v25_client()
     assert client.config.provider == "opencode-go"
     assert client.config.model == "mimo-v2.5"
 
 
 def test_configurable_opencode_go_client_honors_selected_model(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "opencode-go")
-    monkeypatch.setenv("ANALYZER_API_KEY", "go-secret")
-    monkeypatch.setenv("ANALYZER_MODEL", "deepseek-v4-flash")
+    set_analyzer_env(monkeypatch, ANALYZER_MODEL="deepseek-v4-flash")
 
     client = opencode_go_client()
 
@@ -277,11 +294,7 @@ def test_configurable_opencode_go_client_honors_selected_model(monkeypatch) -> N
 
 
 def test_opencode_go_auto_mode_uses_standard_openai_compatible_fields(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "opencode-go")
-    monkeypatch.setenv("ANALYZER_API_KEY", "go-secret")
-    monkeypatch.setenv("ANALYZER_BASE_URL", "https://opencode.ai/zen/go/v1")
-    monkeypatch.setenv("ANALYZER_MODEL", "mimo-v2.5")
-    monkeypatch.setenv("ANALYZER_THINKING_MODE", "auto")
+    set_analyzer_env(monkeypatch)
     observed = {}
 
     def transport(endpoint, headers, payload, timeout):
@@ -301,12 +314,14 @@ def test_opencode_go_auto_mode_uses_standard_openai_compatible_fields(monkeypatc
 
 
 def test_generic_openai_compatible_config_omits_vendor_thinking_fields(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "openai-compatible")
-    monkeypatch.setenv("ANALYZER_API_KEY", "vendor-secret")
-    monkeypatch.setenv("ANALYZER_BASE_URL", "https://api.vendor.test/v1")
-    monkeypatch.setenv("ANALYZER_MODEL", "vendor-model")
-    monkeypatch.setenv("ANALYZER_THINKING_MODE", "auto")
-    monkeypatch.setenv("ANALYZER_JSON_MODE", "false")
+    set_analyzer_env(
+        monkeypatch,
+        ANALYZER_PROVIDER="openai-compatible",
+        ANALYZER_API_KEY="vendor-secret",
+        ANALYZER_BASE_URL="https://api.vendor.test/v1",
+        ANALYZER_MODEL="vendor-model",
+        ANALYZER_JSON_MODE="false",
+    )
     observed = {}
 
     def transport(endpoint, headers, payload, timeout):
@@ -327,18 +342,22 @@ def test_generic_openai_compatible_config_omits_vendor_thinking_fields(monkeypat
 
 
 def test_route_five_client_rejects_non_go_provider(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "deepseek")
-    monkeypatch.setenv("ANALYZER_API_KEY", "secret")
-    monkeypatch.setenv("ANALYZER_MODEL", "deepseek-v4-flash")
+    set_analyzer_env(
+        monkeypatch,
+        ANALYZER_PROVIDER="deepseek",
+        ANALYZER_API_KEY="secret",
+        ANALYZER_BASE_URL="https://api.deepseek.com",
+        ANALYZER_MODEL="deepseek-v4-flash",
+    )
     with pytest.raises(ValueError, match="fixed mimo-go route requires"):
         opencode_mimo_v25_client()
 
 
 def test_legacy_provider_environment_keys_are_not_used(monkeypatch) -> None:
-    monkeypatch.setenv("ANALYZER_PROVIDER", "opencode-go")
+    set_analyzer_env(monkeypatch)
     monkeypatch.delenv("ANALYZER_API_KEY", raising=False)
     monkeypatch.setenv("OPENCODE_API_KEY", "legacy-secret")
-    with pytest.raises(ValueError, match="ANALYZER_API_KEY is required"):
+    with pytest.raises(ValueError, match="ANALYZER_API_KEY"):
         DeepSeekConfig.from_env()
 
 

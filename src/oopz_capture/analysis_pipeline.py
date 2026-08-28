@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -12,7 +13,8 @@ from uuid import NAMESPACE_URL, uuid5
 
 from .analysis_windows import determine_session_duration_ms
 from .analyzer_job import AnalyzerInput, load_analyzer_input, prepare_analysis
-from .output import write_json, write_jsonl
+from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json as _read_json
+from .output import write_jsonl
 from .pdf_reports import render_session_reports
 from .process_utils import pid_is_running
 from .workflow import _is_reparse_point, utc_now
@@ -42,6 +44,7 @@ def _report_progress(reporter: AnalysisProgressReporter | None, **event: Any) ->
         reporter(event)
     except Exception:
         # A terminal/status renderer must never make a completed API request fail.
+        LOGGER.debug("progress reporter raised; analysis continues", exc_info=True)
         return
 
 
@@ -73,6 +76,7 @@ FINAL_REQUIRED = {
 ANALYSIS_PIPELINE_VERSION = "2.7.0"
 REPORT_FORMAT_VERSION = "3.7.0"
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
+LOGGER = logging.getLogger(__name__)
 FINAL_THINKING_MAX_TOKENS = 4096
 SHORT_MAX_TOKENS = 1024
 LONG_MAX_TOKENS = 2048
@@ -142,21 +146,6 @@ def _analysis_fingerprint(value: AnalyzerInput, profile: dict[str, Any]) -> str:
     return sha256(f"{value.fingerprint}\n{serialized}".encode("utf-8")).hexdigest()
 
 
-def _iso(value: datetime | None = None) -> str:
-    return (value or utc_now()).astimezone(timezone.utc).isoformat(timespec="milliseconds")
-
-
-def _read_json(path: Path) -> Any:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def _atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
-
-
 def _acquire_run_lock(path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
@@ -164,10 +153,10 @@ def _acquire_run_lock(path: Path) -> None:
             raise RuntimeError(f"unsafe analysis lock: {path}")
         try:
             existing = _read_json(path)
-            if pid_is_running(int(existing.get("pid", 0))):
+            if isinstance(existing, dict) and pid_is_running(int(existing.get("pid", 0) or 0)):
                 raise RuntimeError(f"analysis is already running with PID={existing.get('pid')}")
-        except (ValueError, TypeError, json.JSONDecodeError):
-            pass
+        except (OSError, ValueError, TypeError, AttributeError):
+            LOGGER.debug("analysis lock unreadable; treating it as stale: %s", path, exc_info=True)
         path.unlink()
     try:
         with path.open("x", encoding="utf-8") as stream:
@@ -247,21 +236,6 @@ def _speaker_nicknames(values: list[dict[str, Any]]) -> str:
 def _speaker_nickname_list(values: list[dict[str, Any]]) -> list[str]:
     rendered = _speaker_nicknames(values)
     return [] if rendered == "无" else rendered.split("，")
-
-
-def _compact_turns(segments: list[dict[str, Any]]) -> list[list[str]]:
-    """Preserve all transcript text while removing repeated per-segment metadata."""
-    turns: list[list[str]] = []
-    for item in segments:
-        nickname = str(item.get("nickname") or "未知用户").strip()
-        utterance = " ".join(str(item.get("text") or "").split())
-        if not utterance:
-            continue
-        if turns and turns[-1][0] == nickname:
-            turns[-1][1] += " " + utterance
-        else:
-            turns.append([nickname, utterance])
-    return turns
 
 
 def _minute_grouped_turns(value: AnalyzerInput, segments: list[dict[str, Any]]) -> list[list[Any]]:
@@ -844,12 +818,12 @@ def _models_by_stage(
     }
 
 
-def _stage_cost(usage: dict[str, Any], rates: dict[str, float]) -> dict[str, Any]:
-    prompt_tokens = max(0, int(usage.get("prompt_tokens", 0)))
-    cache_hit_tokens = max(0, int(usage.get("prompt_cache_hit_tokens", 0)))
-    cache_miss_tokens = max(0, int(usage.get("prompt_cache_miss_tokens", 0)))
+def _stage_cost(usage: dict[str, Any], rates: dict[str, float], *, suffix: str = "rmb") -> dict[str, Any]:
+    prompt_tokens = max(0, int(usage.get("prompt_tokens", 0) or 0))
+    cache_hit_tokens = max(0, int(usage.get("prompt_cache_hit_tokens", 0) or 0))
+    cache_miss_tokens = max(0, int(usage.get("prompt_cache_miss_tokens", 0) or 0))
     unclassified_tokens = max(0, prompt_tokens - cache_hit_tokens - cache_miss_tokens)
-    completion_tokens = max(0, int(usage.get("completion_tokens", 0)))
+    completion_tokens = max(0, int(usage.get("completion_tokens", 0) or 0))
     input_cost = (
         cache_hit_tokens * rates["prompt_cache_hit"]
         + (cache_miss_tokens + unclassified_tokens) * rates["prompt_cache_miss"]
@@ -857,9 +831,9 @@ def _stage_cost(usage: dict[str, Any], rates: dict[str, float]) -> dict[str, Any
     output_cost = completion_tokens * rates["completion"] / 1_000_000
     return {
         "prompt_cache_unclassified_tokens": unclassified_tokens,
-        "input_cost_rmb": round(input_cost, 9),
-        "output_cost_rmb": round(output_cost, 9),
-        "estimated_cost_rmb": round(input_cost + output_cost, 9),
+        f"input_cost_{suffix}": round(input_cost, 9),
+        f"output_cost_{suffix}": round(output_cost, 9),
+        f"estimated_cost_{suffix}": round(input_cost + output_cost, 9),
     }
 
 
@@ -1016,25 +990,6 @@ def _estimate_costs(
     }
 
 
-def _opencode_go_stage_cost(usage: dict[str, Any], rates: dict[str, float]) -> dict[str, Any]:
-    prompt_tokens = max(0, int(usage.get("prompt_tokens", 0) or 0))
-    cache_hit_tokens = max(0, int(usage.get("prompt_cache_hit_tokens", 0) or 0))
-    cache_miss_tokens = max(0, int(usage.get("prompt_cache_miss_tokens", 0) or 0))
-    unclassified_tokens = max(0, prompt_tokens - cache_hit_tokens - cache_miss_tokens)
-    completion_tokens = max(0, int(usage.get("completion_tokens", 0) or 0))
-    input_cost = (
-        cache_hit_tokens * rates["prompt_cache_hit"]
-        + (cache_miss_tokens + unclassified_tokens) * rates["prompt_cache_miss"]
-    ) / 1_000_000
-    output_cost = completion_tokens * rates["completion"] / 1_000_000
-    return {
-        "prompt_cache_unclassified_tokens": unclassified_tokens,
-        "input_cost_usd": round(input_cost, 9),
-        "output_cost_usd": round(output_cost, 9),
-        "estimated_cost_usd": round(input_cost + output_cost, 9),
-    }
-
-
 def _estimate_opencode_go_costs(
     model: str,
     usage_by_stage: dict[str, dict[str, Any]],
@@ -1059,7 +1014,7 @@ def _estimate_opencode_go_costs(
         stages[stage] = {
             "billing_records": billing_records,
             "usage": usage,
-            **_opencode_go_stage_cost(usage, OPENCODE_GO_MIMO_V25_RATES_USD),
+            **_stage_cost(usage, OPENCODE_GO_MIMO_V25_RATES_USD, suffix="usd"),
         }
     return {
         "status": "subscription_estimate" if pricing_supported else "unavailable",

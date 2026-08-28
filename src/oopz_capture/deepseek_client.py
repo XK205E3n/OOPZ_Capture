@@ -52,31 +52,40 @@ class DeepSeekConfig:
 
     @classmethod
     def from_env(cls) -> "DeepSeekConfig":
-        provider = os.environ.get("ANALYZER_PROVIDER", "opencode-go").strip().lower()
+        required_names = (
+            "ANALYZER_PROVIDER",
+            "ANALYZER_API_KEY",
+            "ANALYZER_BASE_URL",
+            "ANALYZER_MODEL",
+            "ANALYZER_TIMEOUT_SECONDS",
+            "ANALYZER_MAX_RETRIES",
+            "ANALYZER_MIN_INTERVAL_SECONDS",
+            "ANALYZER_MAX_TOKENS",
+            "ANALYZER_THINKING_MAX_TOKENS",
+            "ANALYZER_THINKING_MODE",
+            "ANALYZER_JSON_MODE",
+        )
+        values = {name: os.environ.get(name, "").strip() for name in required_names}
+        missing = [name for name, value in values.items() if not value]
+        if missing:
+            raise ValueError("required analyzer settings are missing: " + ", ".join(missing))
+
+        provider = values["ANALYZER_PROVIDER"].lower()
         if provider not in {"deepseek", "opencode-go", "openai-compatible"}:
             raise ValueError("ANALYZER_PROVIDER must be deepseek, opencode-go, or openai-compatible")
-        api_key = os.environ.get("ANALYZER_API_KEY", "").strip()
-        base_url = os.environ.get("ANALYZER_BASE_URL", "").strip()
-        model = os.environ.get("ANALYZER_MODEL", "").strip()
-        if provider == "opencode-go":
-            base_url = base_url or "https://opencode.ai/zen/go/v1"
-            model = model or "mimo-v2.5"
-        elif provider == "deepseek":
-            base_url = base_url or "https://api.deepseek.com"
+        api_key = values["ANALYZER_API_KEY"]
+        base_url = values["ANALYZER_BASE_URL"]
+        model = values["ANALYZER_MODEL"]
         base_url = base_url.rstrip("/")
-        if not api_key:
-            raise ValueError("ANALYZER_API_KEY is required")
-        if not model:
-            raise ValueError("ANALYZER_MODEL is required; use the exact model ID from your API access")
         if not base_url.startswith("https://"):
             raise ValueError("ANALYZER_BASE_URL must use HTTPS")
-        timeout = float(os.environ.get("ANALYZER_TIMEOUT_SECONDS", "60"))
-        retries = int(os.environ.get("ANALYZER_MAX_RETRIES", "3"))
-        interval = float(os.environ.get("ANALYZER_MIN_INTERVAL_SECONDS", "0.5"))
-        max_tokens = int(os.environ.get("ANALYZER_MAX_TOKENS", "2048"))
-        thinking_max_tokens = int(os.environ.get("ANALYZER_THINKING_MAX_TOKENS", "16384"))
-        thinking_mode = os.environ.get("ANALYZER_THINKING_MODE", "auto").strip().lower()
-        json_mode_raw = os.environ.get("ANALYZER_JSON_MODE", "true").strip().lower()
+        timeout = float(values["ANALYZER_TIMEOUT_SECONDS"])
+        retries = int(values["ANALYZER_MAX_RETRIES"])
+        interval = float(values["ANALYZER_MIN_INTERVAL_SECONDS"])
+        max_tokens = int(values["ANALYZER_MAX_TOKENS"])
+        thinking_max_tokens = int(values["ANALYZER_THINKING_MAX_TOKENS"])
+        thinking_mode = values["ANALYZER_THINKING_MODE"].lower()
+        json_mode_raw = values["ANALYZER_JSON_MODE"].lower()
         if thinking_mode not in {"auto", "enabled", "disabled"}:
             raise ValueError("ANALYZER_THINKING_MODE must be auto, enabled, or disabled")
         if json_mode_raw not in {"true", "false"}:

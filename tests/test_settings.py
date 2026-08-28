@@ -77,11 +77,14 @@ def test_non_sensitive_connectivity_settings_are_settable(tmp_path, monkeypatch)
         apply_setting("OOPZ_RECONNECT_MAX_DELAY_SECONDS", "1", env_path=env_path)
 
 
-def test_unconfigured_runtime_settings_report_effective_defaults(tmp_path, monkeypatch) -> None:
+def test_unconfigured_analyzer_settings_have_no_effective_defaults(tmp_path, monkeypatch) -> None:
     env_path = tmp_path / ".env"
     for key in (
         "OOPZ_PROCESSING_DEADLINE_SECONDS",
-        "ANALYZER_PROVIDER", "ANALYZER_BASE_URL", "ANALYZER_MODEL",
+        "ANALYZER_PROVIDER", "ANALYZER_API_KEY", "ANALYZER_BASE_URL", "ANALYZER_MODEL",
+        "ANALYZER_TIMEOUT_SECONDS", "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS",
+        "ANALYZER_MAX_TOKENS", "ANALYZER_THINKING_MAX_TOKENS",
+        "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
     ):
         monkeypatch.delenv(key, raising=False)
 
@@ -89,6 +92,10 @@ def test_unconfigured_runtime_settings_report_effective_defaults(tmp_path, monke
 
     assert status["OOPZ_PROCESSING_DEADLINE_SECONDS"] == "900"
     assert "OOPZ_SHOW_BROWSER" not in status
-    assert status["ANALYZER_PROVIDER"] == "opencode-go"
-    assert status["ANALYZER_BASE_URL"] == "https://opencode.ai/zen/go/v1"
-    assert status["ANALYZER_MODEL"] == "mimo-v2.5"
+    for key in (
+        "ANALYZER_PROVIDER", "ANALYZER_API_KEY", "ANALYZER_BASE_URL", "ANALYZER_MODEL",
+        "ANALYZER_TIMEOUT_SECONDS", "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS",
+        "ANALYZER_MAX_TOKENS", "ANALYZER_THINKING_MAX_TOKENS",
+        "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
+    ):
+        assert status[key] == "未设置"

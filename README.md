@@ -53,19 +53,31 @@ OOPZ Capture 用于录制 OOPZ 语音频道、分片转写并生成会话报告�
 
 ## 分析 API
 
-默认分析配置为 OpenCode Go 的 `mimo-v2.5`：
+项目不预设分析供应商、API 地址、模型或运行参数。所有 `ANALYZER_*` 项都必须由用户根据实际 API 账户显式填写；缺少任意一项时生产网关拒绝启动。完整必填项如下：
 
 ```text
-ANALYZER_PROVIDER=opencode-go
-ANALYZER_BASE_URL=https://opencode.ai/zen/go/v1
-ANALYZER_MODEL=mimo-v2.5
+ANALYZER_PROVIDER=
+ANALYZER_API_KEY=
+ANALYZER_BASE_URL=
+ANALYZER_MODEL=
+ANALYZER_TIMEOUT_SECONDS=
+ANALYZER_MAX_RETRIES=
+ANALYZER_MIN_INTERVAL_SECONDS=
+ANALYZER_MAX_TOKENS=
+ANALYZER_THINKING_MAX_TOKENS=
+ANALYZER_THINKING_MODE=
+ANALYZER_JSON_MODE=
 ```
 
-短窗口与长窗口使用普通 JSON Chat Completions。最终报告在流水线中是“最终综合”阶段；但 OpenCode Go 的 MiMo 端点按标准 OpenAI-compatible Chat Completions 使用，因此当 `ANALYZER_THINKING_MODE=auto` 时不会发送厂商专用的 `thinking` 或 `reasoning_effort` 字段。只有显式设为 `enabled` 才会发送这些扩展字段；这需要所选供应商明确支持。
+当前项目推荐 OpenCode Go 的 `mimo-v2.5`：现有实测中成本较低、中文语音总结效果较好。推荐值为 `ANALYZER_PROVIDER=opencode-go`、`ANALYZER_BASE_URL=https://opencode.ai/zen/go/v1`、`ANALYZER_MODEL=mimo-v2.5`；这只是建议，程序不会自动填入，价格与模型可用性以供应商最新信息为准。
+
+短窗口与长窗口使用普通 JSON Chat Completions。最终报告在流水线中是“最终综合”阶段。若用户选择 OpenCode Go 的 MiMo 端点，建议显式设置 `ANALYZER_THINKING_MODE=auto`，以标准 OpenAI-compatible 方式请求；只有供应商明确支持扩展字段时才设为 `enabled`。
 
 每个非静音的 300 秒短窗口固定对应一次独立 API 请求，不合并多个窗口的文本。生产 OpenCode Go 路线默认最多并行 4 个独立窗口请求，由 `OOPZ_ANALYSIS_MAX_PARALLELISM=1..8` 调整；输出仍按原始时间顺序汇总。
 
 失败报告会写入对应 Session 的 `analysis_variants/configured-api/lifecycle.json`。再次选择“待分析”会复用已完成的窗口结果，只重试未完成阶段。
+
+如果机器人在分析期间异常退出，下一次启动会检查分析锁的 PID。仅当原进程已不存在时，系统才释放旧锁、将会话标为“中断可恢复”，并让它重新出现在“待分析”和“删除会话”中；“状态”会提示恢复入口。仍在运行的分析任务不会被抢占。尚未完成分析的会话没有最终 PDF 或完整报告，因此需先从“待分析”恢复。
 
 ## 云服务器下限
 

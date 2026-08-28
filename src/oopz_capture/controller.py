@@ -12,22 +12,44 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
-from .analysis_pipeline import run_analysis
 from .continuous import (
     ContinuousRequest, repair_continuous_session, request_stop, run_continuous_capture,
 )
-from .deepseek_client import DeepSeekClient, DeepSeekConfig
 from .identifiers import new_session_id
+from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none
 from .pdf_reports import render_session_reports
 from .controller_protocol import SenderPolicy, ControllerInboundMessage, make_reply, parse_command
-from .reports import report_text, split_text
+from .reports import recover_interrupted_analysis_sessions, report_text, split_text
 from .send_request import enqueue_send_request
-from .settings import SETTABLE_KEYS, apply_setting, canonical_setting_key, setting_status, upsert_env
+from .settings import SETTABLE_KEYS, apply_setting, canonical_setting_key, setting_status
 from .workflow import _delete_archived_reports, _is_reparse_point, _validate_tree_no_links
 
 
 DECISION_SCHEMA = "oopz.controller.analysis_decision.v1"
 START_FLOW_SCHEMA = "oopz.controller.start_flow.v1"
+
+# env key -> (ControllerConfig field, parser); applied live on `/oopz 设置`.
+LIVE_CONFIG_FIELDS: dict[str, tuple[str, Callable[[str], Any]]] = {
+    "OOPZ_CUTOFF_LOCAL_HOUR": ("cutoff_local_hour", int),
+    "OOPZ_EMPTY_CHANNEL_TIMEOUT_SECONDS": ("empty_channel_timeout_seconds", float),
+    "OOPZ_CHUNK_SECONDS": ("chunk_seconds", int),
+    "OOPZ_LANGUAGE": ("language", str),
+    "OOPZ_RETAIN_AUDIO": ("retain_audio", lambda raw: raw == "true"),
+    "OOPZ_TRANSCRIPTION_REPAIR_ATTEMPTS": ("transcription_repair_attempts", int),
+    "OOPZ_RETENTION_HOURS": ("retention_hours", int),
+    "OOPZ_DEVICE": ("device", str),
+    "OOPZ_PROCESSING_DEADLINE_SECONDS": ("processing_deadline_seconds", int),
+    "OOPZ_POLL_INTERVAL_SECONDS": ("poll_interval_seconds", float),
+    "OOPZ_MEMBERSHIP_REFRESH_SECONDS": ("membership_refresh_seconds", float),
+    "OOPZ_MEMBERSHIP_TIMEOUT_SECONDS": ("membership_timeout_seconds", float),
+    "OOPZ_CONNECTION_CHECK_SECONDS": ("connection_check_seconds", float),
+    "OOPZ_DISCONNECT_GRACE_SECONDS": ("disconnect_grace_seconds", float),
+    "OOPZ_BROWSER_OPERATION_TIMEOUT_SECONDS": ("browser_operation_timeout_seconds", float),
+    "OOPZ_RECONNECT_WINDOW_SECONDS": ("reconnect_window_seconds", float),
+    "OOPZ_RECONNECT_INITIAL_DELAY_SECONDS": ("reconnect_initial_delay_seconds", float),
+    "OOPZ_RECONNECT_MAX_DELAY_SECONDS": ("reconnect_max_delay_seconds", float),
+    "OOPZ_RECONNECT_ATTEMPT_TIMEOUT_SECONDS": ("reconnect_attempt_timeout_seconds", float),
+}
 HELP_TEXT = "\n".join([
     "/oopz 开始 [秒数]：依次选择域和语音频道后开始录音，可指定时长（秒，或 5m/1h）",
     "/oopz 离开：结束录音，结束后询问是否开始分析",
@@ -36,17 +58,6 @@ HELP_TEXT = "\n".join([
     "/oopz 设置状态：查看可修改的变量（密码、手机号和密钥打码）",
     "/oopz 帮助：显示本帮助",
 ])
-
-
-def _iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
-
-
-def _atomic_json(path: Path, value: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
 
 
 _DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([smh]?)\s*$", re.IGNORECASE)
@@ -124,7 +135,7 @@ def _analysis_usage_notice(analysis_output: Any) -> str | None:
 
 
 def _configured_analysis_label() -> str:
-    provider = os.environ.get("ANALYZER_PROVIDER", "opencode-go").strip()
+    provider = os.environ.get("ANALYZER_PROVIDER", "").strip()
     model = os.environ.get("ANALYZER_MODEL", "").strip()
     if provider and model:
         return f"{provider} / {model}"
@@ -286,17 +297,15 @@ class ControllerService:
         self._active_task: asyncio.Task[None] | None = None
         self._state = self._load_state()
         self._recover_active_session()
+        self._recover_interrupted_analyses()
         self._reconcile_last_job()
 
     def _load_state(self) -> dict[str, Any]:
         if self.state_path.is_file():
             if _is_reparse_point(self.state_path):
                 raise ValueError("unsafe controller state file")
-            try:
-                value = json.loads(self.state_path.read_text(encoding="utf-8"))
-            except (OSError, ValueError, TypeError):
-                value = None
-            if isinstance(value, dict) and value.get("schema_version") == "oopz.controller.controller.state.v1":
+            value = read_json_or_none(self.state_path)
+            if value and value.get("schema_version") == "oopz.controller.controller.state.v1":
                 active = value.get("active")
                 if isinstance(active, dict):
                     value["active"] = None
@@ -375,15 +384,30 @@ class ControllerService:
         for path in candidates:
             if not path.is_file() or _is_reparse_point(path):
                 continue
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError, TypeError):
-                continue
-            if isinstance(value, dict) and str(value.get("status") or "").strip():
+            value = read_json_or_none(path)
+            if value and str(value.get("status") or "").strip():
                 records.append(value)
         if not records:
             return None
         return max(records, key=lambda item: str(item.get("updated_at") or item.get("completed_at") or ""))
+
+    def _recover_interrupted_analyses(self) -> None:
+        """Make dead analysis jobs visible and resumable after a controller restart."""
+        recovered = recover_interrupted_analysis_sessions(self.output_root)
+        if not recovered:
+            return
+        latest = recovered[0]
+        session_id = str(latest["session_id"])
+        last = self._state.get("last_job")
+        if not isinstance(last, dict) or last.get("session_id") == session_id:
+            self._state["last_job"] = {
+                **(last if isinstance(last, dict) else {}),
+                "session_id": session_id,
+                "status": "analysis_interrupted_recoverable",
+                "analysis_interrupted_at": _iso(),
+                "recovered_locks": int(latest["recovered_locks"]),
+            }
+            self._save_state()
 
     def _reconcile_last_job(self) -> bool:
         """Synchronize stale controller state with authoritative worker lifecycles."""
@@ -421,6 +445,11 @@ class ControllerService:
             updates = {"status": "analyzing", "analysis_lifecycle_status": analysis_status}
         elif analysis_status == "failed":
             updates = {"status": "analysis_failed", "analysis_failure": (lifecycle or {}).get("failure")}
+        elif analysis_status == "interrupted":
+            updates = {
+                "status": "analysis_interrupted_recoverable",
+                "analysis_recovery_reason": str((lifecycle or {}).get("recovery_reason") or ""),
+            }
         has_stale_capture_error = (
             updates.get("status") in {"ready_for_analysis", "ready_for_analysis_with_errors"}
             and any(field in last for field in ("error_type", "error", "finished_at"))
@@ -447,11 +476,7 @@ class ControllerService:
             return None
         if _is_reparse_point(path):
             raise ValueError("unsafe reply file")
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return None
-        return value if isinstance(value, dict) else None
+        return read_json_or_none(path)
 
     def _store_reply(self, reply: dict[str, Any]) -> dict[str, Any]:
         _atomic_json(self._reply_path(str(reply["message_id"])), reply)
@@ -505,11 +530,7 @@ class ControllerService:
     def _load_json_object(path: Path) -> dict[str, Any] | None:
         if not path.is_file() or _is_reparse_point(path):
             return None
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return None
-        return value if isinstance(value, dict) else None
+        return read_json_or_none(path)
 
     async def _start(self, message: ControllerInboundMessage, command: str) -> dict[str, Any]:
         self._recover_active_session()
@@ -610,11 +631,8 @@ class ControllerService:
     def _load_start_flow(self) -> dict[str, Any] | None:
         if not self._start_flow_path.is_file() or _is_reparse_point(self._start_flow_path):
             return None
-        try:
-            value = json.loads(self._start_flow_path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return None
-        if not isinstance(value, dict) or value.get("schema_version") != START_FLOW_SCHEMA:
+        value = read_json_or_none(self._start_flow_path)
+        if not value or value.get("schema_version") != START_FLOW_SCHEMA:
             return None
         return value
 
@@ -809,46 +827,21 @@ class ControllerService:
         try:
             canonical_key = canonical_setting_key(key)
             masked = apply_setting(key.strip(), value.strip())
-            live_config_fields: dict[str, tuple[str, Callable[[str], Any]]] = {
-                "OOPZ_CUTOFF_LOCAL_HOUR": ("cutoff_local_hour", int),
-                "OOPZ_EMPTY_CHANNEL_TIMEOUT_SECONDS": ("empty_channel_timeout_seconds", float),
-                "OOPZ_CHUNK_SECONDS": ("chunk_seconds", int),
-                "OOPZ_LANGUAGE": ("language", str),
-                "OOPZ_RETAIN_AUDIO": ("retain_audio", lambda raw: raw == "true"),
-                "OOPZ_TRANSCRIPTION_REPAIR_ATTEMPTS": ("transcription_repair_attempts", int),
-                "OOPZ_RETENTION_HOURS": ("retention_hours", int),
-                "OOPZ_DEVICE": ("device", str),
-                "OOPZ_PROCESSING_DEADLINE_SECONDS": ("processing_deadline_seconds", int),
-                "OOPZ_POLL_INTERVAL_SECONDS": ("poll_interval_seconds", float),
-                "OOPZ_MEMBERSHIP_REFRESH_SECONDS": ("membership_refresh_seconds", float),
-                "OOPZ_MEMBERSHIP_TIMEOUT_SECONDS": ("membership_timeout_seconds", float),
-                "OOPZ_CONNECTION_CHECK_SECONDS": ("connection_check_seconds", float),
-                "OOPZ_DISCONNECT_GRACE_SECONDS": ("disconnect_grace_seconds", float),
-                "OOPZ_BROWSER_OPERATION_TIMEOUT_SECONDS": ("browser_operation_timeout_seconds", float),
-                "OOPZ_RECONNECT_WINDOW_SECONDS": ("reconnect_window_seconds", float),
-                "OOPZ_RECONNECT_INITIAL_DELAY_SECONDS": ("reconnect_initial_delay_seconds", float),
-                "OOPZ_RECONNECT_MAX_DELAY_SECONDS": ("reconnect_max_delay_seconds", float),
-                "OOPZ_RECONNECT_ATTEMPT_TIMEOUT_SECONDS": ("reconnect_attempt_timeout_seconds", float),
-            }
-            if canonical_key in live_config_fields:
-                field_name, parser = live_config_fields[canonical_key]
+            if canonical_key in LIVE_CONFIG_FIELDS:
+                field_name, parser = LIVE_CONFIG_FIELDS[canonical_key]
                 self.config = replace(self.config, **{field_name: parser(os.environ[canonical_key])})
                 self.config.validate()
         except ValueError as error:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(), text=str(error),
             )
-        restart_keys: set[str] = set()
         analysis_keys = {
             "OOPZ_ANALYSIS_MAX_PARALLELISM", "ANALYZER_PROVIDER", "ANALYZER_API_KEY",
             "ANALYZER_BASE_URL", "ANALYZER_MODEL", "ANALYZER_TIMEOUT_SECONDS",
             "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS", "ANALYZER_MAX_TOKENS",
             "ANALYZER_THINKING_MAX_TOKENS", "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
         }
-        effect_note = (
-            "需重启全流程后生效" if canonical_key in restart_keys
-            else ("下一次分析生效" if canonical_key in analysis_keys else "下一次录音生效")
-        )
+        effect_note = "下一次分析生效" if canonical_key in analysis_keys else "下一次录音生效"
         return make_reply(
             message, command=command, status="completed", at=_iso(),
             text=f"已设置 {canonical_key}：{masked}。已保存到 .env；{effect_note}。",
@@ -863,6 +856,7 @@ class ControllerService:
             message, command=command, status="completed", at=_iso(),
             text="当前设置（密码/手机号已打码）：\n" + "\n".join(lines),
         )
+
     def _status(self, message: ControllerInboundMessage, command: str) -> dict[str, Any]:
         active = self._recover_active_session()
         if not isinstance(active, dict):
@@ -874,6 +868,7 @@ class ControllerService:
                 status_text = {
                     "waiting_analysis_decision": "等待管理员确认是否分析",
                     "analyzing": "正在分析",
+                    "analysis_interrupted_recoverable": "分析因机器人重启或异常退出而中断；可发送“待分析”恢复",
                     "analysis_completed_report_queued": "分析已完成，报告已排队发送",
                     "analysis_failed": "分析失败",
                 }.get(raw_status, raw_status)
@@ -887,11 +882,7 @@ class ControllerService:
         lifecycle_status = str(active.get("status") or "starting")
         lifecycle: dict[str, Any] = {}
         if lifecycle_path.is_file() and not _is_reparse_point(lifecycle_path):
-            try:
-                loaded = json.loads(lifecycle_path.read_text(encoding="utf-8"))
-                lifecycle = loaded if isinstance(loaded, dict) else {}
-            except (OSError, ValueError, TypeError):
-                lifecycle = {}
+            lifecycle = read_json_or_none(lifecycle_path) or {}
             lifecycle_status = str(lifecycle.get("status") or lifecycle_status)
         status_text = {
             "starting": "正在启动",
@@ -1088,9 +1079,8 @@ class ControllerService:
         lifecycle_path = session_dir / "lifecycle.json"
         if not lifecycle_path.is_file() or _is_reparse_point(lifecycle_path):
             return previous
-        try:
-            lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
+        lifecycle = read_json_or_none(lifecycle_path)
+        if lifecycle is None:
             return previous
         status = str(lifecycle.get("status") or "unknown")
         current: dict[str, str] = {"session": status}
@@ -1158,11 +1148,8 @@ class ControllerService:
         path = self.output_root / session_id / "lifecycle.json"
         if not path.is_file() or _is_reparse_point(path):
             return
-        try:
-            lifecycle = json.loads(path.read_text(encoding="utf-8"))
-            status = str(lifecycle.get("status") or "").strip()
-        except (ValueError, OSError, TypeError):
-            return
+        lifecycle = read_json_or_none(path)
+        status = str((lifecycle or {}).get("status") or "").strip()
         if not status:
             return
         async with self._lock:
@@ -1179,11 +1166,8 @@ class ControllerService:
         path = session_dir / "lifecycle.json"
         if not path.is_file() or _is_reparse_point(path):
             return ""
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return ""
-        return str((value or {}).get("stop_reason") or "")
+        value = read_json_or_none(path) or {}
+        return str(value.get("stop_reason") or "")
 
     def _transcription_completion_note(self, session_dir: Path) -> str:
         path = session_dir / "lifecycle.json"
@@ -1509,8 +1493,3 @@ class ControllerService:
         _validate_tree_no_links(target)
         _delete_archived_reports(root, target)
         shutil.rmtree(target)
-
-    async def wait_until_idle(self, timeout: float = 30.0) -> None:
-        task = self._active_task
-        if task is not None:
-            await asyncio.wait_for(asyncio.shield(task), timeout=timeout)

@@ -208,9 +208,9 @@ SETTABLE_KEYS: dict[str, dict[str, object]] = {
     },
 }
 
-# Defaults used by the real Feishu gateway, controller, analysis client, and
-# SDK-backed login flow.  A missing .env line is not an unset runtime value
-# when one of these defaults applies.
+# Defaults used by the real Feishu gateway, controller, and SDK-backed login
+# flow. ANALYZER_* settings are intentionally absent: users must explicitly
+# configure every analysis API field.
 SETTING_DEFAULTS: dict[str, str] = {
     "OOPZ_CUTOFF_LOCAL_HOUR": "4",
     "OOPZ_EMPTY_CHANNEL_TIMEOUT_SECONDS": "300",
@@ -232,14 +232,6 @@ SETTING_DEFAULTS: dict[str, str] = {
     "OOPZ_RETENTION_HOURS": "360",
     "OOPZ_DEVICE": "cpu",
     "OOPZ_ANALYSIS_MAX_PARALLELISM": "4",
-    "ANALYZER_PROVIDER": "opencode-go",
-    "ANALYZER_TIMEOUT_SECONDS": "60",
-    "ANALYZER_MAX_RETRIES": "3",
-    "ANALYZER_MIN_INTERVAL_SECONDS": "0.5",
-    "ANALYZER_MAX_TOKENS": "2048",
-    "ANALYZER_THINKING_MAX_TOKENS": "16384",
-    "ANALYZER_THINKING_MODE": "auto",
-    "ANALYZER_JSON_MODE": "true",
 }
 
 KEY_ORDER = tuple(SETTABLE_KEYS)
@@ -359,13 +351,8 @@ def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:
 
 
 def _effective_defaults(loaded: dict[str, str]) -> dict[str, str]:
-    provider = os.environ.get("ANALYZER_PROVIDER") or loaded.get("ANALYZER_PROVIDER") or "opencode-go"
-    defaults = dict(SETTING_DEFAULTS)
-    if provider == "opencode-go":
-        defaults.update({"ANALYZER_BASE_URL": "https://opencode.ai/zen/go/v1", "ANALYZER_MODEL": "mimo-v2.5"})
-    elif provider == "deepseek":
-        defaults["ANALYZER_BASE_URL"] = "https://api.deepseek.com"
-    return defaults
+    del loaded
+    return dict(SETTING_DEFAULTS)
 
 
 def setting_status(env_path: Path | None = None) -> dict[str, str]:

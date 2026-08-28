@@ -2,13 +2,40 @@
 
 ## 必要配置
 
-从 `.env.example` 创建本机 `.env`。生产启动前至少需要：
+从 `.env.example` 创建本机 `.env`。分析器不提供默认配置，以下 `ANALYZER_*` 项全部必填：
+
+```text
+ANALYZER_PROVIDER=
+ANALYZER_API_KEY=
+ANALYZER_BASE_URL=
+ANALYZER_MODEL=
+ANALYZER_TIMEOUT_SECONDS=
+ANALYZER_MAX_RETRIES=
+ANALYZER_MIN_INTERVAL_SECONDS=
+ANALYZER_MAX_TOKENS=
+ANALYZER_THINKING_MAX_TOKENS=
+ANALYZER_THINKING_MODE=
+ANALYZER_JSON_MODE=
+```
+
+用户必须按实际 API 账户填写精确值。当前项目推荐 OpenCode Go + `mimo-v2.5`，现有实测中成本较低、总结效果较好；建议参考：
 
 ```text
 ANALYZER_PROVIDER=opencode-go
-ANALYZER_API_KEY=...
 ANALYZER_BASE_URL=https://opencode.ai/zen/go/v1
 ANALYZER_MODEL=mimo-v2.5
+ANALYZER_TIMEOUT_SECONDS=60
+ANALYZER_MAX_RETRIES=3
+ANALYZER_MIN_INTERVAL_SECONDS=0.5
+ANALYZER_MAX_TOKENS=2048
+ANALYZER_THINKING_MAX_TOKENS=16384
+ANALYZER_THINKING_MODE=auto
+ANALYZER_JSON_MODE=true
+```
+
+这些只是建议值，程序不会自动采用；API Key 必须使用用户自己的凭据。除此之外，生产启动还需要：
+
+```text
 OOPZ_FEISHU_APP_ID=...
 OOPZ_FEISHU_APP_SECRET=...
 OOPZ_LOGIN_PHONE=...
@@ -31,9 +58,9 @@ OOPZ_LOGIN_PASSWORD=...
 
 ## 分析失败
 
-检查 `output/<Session ID>/analysis_variants/configured-api/lifecycle.json`：其中记录失败阶段、实际供应商与模型。`opencode-go/mimo-v2.5` 的 HTTP 500 表示 OpenCode Go 服务端或其上游请求失败，不表示系统调用了 DeepSeek。
+检查 `output/<Session ID>/analysis_variants/configured-api/lifecycle.json`：其中记录失败阶段、用户配置的实际供应商与模型。若采用推荐的 `opencode-go/mimo-v2.5`，HTTP 500 表示 OpenCode Go 服务端或其上游请求失败，不表示系统调用了 DeepSeek。
 
-修正配置或重启网关后，在群内发送“待分析”并选择该 Session。流水线会复用成功的短窗口和长窗口，仅重试缺失的阶段。默认 `ANALYZER_THINKING_MODE=auto` 对 OpenCode Go 不发送 `thinking` / `reasoning_effort` 扩展字段；不要仅为“最终总结”强行开启它们，除非当前供应商已明确支持。
+修正配置或重启网关后，在群内发送“待分析”并选择该 Session。流水线会复用成功的短窗口和长窗口，仅重试缺失的阶段。若机器人在分析中异常退出，下一次启动会仅回收 PID 已不存在的 `.run.lock`，把会话标记为“中断可恢复”；该会话会出现在“待分析”和“删除会话”，而“状态”会显示恢复提示。仍有存活 PID 的锁不会被回收或并发重试。使用 OpenCode Go 时建议显式设置 `ANALYZER_THINKING_MODE=auto`；不要仅为“最终总结”强行开启扩展字段，除非当前供应商明确支持。
 
 ## 公开发布故障
 
