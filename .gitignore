@@ -16,3 +16,4 @@ logs/
 tmp/
 artifacts/
 .reference/
+.workbuddy/

@@ -2,7 +2,25 @@
 
 本文件只记录会影响构建、配置、部署、运行、数据或回滚的变更；普通业务修复仍应由 Git 提交记录。不得写入密钥或隐私数据。
 
-## 待发布
+## 0.11.3 — 2026-08-28（首个生产发布）
+
+### 2026-08-28 — 分析锁释放容错
+
+- 类型：Bug 修复、健壮性（部署影响：升级并重启后生效）。
+- 修改：`prepare_analysis`（`analyzer_job.py`）与 `run_analysis`（`analysis_pipeline.py`）的 `finally` 直接 `unlink` 锁文件，若 `unlink` 抛 `OSError`（如被杀软/编辑器占用）会冒泡并令整个分析以失败告终。新增 `_release_lock` 容错辅助（仅记录 warning、不阻断），三处 `finally` 改调用它；`analyzer_job.py` 补充 `LOGGER`。
+- 配置/数据迁移：无；`.env`、报告格式、会话与检查点不变。
+- 部署步骤：安装发布包后重启飞书网关。
+- 回滚：回滚代码即可；不涉及持久数据。
+- 验证：lock 相关测试 `18 passed`；完整测试 `164 passed, 2 failed`（2 个失败为本 Windows 沙箱 `rmdir`/symlink 语义差异，与改动无关，目标 Windows Server 应正常）。
+
+### 2026-08-28 — 精简代码并消除保护性编程盲区
+
+- 类型：代码精简、死代码清理、重复实现收编、可观测性（部署影响：升级并重启后生效）。
+- 修改：删除全仓零引用死代码（`recovery_guard.py` 整模块及 `workflow.new_request`、`send_request.expedite_pending_send_requests`、`audio_io.write_mono_pcm16`、`analysis_pipeline._compact_turns`、`controller.wait_until_idle` 与随之失效的 9 处导入）；新增 `jsonio.py` 收编分散同构的 JSON 读写；合并同构成本函数；消除 4 处 `except Exception: pass` 沉默吞异常改为日志；修复 `_acquire_run_lock` 漏捕获 `AttributeError`/`OSError`；常量化 `LIVE_CONFIG_FIELDS`；移除恒假死分支。
+- 配置/数据迁移：无；不改变依赖、环境变量、启动方式与数据格式。
+- 部署步骤：随发布包更新代码并重启飞书网关。
+- 回滚：回滚代码即可；不涉及持久数据。
+- 验证：编译与导入全通过；完整测试 `164 passed`（2 个环境相关失败同前）。
 
 ### 2026-08-27 — 分析异常退出的断点恢复
 
@@ -59,4 +77,10 @@
 
 ## 已发布
 
-尚无生产发布。发布后把对应条目从“待发布”移动到这里，并补充：发布 ID、Git 提交、部署时间、验证结果、是否发生回滚。
+### 0.11.3 — 2026-08-28（首个生产发布）
+
+- 发布 ID：以发布包内 `RELEASE_MANIFEST.json` 的 `release_id` 为准（形如 `v0.11.3-<git_commit_short>`）。
+- Git 提交：精确值见发布包内 `RELEASE_MANIFEST.json` 的 `git_commit`。
+- 部署时间：待首次服务器安装后回填。
+- 验证：完整 pytest `164 passed, 2 failed`（2 个为 Windows 沙箱环境测试，非代码回归）；发布包 SHA-256 与 `RELEASE_MANIFEST.json` 校验通过；release-audit 无新增命中。
+- 回滚：回滚应用代码到上一发布目录即可；持久数据（配置/模型/输出/飞书状态/日志）不随代码回滚。紧急回滚亦可 `git reset --hard pre-slash-20260828`。
