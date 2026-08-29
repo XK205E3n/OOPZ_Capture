@@ -117,7 +117,7 @@ Copy-Item C:\OOPZ\source\scripts\rollback_release.ps1 C:\OOPZ\admin\ -Force
 
 ## 6. 下载 GitHub Release
 
-将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.1-0123456789ab`：
+将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.3-9a64897bc97d`（当前规划版本）：
 
 ```powershell
 gh release download <release-id> `
@@ -193,7 +193,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 2. 解压到新的 `releases\<release-id>`；
 3. 创建该版本独立的 Python 虚拟环境；
 4. 从魔搭社区下载或校验固定修订版 SenseVoiceSmall；
-5. 安装 Node 依赖，并将 `.env`、模型、输出、状态和日志连接到 `shared`；
+5. 安装 Node 依赖（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 完成，`pnpm-lock.yaml` 已随发布包提供，需服务器可访问 npm），并将 `.env`、模型、输出、状态和日志连接到 `shared`；
 6. 运行 Python 导入检查；
 7. 停止旧网关并切换 `current`；
 8. 启动新网关并等待飞书长连接就绪；
@@ -246,11 +246,14 @@ Get-Content C:\OOPZ\shared\logs\feishu_runtime.err.log -Tail 100
 
 ## 12. 后续更新
 
-本地完成 Bug 修复后执行：
+本地完成 Bug 修复后执行（顺序遵循 AGENTS.md 发布规则）：
 
 ```text
-审阅修改 → 敏感信息审计 → 测试 → Git 提交 → 推送 main
-→ 构建新 ZIP/SHA-256 → 创建新 GitHub Release
+审阅修改 → 同步 CHANGELOG / DEPLOYMENT 文档 → 工作树干净
+→ 跑测试（开发沙箱中 2 个 Windows rmdir/symlink 环境测试会失败，用 scripts/build_release.ps1 -SkipTests）
+→ 用 scripts/build_release.ps1 从已提交 HEAD 生成 ZIP/SHA-256（禁止复制工作目录部署）
+→ 用 release-audit 技能 + .codex/release-audit-baseline.json 审计，脱敏结果写入 logs/release_audit/latest.json
+→ Git 提交并推送 main → 打 tag（v<版本>-<提交>） → 创建 GitHub Release 并附 ZIP 与 .sha256
 ```
 
 服务器更新只需要重复第 5、6、9、10 节。生产 `.env`、已校验模型和业务数据保持不变。模型修订版只有在项目代码、校验值和部署变更记录同时更新时才会变化。
