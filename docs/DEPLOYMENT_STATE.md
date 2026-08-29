@@ -9,7 +9,7 @@
 | 项目 | 本地开发环境 | 生产服务器 | 是否需同步 |
 | --- | --- | --- | --- |
 | Git 提交 | `main` 跟踪私有 GitHub 仓库；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：发布并部署首个 GitHub Release 后登记发布 ID |
-| 应用版本 | `0.11.3` | 待部署（首个 GitHub Release 已生成） | 是 |
+| 应用版本 | `0.11.4` | 待部署（含 README 修正的 GitHub Release 已生成） | 是 |
 | 操作系统 | Windows | 目标为 Windows Server 2022/2025 x64 Desktop Experience | 待实施 |
 | Python | 3.12.13 | 未安装/未确认 | 是：建议 3.12 x64 |
 | Node.js | 本地已安装，版本待确认 | 未安装/未确认 | 是：建议当前 LTS x64 |
