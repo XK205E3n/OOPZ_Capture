@@ -117,7 +117,7 @@ Copy-Item C:\OOPZ\source\scripts\rollback_release.ps1 C:\OOPZ\admin\ -Force
 
 ## 6. 下载 GitHub Release
 
-将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.3-9a64897bc97d`（当前规划版本）：
+将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.4-79ac108081c4`（当前发布版本）：
 
 ```powershell
 gh release download <release-id> `
