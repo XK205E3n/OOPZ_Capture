@@ -6,6 +6,14 @@
 
 ## 未发布
 
+### 2026-08-28 — 分析锁释放容错
+
+- 类型：Bug 修复、健壮性。
+- 修改：`prepare_analysis`（`analyzer_job.py`）与 `run_analysis`（`analysis_pipeline.py`）的 `finally` 清理路径直接调用 `lock_path.unlink()`；若释放锁时 `unlink` 抛 `OSError`（如被杀软/编辑器占用），异常会冒泡并让整个分析以失败告终。新增 `_release_lock(lock_path)` 容错辅助（仅记录 warning、不阻断），三处 `finally` 改为调用它；`analyzer_job.py` 补充 `LOGGER`。预获取路径上严格的过期锁清除保持原样（失败应正确冒泡）。
+- 范围：`src/oopz_capture/analyzer_job.py`、`src/oopz_capture/analysis_pipeline.py`；不涉及配置、依赖、启动方式与数据格式。
+- 验证：lock 相关测试 `tests/test_analyzer_job.py`、`tests/test_analysis_pipeline.py` 共 18 passed；完整测试 `164 passed, 2 failed` —— 2 个失败为前述 Windows 沙箱 `rmdir` 语义差异所致，与本次改动无关。
+- 部署影响：不新增配置、不改变依赖与启动方式、无数据迁移。升级并重启后生效。
+
 ### 2026-08-28 — 精简代码并消除保护性编程盲区
 
 - 类型：代码精简、死代码清理、重复实现收编、可观测性。

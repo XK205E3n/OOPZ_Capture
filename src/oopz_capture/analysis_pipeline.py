@@ -12,7 +12,7 @@ from typing import Any, Callable, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from .analysis_windows import determine_session_duration_ms
-from .analyzer_job import AnalyzerInput, load_analyzer_input, prepare_analysis
+from .analyzer_job import AnalyzerInput, _release_lock, load_analyzer_input, prepare_analysis
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json as _read_json
 from .output import write_jsonl
 from .pdf_reports import render_session_reports
@@ -1531,5 +1531,4 @@ def run_analysis(
         _atomic_json(lifecycle_path, lifecycle)
         raise
     finally:
-        if lock_path.is_file() and not _is_reparse_point(lock_path):
-            lock_path.unlink()
+        _release_lock(lock_path)

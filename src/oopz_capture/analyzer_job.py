@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -21,6 +22,19 @@ from .jsonio import iso_utc as _iso, read_json as _read_json
 from .output import write_json
 from .identifiers import validate_session_id
 from .workflow import _is_reparse_point, utc_now
+
+
+LOGGER = logging.getLogger(__name__)
+
+
+def _release_lock(lock_path: Path) -> None:
+    """Best-effort lock release; a stuck lock must not mask finished work."""
+    if not lock_path.is_file() or _is_reparse_point(lock_path):
+        return
+    try:
+        lock_path.unlink()
+    except OSError:
+        LOGGER.warning("could not release analysis lock: %s", lock_path, exc_info=True)
 
 
 def _aware_time(value: Any, field: str) -> datetime:
@@ -287,5 +301,4 @@ def prepare_analysis(handoff_path: Path) -> dict[str, Any]:
         })
         raise
     finally:
-        if lock_path.is_file() and not _is_reparse_point(lock_path):
-            lock_path.unlink()
+        _release_lock(lock_path)
