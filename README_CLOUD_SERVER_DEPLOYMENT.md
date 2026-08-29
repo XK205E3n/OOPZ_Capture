@@ -27,13 +27,15 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 - 不需要 GPU，也不需要开放应用业务入站端口；
 - RDP 仅允许可信管理 IP。
 
-安装以下 x64 软件：
+安装以下 x64 软件（均从官方渠道获取，避免使用第三方镜像或非 LTS 版本）：
 
-- Git；
-- GitHub CLI；
-- Python 3.12；
-- Node.js 当前 LTS；
-- Chrome 或 Edge。
+| 软件 | 在部署中的用途 | 官方下载地址 |
+| --- | --- | --- |
+| Git for Windows | 克隆运维副本、按提交检出脚本 | https://git-scm.com/download/win |
+| GitHub CLI (gh) | 登录私有仓库、下载指定 Release 与校验文件 | https://cli.github.com/ |
+| Python 3.12 | 运行环境与发布专用虚拟环境；须为 3.12.x（`install_release.ps1` 默认 `PythonExe=python.exe`，`[speech,feishu]` 额外依赖按 3.12 校验，勿用 3.13/3.14） | https://www.python.org/downloads/windows/ |
+| Node.js 当前 LTS | 仅提供 `npx`/`npm`；安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 固定 pnpm 版本，**无需预装 pnpm** | https://nodejs.org/ （取 LTS 版） |
+| Chrome 或 Edge | `md-to-pdf`/报表渲染所需的无头浏览器内核 | https://www.google.com/chrome/ 或 https://www.microsoft.com/edge |
 
 重新打开管理员 PowerShell，确认：
 
