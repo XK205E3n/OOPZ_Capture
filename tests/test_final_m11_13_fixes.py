@@ -25,7 +25,8 @@ def test_long_window_preserves_speaker_nickname() -> None:
 
 
 def test_deepseek_config_repr_hides_api_key() -> None:
+    api_key = "synthetic-key-" + uuid4().hex
     value = DeepSeekConfig(
-        api_key="secret-key", base_url="https://api.example.test", model="model-id",
+        api_key=api_key, base_url="https://api.example.test", model="model-id",
     )
-    assert "secret-key" not in repr(value)
+    assert api_key not in repr(value)

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 
 import pytest
+from uuid import uuid4
 
 from oopz_capture.deepseek_client import (
     AnalysisAPIError,
@@ -18,9 +19,14 @@ from oopz_capture.deepseek_client import (
 )
 
 
+def _synthetic_key() -> str:
+    """Ephemeral fake credential so no plausible secret is ever committed."""
+    return "synthetic-key-" + uuid4().hex
+
+
 def config(**changes) -> DeepSeekConfig:
     values = {
-        "api_key": "secret-key-must-not-leak",
+        "api_key": _synthetic_key(),
         "base_url": "https://api.example.test",
         "model": "exact-model-id",
         "timeout_seconds": 5,
@@ -35,7 +41,7 @@ def config(**changes) -> DeepSeekConfig:
 def set_analyzer_env(monkeypatch, **changes) -> None:
     values = {
         "ANALYZER_PROVIDER": "opencode-go",
-        "ANALYZER_API_KEY": "go-secret",
+        "ANALYZER_API_KEY": _synthetic_key(),
         "ANALYZER_BASE_URL": "https://opencode.ai/zen/go/v1",
         "ANALYZER_MODEL": "mimo-v2.5",
         "ANALYZER_TIMEOUT_SECONDS": "60",
@@ -108,14 +114,16 @@ def test_empty_content_and_invalid_shape_are_retried() -> None:
 
 
 def test_api_key_does_not_appear_in_errors() -> None:
+    api_key = _synthetic_key()
+
     def transport(*args):
         raise RetryableDeepSeekError("temporary outage")
 
     with pytest.raises(DeepSeekError) as captured:
-        DeepSeekClient(config(max_retries=0), transport=transport).complete_json(
+        DeepSeekClient(config(api_key=api_key, max_retries=0), transport=transport).complete_json(
             system_prompt="Return JSON only.", user_prompt="Produce JSON.", required_keys={"summary": str},
         )
-    assert "secret-key-must-not-leak" not in str(captured.value)
+    assert api_key not in str(captured.value)
 
 
 def test_configured_provider_is_identified_in_retry_exhaustion_error() -> None:
@@ -317,7 +325,7 @@ def test_generic_openai_compatible_config_omits_vendor_thinking_fields(monkeypat
     set_analyzer_env(
         monkeypatch,
         ANALYZER_PROVIDER="openai-compatible",
-        ANALYZER_API_KEY="vendor-secret",
+        ANALYZER_API_KEY=_synthetic_key(),
         ANALYZER_BASE_URL="https://api.vendor.test/v1",
         ANALYZER_MODEL="vendor-model",
         ANALYZER_JSON_MODE="false",

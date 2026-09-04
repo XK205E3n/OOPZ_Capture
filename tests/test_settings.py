@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from oopz_capture.settings import apply_setting, canonical_setting_key, setting_status
+from oopz_capture.settings import apply_setting, canonical_setting_key, setting_status, upsert_env
 
 
 def test_recording_cutoff_and_empty_timeout_accept_friendly_values(tmp_path, monkeypatch) -> None:
@@ -99,3 +99,27 @@ def test_unconfigured_analyzer_settings_have_no_effective_defaults(tmp_path, mon
         "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
     ):
         assert status[key] == "未设置"
+
+
+def test_env_write_preserves_hardlink_to_shared_config(tmp_path) -> None:
+    shared = tmp_path / "shared.env"
+    shared.write_text("# production config\n", encoding="utf-8")
+    release = tmp_path / "release.env"
+    try:
+        os.link(shared, release)
+    except OSError:
+        pytest.skip("filesystem does not support hard links")
+
+    key = "OOPZ_FEISHU_ADMIN_CHAT_ID"
+    previous = os.environ.get(key)
+    try:
+        upsert_env(key, "oc_test_group", env_path=release)
+        expected = "# production config\nOOPZ_FEISHU_ADMIN_CHAT_ID=oc_test_group\n"
+        assert release.read_text(encoding="utf-8") == expected
+        assert shared.read_text(encoding="utf-8") == expected
+        assert release.stat().st_nlink == 2
+    finally:
+        if previous is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = previous

@@ -4,6 +4,32 @@
 
 记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，还必须同步记录到 `docs/DEPLOYMENT_CHANGELOG.md`。
 
+## 0.11.7 — 2026-09-04
+
+### 2026-09-04 — 测试合成凭据改为运行时生成并清理验证草稿
+
+- 类型：测试卫生、安全扫描合规。
+- 修改：`tests/test_deepseek_client.py` 与 `tests/test_final_m11_13_fixes.py` 中 4 处硬编码的合成凭据字面量（如 `secret-key-must-not-leak`、`go-secret`、`vendor-secret`）改为每次测试运行时生成的 `synthetic-key-<uuid>` 假值，相关断言同步引用生成值，测试语义不变；`tmp/rollback/` 未跟踪历史验证草稿迁移至系统临时目录归档，不进入 Git。生产代码两处 SSRF 扫描标记（`deepseek_client.py` 按设计调用用户配置的 https-only 分析端点、`feishu_setup.py` 调用飞书固定官方注册域名）为产品本义，保持不变并在发布审计中记录。
+- 范围：上述两个测试文件；测试语义等价。
+- 验证：完整测试 `177 passed, 1 skipped`。
+- 部署影响：无。
+
+### 2026-09-04 — 修复 `.env` 写入破坏发布目录硬链接
+
+- 类型：Bug 修复、部署正确性。
+- 修改：`settings.py` 的 `.env` 文件写入由“临时文件 + `os.replace`”改为原地截断重写并 `fsync` 落盘（`_atomic_write` 改名为 `_write_env_file`）。原实现会在首次写入时切断 `install_release.ps1` 为发布目录 `.env` 建立的指向 `shared\config\.env` 的硬链接，导致服务器上首次入群自动绑定（`bind_admin_chat_id`）、一键配置（`oopz-feishu setup`）和群内“设置”命令的修改只落在当前版本目录；下次升级重建硬链接后这些修改全部丢失，典型表现为控制群绑定失效、网关停留在等待不会再触发的入群事件。本地开发环境无硬链接，因此此前测试未暴露。
+- 范围：`src/oopz_capture/settings.py`、`tests/test_settings.py`（新增硬链接保持测试，文件系统不支持硬链接时自动跳过）。
+- 验证：新增测试验证经硬链接写入后两个文件名内容一致且链接数保持 2；完整测试 `177 passed, 1 skipped`。
+- 部署影响：见 `docs/DEPLOYMENT_CHANGELOG.md` 未发布条目。当前生产服务器尚未部署，无存量脱钩数据需要修复。
+
+### 2026-09-04 — 部署文档补一键配置凭据获取路径并刷新项目进度
+
+- 类型：文档（部署指南、项目进度），纯文档变更。
+- 修改：`README_CLOUD_SERVER_DEPLOYMENT.md` 第 7 节补充获取 `OOPZ_FEISHU_APP_ID`/`OOPZ_FEISHU_APP_SECRET` 的三种方式（本地一键配置后人工抄写两行、服务器安装完成后用发布虚拟环境运行 `setup`、按 `README_FEISHU_BOT_SETUP.md` 手动配置），并注明首次安装前服务器无虚拟环境；`docs/DEPLOYMENT_STATE.md` 在硬链接说明中注明 `.env` 写入必须保持原地写并更新时间；`PROJECT_PROGRESS.md` 更新时间并补充一键配置随 0.11.6 发布的事项。
+- 范围：上述三个文档；已与 `scripts/install_release.ps1`、`src/oopz_capture/feishu_setup.py`、`feishu_cli.py` 现行为逐项核对。
+- 验证：文档描述与代码逐项一致；不涉及代码运行。
+- 部署影响：无。
+
 ## 0.11.6 — 2026-09-03
 
 ### 2026-09-03 — 结构清理：删除历史归档文档与无引用代码

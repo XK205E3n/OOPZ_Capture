@@ -296,11 +296,20 @@ def masked_value(key: str, value: str) -> str:
     return value
 
 
-def _atomic_write(path: Path, text: str) -> None:
+def _write_env_file(path: Path, text: str) -> None:
+    """Rewrite the .env file in place, preserving any hard link to it.
+
+    install_release.ps1 hard-links each release directory's .env to the
+    shared production config.  A temp-file-plus-replace write would silently
+    decouple the two names, so group binding, setup credentials and in-group
+    setting changes would vanish from the shared config on the next upgrade.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(text, encoding="utf-8")
-    temporary.replace(path)
+    with path.open("r+b" if path.exists() else "wb") as handle:
+        handle.write(text.encode("utf-8"))
+        handle.truncate()
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def _load_env(path: Path) -> list[str]:
@@ -334,7 +343,7 @@ def _write_env_line(path: Path, key: str, value: str) -> None:
             output.append(line)
     if not replaced:
         output.append(f"{key}={value}")
-    _atomic_write(path, "\n".join(output) + "\n")
+    _write_env_file(path, "\n".join(output) + "\n")
 
 
 def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:

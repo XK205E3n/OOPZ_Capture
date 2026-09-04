@@ -154,6 +154,14 @@ notepad C:\OOPZ\shared\config\.env
 - 控制群 ID，或首次启动时保持为空并执行自动绑定；
 - 启用公开发布时所需的文件夹和 Base 四项配置。
 
+`OOPZ_FEISHU_APP_ID`/`OOPZ_FEISHU_APP_SECRET` 可通过以下任一方式获得：
+
+1. 在本地开发机运行一键配置 `.\.venv\Scripts\oopz-feishu.exe setup`（见主 README 安装步骤），完成后把本机 `.env` 中这两行人工抄入服务器 `.env`；
+2. 服务器完成安装后，在服务器终端运行 `C:\OOPZ\current\.venv\Scripts\oopz-feishu.exe setup`（RDP 终端会渲染二维码；无法显示时加 `--url-only` 只打印确认链接）。该写入经 `.env` 硬链接直接落入 `shared\config\.env`；
+3. 按 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md) 第 2–5 节手动创建应用并抄写凭据。
+
+首次安装（第 9 节）之前服务器尚无虚拟环境，因此首次部署只能用第 1 或第 3 种方式；无论哪种方式，都不要用 Git 在本地和服务器之间同步 `.env` 文件。
+
 生产 `.env` 只保存在 `C:\OOPZ\shared\config\.env`。不要用 Git 在本地和服务器之间同步它。飞书应用的完整配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。
 
 分析 API 必须由服务器运维人员按实际账户填写。当前项目推荐 OpenCode Go + `mimo-v2.5`，现有实测中成本较低、总结效果较好，但发布包不会自动选择该供应商或模型；供应商价格和模型可用性应在部署时重新确认。
