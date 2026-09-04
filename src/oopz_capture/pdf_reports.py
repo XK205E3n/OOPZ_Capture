@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import json
-import os
 import re
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
-from .jsonio import read_json as _read_json
+from .jsonio import atomic_json as _atomic_json, read_json as _read_json
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -124,7 +122,5 @@ def render_session_reports(session_dir: Path, reports: Iterable[tuple[Path, str]
         "files": sorted(archived),
         "updated_at": datetime.now(timezone.utc).isoformat(timespec="milliseconds"),
     }
-    temporary = manifest_path.with_name(manifest_path.name + f".{os.getpid()}.tmp")
-    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(manifest_path)
+    _atomic_json(manifest_path, payload)
     return rendered

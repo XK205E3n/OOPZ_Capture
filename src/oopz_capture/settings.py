@@ -309,6 +309,34 @@ def _load_env(path: Path) -> list[str]:
     return path.read_text(encoding="utf-8-sig").splitlines()
 
 
+def _env_file_values(path: Path) -> dict[str, str]:
+    """Parse KEY=VALUE pairs (quotes stripped), ignoring blanks and comments."""
+    loaded: dict[str, str] = {}
+    for line in _load_env(path):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, _, value = stripped.partition("=")
+        loaded[key.strip()] = value.strip().strip("\"'")
+    return loaded
+
+
+def _write_env_line(path: Path, key: str, value: str) -> None:
+    """Replace the single KEY= line, or append it when absent."""
+    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
+    output: list[str] = []
+    replaced = False
+    for line in _load_env(path):
+        if pattern.match(line):
+            output.append(f"{key}={value}")
+            replaced = True
+        else:
+            output.append(line)
+    if not replaced:
+        output.append(f"{key}={value}")
+    _atomic_write(path, "\n".join(output) + "\n")
+
+
 def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:
     """Validate and persist one setting; returns a masked display value."""
     key = canonical_setting_key(key)
@@ -318,13 +346,7 @@ def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:
     if not SETTABLE_KEYS[key]["validator"](value):
         raise ValueError(f"变量 {key} 的值无效；要求：{SETTABLE_KEYS[key]['description']}")
     path = env_path or _DEFAULT_ENV_PATH
-    lines = _load_env(path)
-    loaded: dict[str, str] = {}
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in stripped:
-            current_key, _, current_value = stripped.partition("=")
-            loaded[current_key.strip()] = current_value.strip().strip("\"'")
+    loaded = _env_file_values(path)
     if key in {"OOPZ_RECONNECT_INITIAL_DELAY_SECONDS", "OOPZ_RECONNECT_MAX_DELAY_SECONDS"}:
         initial = float(value) if key == "OOPZ_RECONNECT_INITIAL_DELAY_SECONDS" else float(
             os.environ.get("OOPZ_RECONNECT_INITIAL_DELAY_SECONDS") or loaded.get("OOPZ_RECONNECT_INITIAL_DELAY_SECONDS") or "1"
@@ -335,44 +357,21 @@ def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:
         if maximum < initial:
             raise ValueError("OOPZ_RECONNECT_MAX_DELAY_SECONDS 不能小于 OOPZ_RECONNECT_INITIAL_DELAY_SECONDS")
     os.environ[key] = value
-    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-    replaced = False
-    output: list[str] = []
-    for line in lines:
-        if pattern.match(line):
-            output.append(f"{key}={value}")
-            replaced = True
-        else:
-            output.append(line)
-    if not replaced:
-        output.append(f"{key}={value}")
-    _atomic_write(path, "\n".join(output) + "\n")
+    _write_env_line(path, key, value)
     return masked_value(key, value)
-
-
-def _effective_defaults(loaded: dict[str, str]) -> dict[str, str]:
-    del loaded
-    return dict(SETTING_DEFAULTS)
 
 
 def setting_status(env_path: Path | None = None) -> dict[str, str]:
     """Report configured values, substituting effective runtime defaults."""
     path = env_path or _DEFAULT_ENV_PATH
-    loaded: dict[str, str] = {}
-    for line in _load_env(path):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        k, _, v = stripped.partition("=")
-        loaded[k.strip()] = v.strip().strip("\"'")
-    defaults = _effective_defaults(loaded)
+    loaded = _env_file_values(path)
     result: dict[str, str] = {}
     for key in KEY_ORDER:
         value = os.environ.get(key) or loaded.get(key) or ""
         if value:
             result[key] = masked_value(key, value)
-        elif key in defaults:
-            result[key] = defaults[key]
+        elif key in SETTING_DEFAULTS:
+            result[key] = SETTING_DEFAULTS[key]
         else:
             result[key] = "未设置"
     return result
@@ -380,16 +379,8 @@ def setting_status(env_path: Path | None = None) -> dict[str, str]:
 
 def setting_description(key: str, *, env_path: Path | None = None) -> str:
     """Return a concise description including the effective default, if any."""
-    path = env_path or _DEFAULT_ENV_PATH
-    loaded: dict[str, str] = {}
-    for line in _load_env(path):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        current_key, _, current_value = stripped.partition("=")
-        loaded[current_key.strip()] = current_value.strip().strip("\"'")
     description = str(SETTABLE_KEYS[key]["description"])
-    default = _effective_defaults(loaded).get(key)
+    default = SETTING_DEFAULTS.get(key)
     return f"{description}；默认 {default}" if default is not None else description
 
 
@@ -397,32 +388,11 @@ def setting_is_configured(key: str, *, env_path: Path | None = None) -> bool:
     """Return whether a key has a non-empty process or .env value."""
     if str(os.environ.get(key) or "").strip():
         return True
-    path = env_path or _DEFAULT_ENV_PATH
-    for line in _load_env(path):
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#") or "=" not in stripped:
-            continue
-        current_key, _, current_value = stripped.partition("=")
-        if current_key.strip() == key and current_value.strip().strip("\"'"):
-            return True
-    return False
+    return bool(_env_file_values(env_path or _DEFAULT_ENV_PATH).get(key))
 
 def upsert_env(key: str, value: str, *, env_path: Path | None = None) -> None:
     """Write or update one KEY=VALUE line in the project .env (no whitelist)."""
     key = str(key or "").strip().upper()
     value = str(value or "").strip()
     os.environ[key] = value
-    path = env_path or _DEFAULT_ENV_PATH
-    lines = _load_env(path)
-    pattern = re.compile(rf"^\s*{re.escape(key)}\s*=")
-    replaced = False
-    output: list[str] = []
-    for line in lines:
-        if pattern.match(line):
-            output.append(f"{key}={value}")
-            replaced = True
-        else:
-            output.append(line)
-    if not replaced:
-        output.append(f"{key}={value}")
-    _atomic_write(path, "\n".join(output) + "\n")
+    _write_env_line(env_path or _DEFAULT_ENV_PATH, key, value)

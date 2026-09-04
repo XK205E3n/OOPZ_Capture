@@ -602,6 +602,11 @@ class FeishuGateway:
             self._audit("invalid_publication_action", action_id=action_id, open_id=open_id)
             return
         _, decision, payload = parts
+        await self._handle_publication_card_action(
+            decision=decision, payload=payload, open_id=open_id,
+        )
+
+    async def _handle_publication_card_action(self, *, decision: str, payload: str, open_id: str) -> None:
         session_id, separator, expected_fingerprint = payload.rpartition("|")
         if not separator:
             session_id, expected_fingerprint = payload, ""

@@ -12,7 +12,6 @@ from oopz_capture.output import write_json, write_jsonl
 from oopz_capture.workflow import (
     REQUEST_SCHEMA,
     WorkflowRequest,
-    cleanup_expired,
     run_workflow,
     validate_transcript,
 )
@@ -170,46 +169,3 @@ def test_workflow_failure_retains_audio(tmp_path: Path) -> None:
     assert lifecycle["status"] == "failed"
     assert lifecycle["audio_deleted"] is False
     assert (session_dir / "audio" / "308348510.wav").is_file()
-
-
-def test_cleanup_only_deletes_expired_managed_sessions(tmp_path: Path) -> None:
-    expired = tmp_path / str(uuid4())
-    active = tmp_path / str(uuid4())
-    legacy = tmp_path / str(uuid4())
-    for path in (expired, active, legacy):
-        path.mkdir()
-        (path / "keep.txt").write_text("text", encoding="utf-8")
-    now = datetime.now(timezone.utc)
-    write_json(expired / "lifecycle.json", {
-        "managed_by": "oopz-worker-v1",
-        "delete_after": (now - timedelta(seconds=1)).isoformat(),
-    })
-    write_json(active / "lifecycle.json", {
-        "managed_by": "oopz-worker-v1",
-        "delete_after": (now + timedelta(hours=1)).isoformat(),
-    })
-    write_json(legacy / "lifecycle.json", {
-        "managed_by": "some-other-program",
-        "delete_after": (now - timedelta(days=1)).isoformat(),
-    })
-    report_dir = tmp_path / "Report" / "2026-08-21"
-    report_dir.mkdir(parents=True)
-    expired_pdf = report_dir / "expired.pdf"
-    unrelated_pdf = report_dir / "unrelated.pdf"
-    expired_pdf.write_bytes(b"%PDF-1.4\n")
-    unrelated_pdf.write_bytes(b"%PDF-1.4\n")
-    write_json(expired / "report_archive.json", {
-        "schema_version": "oopz.report.archive.v1",
-        "session_id": expired.name,
-        "files": ["Report/2026-08-21/expired.pdf"],
-    })
-
-    preview = cleanup_expired(tmp_path, now=now, dry_run=True)
-    assert preview == [expired.resolve()]
-    assert expired.exists()
-    deleted = cleanup_expired(tmp_path, now=now)
-    assert deleted == [expired.resolve()]
-    assert not expired.exists()
-    assert not expired_pdf.exists()
-    assert unrelated_pdf.exists()
-    assert active.exists() and legacy.exists()

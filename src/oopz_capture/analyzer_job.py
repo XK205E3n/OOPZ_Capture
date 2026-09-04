@@ -21,6 +21,7 @@ from .analysis_windows import (
 from .jsonio import iso_utc as _iso, read_json as _read_json
 from .output import write_json
 from .identifiers import validate_session_id
+from .process_utils import pid_is_running
 from .workflow import _is_reparse_point, utc_now
 
 
@@ -35,6 +36,27 @@ def _release_lock(lock_path: Path) -> None:
         lock_path.unlink()
     except OSError:
         LOGGER.warning("could not release analysis lock: %s", lock_path, exc_info=True)
+
+
+def _acquire_run_lock(path: Path) -> None:
+    """Acquire a variant run lock, reclaiming a lock whose owner PID is dead."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if _is_reparse_point(path) or not path.is_file():
+            raise RuntimeError(f"unsafe analysis lock: {path}")
+        try:
+            existing = _read_json(path)
+            if isinstance(existing, dict) and pid_is_running(int(existing.get("pid", 0) or 0)):
+                raise RuntimeError(f"analysis is already running with PID={existing.get('pid')}")
+        except (OSError, ValueError, TypeError, AttributeError):
+            LOGGER.debug("analysis lock unreadable; treating it as stale: %s", path, exc_info=True)
+        path.unlink()
+    try:
+        with path.open("x", encoding="utf-8") as stream:
+            json.dump({"pid": os.getpid(), "created_at": _iso()}, stream)
+            stream.write("\n")
+    except FileExistsError as error:
+        raise RuntimeError("analysis run lock was acquired concurrently") from error
 
 
 def _aware_time(value: Any, field: str) -> datetime:

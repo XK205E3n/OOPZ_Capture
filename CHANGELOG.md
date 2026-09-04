@@ -4,6 +4,30 @@
 
 记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，还必须同步记录到 `docs/DEPLOYMENT_CHANGELOG.md`。
 
+## 未发布
+
+### 2026-09-03 — 结构清理：删除历史归档文档与无引用代码
+
+- 类型：文档清理、死代码删除。
+- 修改：删除以下在现行文档中零引用、且内容已被 README、`docs/OPERATIONS.md`、`README_FEISHU_BOT_SETUP.md` 与部署文档取代的历史/孤立说明文件：`docs/MILESTONES_7_10.md`、`docs/MILESTONES_11_13.md`（自述为历史归档）、`docs/FEISHU_IMPLEMENTATION_HANDOFF.md`、`docs/FEISHU_MIGRATION_MILESTONES.md`（迁移已完成，交接内容已并入运维与配置文档）、`docs/CONTINUOUS_RECORDING.md`（录音/恢复规则已并入 README 与运维文档）。删除 `workflow.cleanup_expired` 及其专属测试：保留清理职责已由飞书网关的 `cleanup_expired_sessions` 承担（远程优先删除），该函数在生产链路无任何调用入口。
+- 范围：上述 5 个文档文件、`src/oopz_capture/workflow.py`、`tests/test_workflow.py`；`examples/worker_request.example.json` 与 `schemas/` 经核对仍与现行 v1 契约一致，保留。
+- 验证：全仓（除按规则保留的历史 CHANGELOG 条目与审计基线中的陈旧指纹）无悬空引用；完整测试 `176 passed, 1 skipped`（较此前少 1 项为被删除的死代码专属测试）。
+- 部署影响：无；不改变任何运行行为、配置、依赖与数据格式。回滚代码可完整恢复被删文件。
+
+### 2026-09-03 — 代码结构精简与重复实现收编（不改变行为）
+
+- 类型：代码精简、重复实现收编、可读性。
+- 修改：
+  - `settings.py`：收编 4 处逐字重复的 `.env` 解析为 `_env_file_values`、2 处逐字重复的键行写入为 `_write_env_line`；删除恒忽略入参的 `_effective_defaults`（`setting_description` 不再读取整个 `.env`）。
+  - `analysis_pipeline.py`：删除与 `reports.split_text` 逐字节相同的 `_split_report`，直接复用；将仅内部使用的运行锁 `_acquire_run_lock` 移至 `analyzer_job.py` 与 `_release_lock` 同处管理；两处重复的用量阶段标签提为模块常量 `_USAGE_STAGE_LABELS`。
+  - `pdf_reports.py`：报告归档清单改用 `jsonio.atomic_json`，删除等价的内联原子写与多余导入。
+  - `feishu_gateway.py`：`handle_card_action` 的发布批准/撤回分支提取为 `_handle_publication_card_action`，控制流不变。
+  - `controller.py`：分析生效设置集合提为模块常量 `_ANALYSIS_SETTING_KEYS`。
+  - `feishu_cli.py`：serve 主循环提取为模块级 `serve_gateway`，便于独立测试。
+- 范围：`src/oopz_capture/` 下 6 个模块；不含数据格式、协议、环境变量与依赖变化。
+- 验证：完整测试与重构前基线一致（重构时点为 `165 passed, 1 skipped`）；所有对外行为、文件格式与回复文案保持不变。
+- 部署影响：无；升级并重启后无需额外操作。
+
 ## 0.11.5 — 2026-08-29
 
 ### 2026-08-29 — README 第 2 节补充依赖软件官方下载地址

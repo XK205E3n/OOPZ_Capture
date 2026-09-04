@@ -4,7 +4,6 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 import sys
 from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
@@ -28,13 +27,6 @@ logger = logging.getLogger(__name__)
 
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
-
-
-def _parse_time(value: str) -> datetime:
-    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    if parsed.tzinfo is None:
-        raise ValueError("timestamp must include a timezone")
-    return parsed.astimezone(timezone.utc)
 
 
 @dataclass(frozen=True)
@@ -253,37 +245,6 @@ def purge_session_audio(output_root: Path, session_dir: Path, *, deleted_at: dat
             item["audio_deleted_at"] = timestamp
         write_json(manifest_path, manifest)
     return deleted
-
-
-def cleanup_expired(output_root: Path, *, now: datetime | None = None, dry_run: bool = False) -> list[Path]:
-    root = output_root.resolve()
-    if not root.exists():
-        return []
-    now = (now or utc_now()).astimezone(timezone.utc)
-    expired: list[Path] = []
-    for candidate in root.iterdir():
-        if not candidate.is_dir() or _is_reparse_point(candidate):
-            continue
-        lifecycle_path = candidate / "lifecycle.json"
-        if not lifecycle_path.is_file():
-            continue
-        try:
-            lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
-            if lifecycle.get("managed_by") != "oopz-worker-v1":
-                continue
-            delete_after = _parse_time(str(lifecycle["delete_after"]))
-        except (KeyError, TypeError, ValueError, json.JSONDecodeError):
-            continue
-        if delete_after > now:
-            continue
-        _, resolved = _resolved_direct_child(root, candidate)
-        _validate_tree_no_links(resolved)
-        expired.append(resolved)
-    if not dry_run:
-        for target in expired:
-            _delete_archived_reports(root, target)
-            shutil.rmtree(target)
-    return expired
 
 
 def _delete_archived_reports(output_root: Path, session_dir: Path) -> None:

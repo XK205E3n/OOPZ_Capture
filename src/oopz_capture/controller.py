@@ -28,6 +28,14 @@ from .workflow import _delete_archived_reports, _is_reparse_point, _validate_tre
 DECISION_SCHEMA = "oopz.controller.analysis_decision.v1"
 START_FLOW_SCHEMA = "oopz.controller.start_flow.v1"
 
+# Settings that only affect the next analysis run, not the next recording.
+_ANALYSIS_SETTING_KEYS = frozenset({
+    "OOPZ_ANALYSIS_MAX_PARALLELISM", "ANALYZER_PROVIDER", "ANALYZER_API_KEY",
+    "ANALYZER_BASE_URL", "ANALYZER_MODEL", "ANALYZER_TIMEOUT_SECONDS",
+    "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS", "ANALYZER_MAX_TOKENS",
+    "ANALYZER_THINKING_MAX_TOKENS", "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
+})
+
 # env key -> (ControllerConfig field, parser); applied live on `/oopz 设置`.
 LIVE_CONFIG_FIELDS: dict[str, tuple[str, Callable[[str], Any]]] = {
     "OOPZ_CUTOFF_LOCAL_HOUR": ("cutoff_local_hour", int),
@@ -835,13 +843,7 @@ class ControllerService:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(), text=str(error),
             )
-        analysis_keys = {
-            "OOPZ_ANALYSIS_MAX_PARALLELISM", "ANALYZER_PROVIDER", "ANALYZER_API_KEY",
-            "ANALYZER_BASE_URL", "ANALYZER_MODEL", "ANALYZER_TIMEOUT_SECONDS",
-            "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS", "ANALYZER_MAX_TOKENS",
-            "ANALYZER_THINKING_MAX_TOKENS", "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
-        }
-        effect_note = "下一次分析生效" if canonical_key in analysis_keys else "下一次录音生效"
+        effect_note = "下一次分析生效" if canonical_key in _ANALYSIS_SETTING_KEYS else "下一次录音生效"
         return make_reply(
             message, command=command, status="completed", at=_iso(),
             text=f"已设置 {canonical_key}：{masked}。已保存到 .env；{effect_note}。",

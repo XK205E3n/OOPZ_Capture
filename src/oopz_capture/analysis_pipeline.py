@@ -12,11 +12,11 @@ from typing import Any, Callable, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from .analysis_windows import determine_session_duration_ms
-from .analyzer_job import AnalyzerInput, _release_lock, load_analyzer_input, prepare_analysis
+from .analyzer_job import AnalyzerInput, _acquire_run_lock, _release_lock, load_analyzer_input, prepare_analysis
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json as _read_json
 from .output import write_jsonl
 from .pdf_reports import render_session_reports
-from .process_utils import pid_is_running
+from .reports import split_text
 from .workflow import _is_reparse_point, utc_now
 
 
@@ -107,6 +107,12 @@ OPENCODE_GO_USAGE_LIMITS_USD = {
     "weekly": 30.0,
     "monthly": 60.0,
 }
+_USAGE_STAGE_LABELS = (
+    ("short_summaries", "300秒总结"),
+    ("long_summaries", "60分钟摘要"),
+    ("final_overview", "最终总览"),
+    ("total", "总计"),
+)
 
 
 def _client_profile(client: JSONModelClient) -> dict[str, Any]:
@@ -144,26 +150,6 @@ def _window_parallelism(client: JSONModelClient) -> int:
 def _analysis_fingerprint(value: AnalyzerInput, profile: dict[str, Any]) -> str:
     serialized = json.dumps(profile, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
     return sha256(f"{value.fingerprint}\n{serialized}".encode("utf-8")).hexdigest()
-
-
-def _acquire_run_lock(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
-        if _is_reparse_point(path) or not path.is_file():
-            raise RuntimeError(f"unsafe analysis lock: {path}")
-        try:
-            existing = _read_json(path)
-            if isinstance(existing, dict) and pid_is_running(int(existing.get("pid", 0) or 0)):
-                raise RuntimeError(f"analysis is already running with PID={existing.get('pid')}")
-        except (OSError, ValueError, TypeError, AttributeError):
-            LOGGER.debug("analysis lock unreadable; treating it as stale: %s", path, exc_info=True)
-        path.unlink()
-    try:
-        with path.open("x", encoding="utf-8") as stream:
-            json.dump({"pid": os.getpid(), "created_at": _iso()}, stream)
-            stream.write("\n")
-    except FileExistsError as error:
-        raise RuntimeError("analysis run lock was acquired concurrently") from error
 
 
 def _model_list_item_text(value: Any) -> str:
@@ -678,29 +664,8 @@ def _delivery_target(value: AnalyzerInput) -> dict[str, str]:
     return {"type": "unconfigured", "id": ""}
 
 
-def _split_report(text: str, max_chars: int = 3000) -> list[str]:
-    paragraphs = text.split("\n\n")
-    chunks: list[str] = []
-    current = ""
-    for paragraph in paragraphs:
-        if len(paragraph) > max_chars:
-            pieces = [paragraph[index:index + max_chars] for index in range(0, len(paragraph), max_chars)]
-        else:
-            pieces = [paragraph]
-        for piece in pieces:
-            candidate = piece if not current else current + "\n\n" + piece
-            if len(candidate) > max_chars and current:
-                chunks.append(current)
-                current = piece
-            else:
-                current = candidate
-    if current:
-        chunks.append(current)
-    return chunks or [text]
-
-
 def _write_report_messages(path: Path, value: AnalyzerInput, report_id: str, report_text: str) -> list[dict[str, Any]]:
-    pieces = _split_report(report_text)
+    pieces = split_text(report_text)
     target = _delivery_target(value)
     created_at = _iso()
     messages = []
@@ -1058,13 +1023,7 @@ def _render_usage_summary(
             "| 阶段 | API调用 | 输入Token | 缓存命中 | 缓存未命中 | 输出Token | 推理Token | 总Token | 参考等价值(USD) |",
             "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ])
-        stage_labels = (
-            ("short_summaries", "300秒总结"),
-            ("long_summaries", "60分钟摘要"),
-            ("final_overview", "最终总览"),
-            ("total", "总计"),
-        )
-        for key, label in stage_labels:
+        for key, label in _USAGE_STAGE_LABELS:
             usage = usage_by_stage[key]
             cost = cost_estimate["stages"][key]
             lines.append(
@@ -1114,13 +1073,7 @@ def _render_usage_summary(
         "| 阶段 | API调用 | 输入 | 缓存命中输入 | 缓存未命中输入 | 未分类输入 | 输出 | 其中推理 | 总Token | 输入费用 | 输出费用 | 合计 |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ])
-    stage_labels = (
-        ("short_summaries", "300秒总结"),
-        ("long_summaries", "60分钟摘要"),
-        ("final_overview", "最终总览"),
-        ("total", "总计"),
-    )
-    for key, label in stage_labels:
+    for key, label in _USAGE_STAGE_LABELS:
         usage = usage_by_stage[key]
         cost = cost_estimate["stages"][key]
         if cost_estimate["status"] == "estimated":
@@ -1139,7 +1092,7 @@ def _render_usage_summary(
         lines.append("")
         lines.append("峰谷价格已合并计入上表；各阶段实际计价分布如下：")
         period_labels = {"off_peak": "非高峰", "peak": "高峰"}
-        for key, label in stage_labels:
+        for key, label in _USAGE_STAGE_LABELS:
             if key == "total":
                 continue
             details = cost_estimate["stages"][key].get("pricing_periods", {})
