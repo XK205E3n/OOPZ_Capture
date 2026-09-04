@@ -19,10 +19,11 @@ OOPZ Capture 用于录制 OOPZ 语音频道、分片转写并生成会话报告�
 
 ## 安装与启动
 
-1. 复制 `.env.example` 为 `.env`，至少填写飞书应用、OOPZ 手机号/密码和分析 API Key；不要提交 `.env`。
+1. 复制 `.env.example` 为 `.env`，至少填写 OOPZ 手机号/密码和分析 API Key；不要提交 `.env`。
 2. 安装依赖：`pip install -e ".[speech,feishu]"`。
-3. 确认 `models/SenseVoiceSmall/model.pt` 存在，并安装 64 位 Chrome 或 Edge 供 OOPZ 浏览器音频和 PDF 渲染使用。
-4. 运行 [启动OOPZ全流程.bat](启动OOPZ全流程.bat)。
+3. 还没有飞书机器人应用时，运行 `.\.venv\Scripts\oopz-feishu.exe setup`，用飞书 App 扫码并确认：应用创建、全部 11 项应用身份权限、长连接事件和卡片回调一次性完成，App ID/Secret 自动写入 `.env`（默认更新 `.env` 中已有应用；覆盖为另一应用需 `--force`）。失败或需要手动操作时按 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md) 配置。
+4. 确认 `models/SenseVoiceSmall/model.pt` 存在，并安装 64 位 Chrome 或 Edge 供 OOPZ 浏览器音频和 PDF 渲染使用。
+5. 运行 [启动OOPZ全流程.bat](启动OOPZ全流程.bat)。
 
 启动后会打开两个可见窗口：飞书收发记录，以及录音/转写/分析进度。首次启动会在群内发送启动提示与帮助；重启只发送生命周期状态，不重复帮助。关闭和重启分别使用 [一键关闭OOPZ全流程.bat](一键关闭OOPZ全流程.bat)、[一键重启OOPZ全流程.bat](一键重启OOPZ全流程.bat)。
 

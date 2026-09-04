@@ -139,12 +139,28 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .env_loader import load_project_env
     load_project_env()
     parser = argparse.ArgumentParser(prog="oopz-feishu", description="OOPZ Feishu group-control gateway")
-    parser.add_argument("command", choices=["serve", "drain", "notify", "reconcile-publications", "repair-publication-index", "backfill-publications", "discover-ids"])
+    parser.add_argument("command", choices=["serve", "drain", "notify", "reconcile-publications", "repair-publication-index", "backfill-publications", "discover-ids", "setup"])
     parser.add_argument("message", nargs="?", help="message text for notify")
     parser.add_argument("--lifecycle", choices=["started", "restarted"], help="send this lifecycle status once the long connection is ready")
     parser.add_argument("--runtime-log", help="append stdout to this UTF-8 log (serve only)")
     parser.add_argument("--error-log", help="append stderr to this UTF-8 log (serve only)")
+    parser.add_argument("--target-app-id", help="setup: 要更新的已有应用 App ID（默认取 .env 中的值）")
+    parser.add_argument("--create-only", action="store_true", help="setup: 只允许扫码创建新应用")
+    parser.add_argument("--force", action="store_true", help="setup: 允许把 .env 凭据覆盖为另一应用")
+    parser.add_argument("--url-only", action="store_true", help="setup: 不渲染终端二维码，仅打印确认链接")
     args = parser.parse_args(argv)
+    if args.command == "setup":
+        from .feishu_setup import run_setup
+        try:
+            return run_setup(
+                app_id=args.target_app_id,
+                create_only=args.create_only,
+                force=args.force,
+                url_only=args.url_only,
+            )
+        except KeyboardInterrupt:
+            print("已取消一键配置。", file=sys.stderr)
+            return 130
     log_handles: tuple[object, ...] = ()
     if args.command == "serve":
         log_handles = _append_process_logs(args.runtime_log, args.error_log)
@@ -268,28 +284,31 @@ def main(argv: Sequence[str] | None = None) -> int:
     channel.on(Events.MESSAGE, on_message)
     channel.on(Events.CARD_ACTION, on_card)
 
-    async def serve() -> None:
-        last_reconcile = 0.0
-        last_retention_cleanup = 0.0
-        try:
-            await channel.connect_until_ready()
-            print("飞书长连接已就绪；正在监听受控群的 @OOPZ 指令。", flush=True)
-            for notice in lifecycle_notices(args.lifecycle):
-                await gateway.send_lifecycle_notice(notice)
-            while True:
-                await gateway.drain_outbox()
-                now = asyncio.get_running_loop().time()
-                if now - last_reconcile >= 3600:
-                    await gateway.reconcile_publications()
-                    last_reconcile = now
-                if now - last_retention_cleanup >= 60:
-                    await gateway.cleanup_expired_sessions()
-                    last_retention_cleanup = now
-                await asyncio.sleep(1)
-        finally:
-            await channel.disconnect()
-    asyncio.run(serve())
+    asyncio.run(serve_gateway(channel, gateway, lifecycle=args.lifecycle))
     return 0
+
+
+async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | None) -> None:
+    """Keep the long connection alive: drain the outbox, reconcile hourly, clean retention minutely."""
+    last_reconcile = 0.0
+    last_retention_cleanup = 0.0
+    try:
+        await channel.connect_until_ready()
+        print("飞书长连接已就绪；正在监听受控群的 @OOPZ 指令。", flush=True)
+        for notice in lifecycle_notices(lifecycle):
+            await gateway.send_lifecycle_notice(notice)
+        while True:
+            await gateway.drain_outbox()
+            now = asyncio.get_running_loop().time()
+            if now - last_reconcile >= 3600:
+                await gateway.reconcile_publications()
+                last_reconcile = now
+            if now - last_retention_cleanup >= 60:
+                await gateway.cleanup_expired_sessions()
+                last_retention_cleanup = now
+            await asyncio.sleep(1)
+    finally:
+        await channel.disconnect()
 
 
 if __name__ == "__main__":

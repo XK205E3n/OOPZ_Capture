@@ -14,6 +14,14 @@
 - 验证：全仓（除按规则保留的历史 CHANGELOG 条目与审计基线中的陈旧指纹）无悬空引用；完整测试 `176 passed, 1 skipped`（较此前少 1 项为被删除的死代码专属测试）。
 - 部署影响：无；不改变任何运行行为、配置、依赖与数据格式。回滚代码可完整恢复被删文件。
 
+### 2026-09-03 — 新增飞书机器人一键配置（oopz-feishu setup）
+
+- 类型：新功能、配置入口、依赖、测试。
+- 修改：新增 `src/oopz_capture/feishu_setup.py` 与 `oopz-feishu setup` 子命令。参考飞书官方 `@larksuiteoapi/node-sdk` 的 `registerApp` 设备注册流（RFC 8628 风格，参考实现为 PlutoKeating/dsh-lark-bot）：终端展示确认二维码（新增 `qrcode` 依赖渲染，缺包时自动退回打印确认链接），用户用飞书 App 扫码确认后，应用创建/更新与本项目所需的 11 项应用身份权限、长连接事件（`im.message.receive_v1`、`p2.im.chat.member.bot.added_v1`）和卡片回调（`card.action.trigger`)在确认页一次性完成；App ID/Secret 自动写入本机 `.env`（Secret 不在终端显示）。默认更新 `.env` 中已有应用，覆盖为另一应用需显式 `--force`；`--create-only` 只允许新建；国际版（Lark）租户自动切换轮询域名；失败时输出含完整权限清单的手动配置指引。`pyproject.toml` 的 `feishu` extra 新增 `qrcode>=8,<9`。
+- 范围：`src/oopz_capture/feishu_setup.py`（新增）、`feishu_cli.py`（setup 子命令与 serve 循环提取）、`pyproject.toml`、`README.md`、`README_FEISHU_BOT_SETUP.md`、`docs/OPERATIONS.md`、`tests/test_feishu_setup.py`（新增）。
+- 验证：真实注册端点 `action=begin` 请求返回协议约定字段（device_code、expires_in、interval、user_code、verification_uri_complete）；新增 12 项测试覆盖 addons 编码、确认链接构造、轮询/slow_down 降速/国际版域名切换/终止错误/超时、凭据写入保护与手动回退指引；完整测试 `177 passed, 1 skipped`。
+- 部署影响：`feishu` extra 依赖集新增 `qrcode`（连带 `colorama`）；详见 `docs/DEPLOYMENT_CHANGELOG.md` 待发布条目。不新增环境变量、无数据迁移。
+
 ### 2026-09-03 — 代码结构精简与重复实现收编（不改变行为）
 
 - 类型：代码精简、重复实现收编、可读性。

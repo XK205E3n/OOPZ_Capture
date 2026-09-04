@@ -23,6 +23,7 @@ speech = [
 ]
 feishu = [
   "lark-oapi>=1.7.1,<2",
+  "qrcode>=8,<9",
 ]
 
 [project.scripts]

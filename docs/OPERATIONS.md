@@ -44,6 +44,8 @@ OOPZ_LOGIN_PASSWORD=...
 
 `OOPZ_FEISHU_ADMIN_CHAT_ID` 可预先填写，也可留空后启动：将机器人首次邀请进目标群时，程序会自动写入该群 ID，之后不会被其他邀请覆盖。如果机器人已经在群内且无法重新触发邀请事件，可用 `oopz-feishu discover-ids` 手动发现 ID。
 
+新建飞书应用可改用一键配置：`.\.venv\Scripts\oopz-feishu.exe setup` 扫码确认后自动完成应用创建/更新、11 项权限、事件与卡片回调申请，并把 App ID/Secret 写入本机 `.env`；详见 `README_FEISHU_BOT_SETUP.md` 开头说明。已按手册配置完成的租户无需再运行它。
+
 要启用对外发布，还必须同时填写 `OOPZ_FEISHU_PUBLIC_FOLDER_TOKEN`、`OOPZ_FEISHU_BASE_APP_TOKEN`、`OOPZ_FEISHU_BASE_TABLE_ID` 和 `OOPZ_FEISHU_PUBLIC_INDEX_URL`。公开文件夹和 Base 必须向飞书应用授予编辑权限。只填其中一部分会使启动时配置校验失败。
 
 不要在飞书群内设置密码、手机号或 API Key；这些值仅允许在本机 `.env` 中配置。
