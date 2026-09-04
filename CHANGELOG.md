@@ -6,6 +6,8 @@
 
 ## 0.11.7 — 2026-09-04
 
+Release：[OOPZ Capture v0.11.7 (7791e58)](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.7-7791e58f0359)
+
 ### 2026-09-04 — 测试合成凭据改为运行时生成并清理验证草稿
 
 - 类型：测试卫生、安全扫描合规。

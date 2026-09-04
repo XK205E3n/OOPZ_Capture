@@ -124,8 +124,8 @@
 
 ### 0.11.7 — 2026-09-04
 
-- 发布 ID：以发布包内 `RELEASE_MANIFEST.json` 的 `release_id` 为准（形如 `v0.11.7-<git_commit_short>`）。
-- Git 提交：精确值见发布包内 `RELEASE_MANIFEST.json` 的 `git_commit`（即含 `.env` 硬链接修复与部署文档对齐的提交）。
+- 发布 ID：`v0.11.7-7791e58f0359`（[GitHub Release](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.7-7791e58f0359)）。
+- Git 提交：`7791e58f03595864af9319a6879e04fbaf897adf`（含 `.env` 硬链接修复、测试凭据卫生与部署文档对齐）。
 - 部署时间：待首次服务器安装后回填。
 - 验证：发布包 SHA-256 与 `RELEASE_MANIFEST.json` 校验通过；release-audit 等价检查无新增命中；完整测试 `177 passed, 1 skipped`。
 - 依赖变化：无。
