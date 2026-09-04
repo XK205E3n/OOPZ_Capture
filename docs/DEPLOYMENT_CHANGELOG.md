@@ -2,6 +2,18 @@
 
 本文件只记录会影响构建、配置、部署、运行、数据或回滚的变更；普通业务修复仍应由 Git 提交记录。不得写入密钥或隐私数据。
 
+## 0.11.6 — 2026-09-03
+
+### 2026-09-03 — 新增飞书机器人一键配置与 Python 依赖增项
+
+- 类型：新功能与配置入口（部署影响：服务器 Python 依赖集新增 `qrcode` 及其依赖 `colorama`，其余无需额外操作）。
+- 运行变化：新增 `oopz-feishu setup` 子命令，通过飞书官方设备注册流（扫码确认）创建或更新机器人应用，在确认页一并申请 11 项应用身份权限、长连接事件（`im.message.receive_v1`、`p2.im.chat.member.bot.added_v1`）与卡片回调（`card.action.trigger`），并把 App ID/Secret 写入本机/共享 `.env`。该命令默认更新 `.env` 中已有应用；把凭据覆盖为另一应用需显式 `--force`。四个公开发布 `OOPZ_FEISHU_PUBLIC_*` 变量仍按原方式手动配置。已有部署不运行 setup 则行为完全不变。
+- 配置/数据迁移：无环境变量契约变化，无数据迁移；`.env` 仍只在运行机保存。
+- 依赖变化：`pyproject.toml` 的 `feishu` extra 新增 `qrcode>=8,<9`（纯 Python，连带 `colorama`）；Node 依赖不变。
+- 部署步骤：安装新发布包（安装脚本按声明范围安装依赖）并重启飞书网关；如需使用一键配置，在服务器以管理员运行 `.\.venv\Scripts\oopz-feishu.exe setup` 并由持有应用管理权限的账号扫码确认。
+- 回滚：回滚代码即可恢复旧命令面；虚拟环境中已安装的 `qrcode` 残留无害，无需卸载。setup 写入的 `.env` 凭据与既有格式一致，回滚后仍可被旧版本读取。
+- 验证：真实注册端点 `begin` 协议字段校验通过；`tests/test_feishu_setup.py` 12 项自动化覆盖；完整测试 `177 passed, 1 skipped`。
+
 ## 0.11.5 — 2026-08-29
 
 ### 2026-08-29 — README 第 2 节补充依赖软件官方下载地址
@@ -98,6 +110,15 @@
 - 对应提交：飞书迁移基线 `cdfe7408e8ae011e9897ab95fbde3035754b769a` 与本条更新所在提交。首个 GitHub Release ID 由该提交的 `RELEASE_MANIFEST.json` 记录。
 
 ## 已发布
+
+### 0.11.6 — 2026-09-03
+
+- 发布 ID：以发布包内 `RELEASE_MANIFEST.json` 的 `release_id` 为准（形如 `v0.11.6-<git_commit_short>`）。
+- Git 提交：精确值见发布包内 `RELEASE_MANIFEST.json` 的 `git_commit`（即含一键配置功能、代码精简与结构清理的提交）。
+- 部署时间：待首次服务器安装后回填。
+- 验证：发布包 SHA-256 与 `RELEASE_MANIFEST.json` 校验通过；release-audit 无新增命中；完整测试 `176 passed, 1 skipped`。
+- 依赖变化：`feishu` extra 新增 `qrcode>=8,<9`（连带 `colorama`）；服务器安装发布包时由安装脚本自动安装。
+- 回滚：回滚应用代码到上一发布目录（0.11.5）即可；持久数据不随代码回滚，虚拟环境中已安装的 `qrcode` 残留无害。
 
 ### 0.11.3 — 2026-08-28（首个生产发布）
 
