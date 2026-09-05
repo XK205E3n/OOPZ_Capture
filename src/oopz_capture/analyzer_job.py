@@ -18,8 +18,12 @@ from .analysis_windows import (
     plan_windows,
     write_window_plan,
 )
-from .jsonio import iso_utc as _iso, read_json as _read_json
-from .output import write_json
+from .jsonio import (
+    atomic_json as _atomic_json,
+    iso_utc as _iso,
+    read_json as _read_json,
+    read_json_or_none as _read_json_or_none,
+)
 from .identifiers import validate_session_id
 from .process_utils import pid_is_running
 from .workflow import _is_reparse_point, utc_now
@@ -29,17 +33,30 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _release_lock(lock_path: Path) -> None:
-    """Best-effort lock release; a stuck lock must not mask finished work."""
+    """Best-effort release of the analysis lock this process owns."""
     if not lock_path.is_file() or _is_reparse_point(lock_path):
         return
     try:
+        existing = _read_json(lock_path)
+    except (OSError, ValueError, TypeError):
+        existing = None
+    if isinstance(existing, dict) and existing.get("pid") not in (None, os.getpid()):
+        # Another owner reclaimed the lock after ours was stolen; leave theirs.
+        return
+    try:
         lock_path.unlink()
+    except FileNotFoundError:
+        return
     except OSError:
         LOGGER.warning("could not release analysis lock: %s", lock_path, exc_info=True)
 
 
-def _acquire_run_lock(path: Path) -> None:
-    """Acquire a variant run lock, reclaiming a lock whose owner PID is dead."""
+def _claim_lock(path: Path, *, locked_message: str) -> None:
+    """Acquire a JSON PID lock, reclaiming one whose owner PID is dead.
+
+    The payload is serialized up front and written in a single call so a
+    concurrent reaper never observes a half-written lock file.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         if _is_reparse_point(path) or not path.is_file():
@@ -47,16 +64,23 @@ def _acquire_run_lock(path: Path) -> None:
         try:
             existing = _read_json(path)
             if isinstance(existing, dict) and pid_is_running(int(existing.get("pid", 0) or 0)):
-                raise RuntimeError(f"analysis is already running with PID={existing.get('pid')}")
+                raise RuntimeError(locked_message)
         except (OSError, ValueError, TypeError, AttributeError):
             LOGGER.debug("analysis lock unreadable; treating it as stale: %s", path, exc_info=True)
-        path.unlink()
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
     try:
         with path.open("x", encoding="utf-8") as stream:
-            json.dump({"pid": os.getpid(), "created_at": _iso()}, stream)
-            stream.write("\n")
+            stream.write(json.dumps({"pid": os.getpid(), "created_at": _iso(utc_now())}) + "\n")
     except FileExistsError as error:
-        raise RuntimeError("analysis run lock was acquired concurrently") from error
+        raise RuntimeError(locked_message) from error
+
+
+def _acquire_run_lock(path: Path) -> None:
+    """Acquire a variant run lock, reclaiming a lock whose owner PID is dead."""
+    _claim_lock(path, locked_message="analysis run lock is held by an active process")
 
 
 def _aware_time(value: Any, field: str) -> datetime:
@@ -224,12 +248,8 @@ def load_analyzer_input(handoff_path: Path) -> AnalyzerInput:
 
 
 def _acquire_lock(path: Path) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with path.open("x", encoding="utf-8") as stream:
-            stream.write(json.dumps({"pid": os.getpid(), "created_at": _iso(utc_now())}) + "\n")
-    except FileExistsError as error:
-        raise RuntimeError(f"analysis preparation is already locked: {path}") from error
+    """Acquire the preparation lock with the same dead-owner recovery as run locks."""
+    _claim_lock(path, locked_message=f"analysis preparation is already locked: {path}")
 
 
 def prepare_analysis(handoff_path: Path) -> dict[str, Any]:
@@ -241,13 +261,13 @@ def prepare_analysis(handoff_path: Path) -> dict[str, Any]:
     lock_path = analysis_dir / ".prepare.lock"
     _acquire_lock(lock_path)
     try:
-        existing_job = _read_json(job_path) if job_path.is_file() else None
+        existing_job = _read_json_or_none(job_path)
         if isinstance(existing_job, dict) and existing_job.get("input_fingerprint") == value.fingerprint and windows_path.is_file():
-            windows = _read_json(windows_path)
-            if windows.get("schema_version") == "oopz.analysis.windows.v1" and windows.get("planner_version") == WINDOW_PLANNER_VERSION and windows.get("session_id") == value.session_id:
+            windows = _read_json_or_none(windows_path)
+            if windows is not None and windows.get("schema_version") == "oopz.analysis.windows.v1" and windows.get("planner_version") == WINDOW_PLANNER_VERSION and windows.get("session_id") == value.session_id:
                 return {"session_dir": value.session_dir, "job": existing_job, "windows": windows, "reused": True}
 
-        previous_lifecycle = _read_json(lifecycle_path) if lifecycle_path.is_file() else {}
+        previous_lifecycle = _read_json_or_none(lifecycle_path) or {}
         attempts = int(previous_lifecycle.get("prepare_attempts", 0)) + 1 if isinstance(previous_lifecycle, dict) else 1
         lifecycle = {
             "schema_version": "oopz.analysis.lifecycle.v1",
@@ -259,7 +279,7 @@ def prepare_analysis(handoff_path: Path) -> dict[str, Any]:
             "input_fingerprint": value.fingerprint,
             "failure": None,
         }
-        write_json(lifecycle_path, lifecycle)
+        _atomic_json(lifecycle_path, lifecycle)
         duration_ms = determine_session_duration_ms(value.session_dir, value.session, value.transcript)
         windows = plan_windows(
             value.session_id,
@@ -292,8 +312,8 @@ def prepare_analysis(handoff_path: Path) -> dict[str, Any]:
                 "windows_markdown": str(markdown_path.relative_to(value.session_dir)).replace("\\", "/"),
             },
         }
-        write_json(job_path, job)
-        write_json(analysis_dir / "checkpoint.json", {
+        _atomic_json(job_path, job)
+        _atomic_json(analysis_dir / "checkpoint.json", {
             "schema_version": "oopz.analysis.checkpoint.v1",
             "request_id": value.request_id,
             "session_id": value.session_id,
@@ -309,10 +329,10 @@ def prepare_analysis(handoff_path: Path) -> dict[str, Any]:
             "short_window_count": windows["short_window_count"],
             "long_window_count": windows["long_window_count"],
         })
-        write_json(lifecycle_path, lifecycle)
+        _atomic_json(lifecycle_path, lifecycle)
         return {"session_dir": value.session_dir, "job": job, "windows": windows, "reused": False}
     except Exception as error:
-        write_json(lifecycle_path, {
+        _atomic_json(lifecycle_path, {
             "schema_version": "oopz.analysis.lifecycle.v1",
             "request_id": value.request_id,
             "session_id": value.session_id,

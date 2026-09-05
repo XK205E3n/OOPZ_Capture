@@ -73,6 +73,36 @@ def make_session(
     return handoff
 
 
+def test_prepare_reclaims_prepare_lock_left_by_dead_process(tmp_path: Path) -> None:
+    handoff = make_session(tmp_path)
+    analysis_dir = handoff.parent.parent / "analysis"
+    analysis_dir.mkdir(parents=True)
+    (analysis_dir / ".prepare.lock").write_text(
+        json.dumps({"pid": 999_999_999, "created_at": "2026-09-04T00:00:00+00:00"}) + "\n",
+        encoding="utf-8",
+    )
+
+    prepared = prepare_analysis(handoff)
+
+    assert prepared["reused"] is False
+    assert not (analysis_dir / ".prepare.lock").exists()
+
+
+def test_prepare_tolerates_corrupted_analysis_files(tmp_path: Path) -> None:
+    handoff = make_session(tmp_path)
+    analysis_dir = handoff.parent.parent / "analysis"
+    analysis_dir.mkdir(parents=True)
+    for name in ("checkpoint.json", "job.json", "lifecycle.json"):
+        (analysis_dir / name).write_text("{ truncated", encoding="utf-8")
+
+    prepared = prepare_analysis(handoff)
+
+    assert prepared["reused"] is False
+    checkpoint = json.loads((analysis_dir / "checkpoint.json").read_text(encoding="utf-8"))
+    assert checkpoint["completed_short_window_ids"] == []
+    assert checkpoint["completed_long_window_ids"] == []
+
+
 def test_load_validates_ids_utf8_and_summary_windows(tmp_path: Path) -> None:
     value = load_analyzer_input(make_session(tmp_path))
     assert value.short_summary_seconds == 300

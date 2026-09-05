@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import threading
 import time
@@ -13,6 +14,9 @@ from uuid import UUID, uuid4
 
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso
 from .workflow import _is_reparse_point
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 SEND_REQUEST_SCHEMA = "oopz.controller.send_request.v1"
@@ -102,7 +106,16 @@ def list_send_requests(state_root: Path, *, statuses: set[str] | None = None) ->
     for path in sorted(root.glob("*.json")):
         if not path.is_file() or _is_reparse_point(path):
             raise ValueError(f"unsafe send request entry: {path}")
-        value = json.loads(path.read_text(encoding="utf-8"))
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            # One corrupted entry must not crash the gateway drain loop; the
+            # request cannot be delivered anyway and is skipped with a trace.
+            LOGGER.warning("skipping unreadable send request entry: %s", path, exc_info=True)
+            continue
+        if not isinstance(value, dict):
+            LOGGER.warning("skipping non-object send request entry: %s", path)
+            continue
         if statuses is None or value.get("status") in statuses:
             values.append(value)
     # File names are UUIDs and timestamp resolution can be too coarse for a

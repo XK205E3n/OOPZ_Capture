@@ -11,7 +11,7 @@
 | Git 提交 | `main` 跟踪私有 GitHub 仓库；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：发布并部署首个 GitHub Release 后登记发布 ID |
 | 应用版本 | `0.11.7` | 待部署（Release `v0.11.7-7791e58f0359` 已上传 GitHub，含 `.env` 硬链接修复与部署文档对齐） | 是 |
 | 操作系统 | Windows | 目标为 Windows Server 2022/2025 x64 Desktop Experience | 待实施 |
-| Python | 3.12.13 | 未安装/未确认 | 是：建议 3.12 x64 |
+| Python | 3.12.14 | 未安装/未确认 | 是：建议 3.12 x64 |
 | Node.js | 本地已安装，版本待确认 | 未安装/未确认 | 是：建议当前 LTS x64 |
 | 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 未安装 | 是 |
 | ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 计划由服务器从魔搭 `iic/SenseVoiceSmall` 自动下载固定修订版并校验 | 首次安装待实施 |
@@ -33,10 +33,11 @@ C:\OOPZ\
   shared\output\                          # 会话与报告
   shared\feishu_state\                    # 网关状态与审计
   shared\logs\                            # 运行日志
+  shared\tools\node\                      # PDF 渲染的 node.exe，发布间共享
   artifacts\                              # 已上传发布包与 SHA-256 文件
 ```
 
-发布目录中的 `.env` 使用同盘硬链接指向 `shared\config\.env`；`models`、`output`、`feishu_state`、`logs` 使用目录联接指向 `shared`。因此代码回滚不会回滚或清空业务数据和配置。程序对 `.env` 的写入（首次入群控制群绑定、一键配置、群内“设置”命令）必须保持原地写：改回“临时文件替换”式写入会切断硬链接，使这些修改在下次升级时丢失（见部署变更记录）。
+发布目录中的 `.env` 使用同盘硬链接指向 `shared\config\.env`；`models`、`output`、`feishu_state`、`logs` 使用目录联接指向 `shared`，`tools\node` 联接到 `shared\tools\node`。因此代码回滚不会回滚或清空业务数据和配置。程序对 `.env` 的写入（首次入群控制群绑定、一键配置、群内“设置”命令）必须保持原地写：改回“临时文件替换”式写入会切断硬链接，使这些修改在下次升级时丢失（见部署变更记录）。
 
 ## 服务器专属差异（允许存在）
 

@@ -84,6 +84,12 @@ def normalize_intent(text: str) -> str | None:
     A leading Feishu @mention is allowed, but the remaining command must use
     the fixed vocabulary from ``FEISHU_HELP_TEXT``. ``None`` deliberately
     rejects fuzzy natural-language guesses.
+
+    Known limitation: because the bot display name is unknowable here, the
+    @mention prefix is cut at the first command keyword anywhere in the text,
+    so a chat sentence that merely ends with a command word (e.g. "……可以停止")
+    is interpreted as that command.  Group members should avoid ending a
+    non-command message with a bare command word.
     """
     raw = _SPACE.sub(" ", str(text or "").strip())
     if raw.startswith("@"):

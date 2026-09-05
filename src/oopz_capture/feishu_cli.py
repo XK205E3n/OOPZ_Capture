@@ -128,7 +128,12 @@ async def _wait_for_admin_group_invitation(*, app_id: str, app_secret: str, chan
 
     channel.on(events.BOT_ADDED, on_bot_added)
     await channel.connect_until_ready()
-    print("尚未绑定控制群；请将机器人邀请至目标群聊，程序将自动保存群 ID。", flush=True)
+    print(
+        "尚未绑定控制群；请将机器人邀请至目标群聊，程序将自动保存群 ID。\n"
+        "若机器人已在目标群里（邀请事件发生在程序停机期间），请先将其移出群聊再重新邀请；"
+        "或改用 oopz-feishu discover-ids 手动获取群 ID 并写入 .env。",
+        flush=True,
+    )
     try:
         return await discovered
     finally:
@@ -289,7 +294,15 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | None) -> None:
-    """Keep the long connection alive: drain the outbox, reconcile hourly, clean retention minutely."""
+    """Keep the long connection alive: drain the outbox, reconcile hourly, clean retention minutely.
+
+    A failure inside one housekeeping step must never kill the gateway process:
+    this loop is the only remote control surface and it shares the process with
+    an in-flight recording.  Each failure is printed (the launcher redirects
+    stderr to the error log) and the loop continues.
+    """
+    import traceback
+
     last_reconcile = 0.0
     last_retention_cleanup = 0.0
     try:
@@ -298,14 +311,23 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
         for notice in lifecycle_notices(lifecycle):
             await gateway.send_lifecycle_notice(notice)
         while True:
-            await gateway.drain_outbox()
             now = asyncio.get_running_loop().time()
-            if now - last_reconcile >= 3600:
-                await gateway.reconcile_publications()
+            do_reconcile = now - last_reconcile >= 3600
+            do_retention_cleanup = now - last_retention_cleanup >= 60
+            if do_reconcile:
                 last_reconcile = now
-            if now - last_retention_cleanup >= 60:
-                await gateway.cleanup_expired_sessions()
+            if do_retention_cleanup:
                 last_retention_cleanup = now
+            try:
+                await gateway.drain_outbox()
+                if do_reconcile:
+                    await gateway.reconcile_publications()
+                if do_retention_cleanup:
+                    await gateway.cleanup_expired_sessions()
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                traceback.print_exc()
             await asyncio.sleep(1)
     finally:
         await channel.disconnect()

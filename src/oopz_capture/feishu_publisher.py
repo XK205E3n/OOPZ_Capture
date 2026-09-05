@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import asyncio
 from hashlib import sha256
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
+
+BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 
 
 @dataclass(frozen=True)
@@ -134,8 +137,10 @@ class FeishuPublisher:
         url = self.document_url(document_id)
         record_id = await self.client.create_base_record(app_token=self.config.base_app_token, table_id=self.config.base_table_id, fields={
             "报告标题": title,
-            "录音日期": int(recorded_at.timestamp() * 1000),
-            "发布时间": int(datetime.now().timestamp() * 1000),
+            # Session IDs are named in Beijing time; tag the naive clock explicitly
+            # so an overseas server timezone cannot shift the indexed dates.
+            "录音日期": int(recorded_at.replace(tzinfo=BEIJING_TIMEZONE).timestamp() * 1000),
+            "发布时间": int(datetime.now(timezone.utc).timestamp() * 1000),
             "状态": "已发布",
             "对外摘要": blocks[0].text[:1000],
             "阅读链接": {"link": url, "text": "阅读报告"},
@@ -243,15 +248,26 @@ class LarkPublishingClient:
         )
 
         if known_old_count is None:
-            get_request = (
-                GetDocumentBlockChildrenRequest.builder()
-                .document_id(document_id)
-                .block_id(document_id)
-                .page_size(500)
-                .build()
-            )
-            data = self._ok(await self.client.docx.v1.document_block_children.aget(get_request))
-            old_count = len(list(getattr(data, "items", None) or []))
+            # Long reports exceed one 500-block page; count every page so a
+            # refresh replaces the whole body instead of leaving stale blocks.
+            old_count = 0
+            page_token: str | None = None
+            while True:
+                builder = (
+                    GetDocumentBlockChildrenRequest.builder()
+                    .document_id(document_id)
+                    .block_id(document_id)
+                    .page_size(500)
+                )
+                if page_token:
+                    builder = builder.page_token(page_token)
+                data = self._ok(await self.client.docx.v1.document_block_children.aget(builder.build()))
+                old_count += len(list(getattr(data, "items", None) or []))
+                if not bool(getattr(data, "has_more", False)):
+                    break
+                page_token = str(getattr(data, "page_token", "") or "") or None
+                if page_token is None:
+                    break
         else:
             if known_old_count < 0:
                 raise ValueError("known_old_count must not be negative")
@@ -301,14 +317,33 @@ class LarkPublishingClient:
     async def get_chat_member_name(self, *, chat_id: str, open_id: str) -> str | None:
         """Resolve a group member's current display name without storing a directory."""
         from lark_oapi.api.im.v1 import GetChatMembersRequest
-        request = GetChatMembersRequest.builder().chat_id(chat_id).member_id_type("open_id").page_size(100).build()
-        # The IM member endpoint in lark-oapi currently exposes a synchronous
-        # ``get`` method (unlike the async document and Base endpoints).
-        data = self._ok(self.client.im.v1.chat_members.get(request))
-        for member in data.items or []:
-            if str(member.member_id or "") == open_id:
-                name = str(member.name or "").strip()
-                return name or None
+
+        def fetch_page(page_token: str | None):
+            builder = (
+                GetChatMembersRequest.builder()
+                .chat_id(chat_id)
+                .member_id_type("open_id")
+                .page_size(100)
+            )
+            if page_token:
+                builder = builder.page_token(page_token)
+            # The IM member endpoint in lark-oapi currently exposes a synchronous
+            # ``get`` method (unlike the async document and Base endpoints); run it
+            # in a worker thread so a slow response cannot stall the event loop.
+            return self._ok(self.client.im.v1.chat_members.get(builder.build()))
+
+        page_token: str | None = None
+        for _ in range(20):
+            data = await asyncio.to_thread(fetch_page, page_token)
+            for member in data.items or []:
+                if str(member.member_id or "") == open_id:
+                    name = str(member.name or "").strip()
+                    return name or None
+            if not bool(getattr(data, "has_more", False)):
+                break
+            page_token = str(getattr(data, "page_token", "") or "") or None
+            if page_token is None:
+                break
         return None
 
     async def update_base_record(self, *, app_token: str, table_id: str, record_id: str, fields: dict[str, Any]) -> None:

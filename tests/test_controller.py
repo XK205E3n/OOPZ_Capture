@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import json
 
 import pytest
 
-from oopz_capture.controller import ControllerConfig, ControllerService, _parse_duration_seconds
+from oopz_capture.controller import START_FLOW_SCHEMA, ControllerConfig, ControllerService, _parse_duration_seconds
 from oopz_capture.controller_protocol import SenderPolicy
+from oopz_capture.jsonio import atomic_json
 
 
 def controller_config(tmp_path: Path) -> ControllerConfig:
@@ -25,6 +28,22 @@ def test_duration_is_optional_but_has_safe_bounds() -> None:
         _parse_duration_seconds("2")
 
 
+def test_start_flow_expires_after_ttl(tmp_path: Path) -> None:
+    service = ControllerService(controller_config(tmp_path))
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=601)).isoformat(timespec="milliseconds")
+    atomic_json(service._start_flow_path, {
+        "schema_version": START_FLOW_SCHEMA,
+        "admin_id": "member-1",
+        "stage": "awaiting_area_selection",
+        "max_runtime_seconds": None,
+        "areas": [],
+        "updated_at": stale,
+    })
+
+    assert service._load_start_flow() is None
+    assert not service._start_flow_path.exists()
+
+
 def test_controller_uses_feishu_state_root(tmp_path: Path) -> None:
     service = ControllerService(controller_config(tmp_path))
     assert service.state_root == (tmp_path / "feishu_state").resolve()
@@ -41,17 +60,18 @@ def test_controller_requires_explicit_recording_consent(tmp_path: Path) -> None:
         ).validate()
 
 
-def test_controller_recovers_active_worker_lifecycle(tmp_path: Path) -> None:
+def test_controller_retires_orphaned_worker_lifecycle_on_restart(tmp_path: Path) -> None:
     session_id = "2026-08-22_20-35-59_BJT"
     session = tmp_path / "output" / session_id
     session.mkdir(parents=True)
-    (session / "lifecycle.json").write_text(json.dumps({
+    lifecycle_payload = {
         "managed_by": "oopz-worker-v1",
         "mode": "continuous",
         "request_id": "request-1",
         "status": "recording",
         "started_at": "2026-08-22T12:36:00+00:00",
-    }), encoding="utf-8")
+    }
+    (session / "lifecycle.json").write_text(json.dumps(lifecycle_payload), encoding="utf-8")
     (session / "request.json").write_text(json.dumps({
         "request_id": "request-1",
         "area_id": "area-1",
@@ -61,9 +81,55 @@ def test_controller_recovers_active_worker_lifecycle(tmp_path: Path) -> None:
 
     service = ControllerService(controller_config(tmp_path))
 
-    assert service._state["active"]["session_id"] == session_id
-    assert service._state["active"]["status"] == "recording"
-    assert service._state["active"]["recovered_from_lifecycle"] is True
+    # No capture task exists in this process, so the active lifecycle describes
+    # a dead run: it must be retired instead of adopted.
+    assert service._state["active"] is None
+    retired = json.loads((session / "lifecycle.json").read_text(encoding="utf-8"))
+    assert retired["status"] == "interrupted"
+    assert retired["previous_status"] == "recording"
+    assert retired["interrupted_reason"] == "controller_restarted_without_capture_driver"
+
+
+def test_controller_adopts_active_lifecycle_only_while_driven(tmp_path: Path) -> None:
+    session_id = "2026-08-22_20-35-59_BJT"
+    session = tmp_path / "output" / session_id
+    session.mkdir(parents=True)
+    lifecycle_payload = {
+        "managed_by": "oopz-worker-v1",
+        "mode": "continuous",
+        "request_id": "request-1",
+        "status": "recording",
+        "started_at": "2026-08-22T12:36:00+00:00",
+    }
+    (session / "lifecycle.json").write_text(json.dumps(lifecycle_payload), encoding="utf-8")
+    (session / "request.json").write_text(json.dumps({
+        "request_id": "request-1",
+        "area_id": "area-1",
+        "channel_id": "channel-1",
+        "requested_by": {"source": "feishu"},
+    }), encoding="utf-8")
+
+    async def scenario() -> None:
+        service = ControllerService(controller_config(tmp_path))
+        assert service._state["active"] is None
+        # Simulate a live capture driver, then re-arm the active lifecycle.
+        (session / "lifecycle.json").write_text(json.dumps(lifecycle_payload), encoding="utf-8")
+        driver = asyncio.create_task(asyncio.sleep(3600))
+        try:
+            service._active_task = driver
+            recovered = service._recover_active_session()
+            assert recovered is not None
+            assert recovered["session_id"] == session_id
+            assert recovered["status"] == "recording"
+            assert recovered["recovered_from_lifecycle"] is True
+        finally:
+            driver.cancel()
+            try:
+                await driver
+            except asyncio.CancelledError:
+                pass
+
+    asyncio.run(scenario())
 
 
 def test_controller_reconciles_stale_failure_with_completed_capture(tmp_path: Path) -> None:

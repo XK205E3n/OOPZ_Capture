@@ -27,6 +27,7 @@ from .workflow import _delete_archived_reports, _is_reparse_point, _validate_tre
 
 DECISION_SCHEMA = "oopz.controller.analysis_decision.v1"
 START_FLOW_SCHEMA = "oopz.controller.start_flow.v1"
+START_FLOW_TTL_SECONDS = 600
 
 # Settings that only affect the next analysis run, not the next recording.
 _ANALYSIS_SETTING_KEYS = frozenset({
@@ -331,13 +332,23 @@ class ControllerService:
         _atomic_json(self.state_path, self._state)
 
     def _recover_active_session(self) -> dict[str, Any] | None:
-        """Recover control from the worker lifecycle when controller memory is stale."""
+        """Recover control from the worker lifecycle when controller memory is stale.
+
+        An active-status lifecycle is only honored while this process still drives
+        its capture task.  After a restart the same bytes describe a dead run with
+        no driver; adopting it would block every new recording until retention
+        cleanup, so the orphan is retired into an explicit interrupted state.
+        """
         active_statuses = {"connecting", "recording", "reconnecting", "stopping"}
+        driven = self._active_task is not None and not self._active_task.done()
         active = self._state.get("active")
         if isinstance(active, dict):
             session_id = str(active.get("session_id") or "")
             path = self.output_root / session_id / "lifecycle.json"
             lifecycle = self._load_json_object(path) if session_id else None
+            if not driven:
+                self._retire_orphan_capture(session_id, path, lifecycle, active)
+                return None
             if lifecycle is None and active.get("status") in {"starting", "connecting"}:
                 return active
             if isinstance(lifecycle, dict) and lifecycle.get("status") in active_statuses:
@@ -367,6 +378,10 @@ class ControllerService:
             self._save_state()
             return None
         _, session_dir, lifecycle = max(candidates, key=lambda item: item[0])
+        if not driven:
+            self._retire_orphan_capture(session_dir.name, session_dir / "lifecycle.json", lifecycle, None)
+            self._save_state()
+            return None
         request = self._load_json_object(session_dir / "request.json") or {}
         recovered = {
             "session_id": session_dir.name,
@@ -381,6 +396,23 @@ class ControllerService:
         self._state["active"] = recovered
         self._save_state()
         return recovered
+
+    def _retire_orphan_capture(
+        self, session_id: str, lifecycle_path: Path, lifecycle: dict[str, Any] | None, active: dict[str, Any] | None,
+    ) -> None:
+        """Move a capture this process no longer drives out of the active set."""
+        now = _iso()
+        if lifecycle is not None:
+            lifecycle.update({
+                "status": "interrupted",
+                "interrupted_at": now,
+                "interrupted_reason": "controller_restarted_without_capture_driver",
+                "previous_status": str(lifecycle.get("status") or "unknown"),
+            })
+            _atomic_json(lifecycle_path, lifecycle)
+        if isinstance(active, dict):
+            self._state["last_job"] = {**active, "status": "interrupted", "updated_at": now}
+        self._state["active"] = None
 
     def _latest_analysis_lifecycle(self, session_dir: Path) -> dict[str, Any] | None:
         """Read the newest valid analysis lifecycle for a completed capture."""
@@ -642,6 +674,18 @@ class ControllerService:
         value = read_json_or_none(self._start_flow_path)
         if not value or value.get("schema_version") != START_FLOW_SCHEMA:
             return None
+        # A selection flow abandoned by its initiator must never wedge the whole
+        # group's start command, so it expires after ten minutes.
+        try:
+            updated = datetime.fromisoformat(str(value.get("updated_at") or "").replace("Z", "+00:00"))
+        except ValueError:
+            self._clear_start_flow()
+            return None
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
+        if datetime.now(timezone.utc) - updated > timedelta(seconds=START_FLOW_TTL_SECONDS):
+            self._clear_start_flow()
+            return None
         return value
 
     def _clear_start_flow(self) -> None:
@@ -893,6 +937,7 @@ class ControllerService:
             "reconnecting": "语音连接中断，正在重连",
             "stop_requested": "已收到离开指令，正在安全结束",
             "stopping": "正在结束并等待转写",
+            "interrupted": "录音因机器人重启而中断",
             "ready_for_analysis": "录音和转写已完成",
             "ready_for_analysis_with_errors": "转写完成但仍有失败分片",
         }.get(lifecycle_status, lifecycle_status)

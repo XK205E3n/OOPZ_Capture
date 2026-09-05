@@ -33,8 +33,8 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 | --- | --- | --- |
 | Git for Windows | 克隆运维副本、按提交检出脚本 | https://git-scm.com/download/win |
 | GitHub CLI (gh) | 登录私有仓库、下载指定 Release 与校验文件 | https://cli.github.com/ |
-| Python 3.12 | 运行环境与发布专用虚拟环境；须为 3.12.x（`install_release.ps1` 默认 `PythonExe=python.exe`，`[speech,feishu]` 额外依赖按 3.12 校验，勿用 3.13/3.14） | https://www.python.org/downloads/windows/ |
-| Node.js 当前 LTS | 仅提供 `npx`/`npm`；安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 固定 pnpm 版本，**无需预装 pnpm** | https://nodejs.org/ （取 LTS 版） |
+| Python 3.12 | 运行环境与发布专用虚拟环境；须为 3.12.x（`install_release.ps1` 默认 `PythonExe=python.exe`，`[speech,feishu]` 依赖已按 3.12 验证、脚本不做版本强制，勿用 3.13/3.14） | https://www.python.org/downloads/windows/ |
+| Node.js 当前 LTS | 提供 `npx`/`npm`（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 固定 pnpm 版本，**无需预装 pnpm**）；另需把其中的 `node.exe` 复制到 `C:\OOPZ\shared\tools\node\` 供 PDF 渲染使用（见第 4 节） | https://nodejs.org/ （取 LTS 版） |
 | Chrome 或 Edge | `md-to-pdf`/报表渲染所需的无头浏览器内核 | https://www.google.com/chrome/ 或 https://www.microsoft.com/edge |
 
 重新打开管理员 PowerShell，确认：
@@ -71,7 +71,8 @@ $oopzDirectories = @(
     'C:\OOPZ\shared\models',
     'C:\OOPZ\shared\output',
     'C:\OOPZ\shared\feishu_state',
-    'C:\OOPZ\shared\logs'
+    'C:\OOPZ\shared\logs',
+    'C:\OOPZ\shared\tools\node'
 )
 $oopzDirectories | ForEach-Object {
     New-Item -ItemType Directory -Path $_ -Force | Out-Null
@@ -91,9 +92,12 @@ C:\OOPZ\
   shared\output\
   shared\feishu_state\
   shared\logs\
+  shared\tools\node\
 ```
 
 `shared` 是持久区；更新和代码回滚都不得删除或覆盖其中的数据。
+
+PDF 渲染使用项目内固定的 Node 运行时：把已安装 Node.js LTS 目录中的 `node.exe` 复制到 `C:\OOPZ\shared\tools\node\node.exe`。发布包不含该文件，安装脚本会把它联接到每个版本目录的 `tools\node`，缺失时安装中止并给出明确提示。
 
 ## 5. 获取指定版本的管理脚本
 
@@ -119,7 +123,7 @@ Copy-Item C:\OOPZ\source\scripts\rollback_release.ps1 C:\OOPZ\admin\ -Force
 
 ## 6. 下载 GitHub Release
 
-将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.4-79ac108081c4`（当前发布版本）：
+将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.7-7791e58f0359`（当前发布版本）：
 
 ```powershell
 gh release download <release-id> `
@@ -203,7 +207,7 @@ powershell -NoProfile -ExecutionPolicy Bypass `
 2. 解压到新的 `releases\<release-id>`；
 3. 创建该版本独立的 Python 虚拟环境；
 4. 从魔搭社区下载或校验固定修订版 SenseVoiceSmall；
-5. 安装 Node 依赖（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 完成，`pnpm-lock.yaml` 已随发布包提供，需服务器可访问 npm），并将 `.env`、模型、输出、状态和日志连接到 `shared`；
+5. 安装 Node 依赖（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 完成，`pnpm-lock.yaml` 已随发布包提供，需服务器可访问 npm），并将 `.env`、模型、输出、状态和日志连接到 `shared`；同时校验 `shared\tools\node\node.exe` 存在并把 `tools\node` 联接到它，缺失时中止安装；
 6. 运行 Python 导入检查；
 7. 停止旧网关并切换 `current`；
 8. 启动新网关并等待飞书长连接就绪；

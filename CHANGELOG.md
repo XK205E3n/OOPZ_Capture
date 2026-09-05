@@ -4,6 +4,23 @@
 
 记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，还必须同步记录到 `docs/DEPLOYMENT_CHANGELOG.md`。
 
+## 未发布
+
+### 2026-09-04 — 全仓复审修复：网关健壮性、分析链路容错与部署缺口
+
+- 类型：Bug 修复、健壮性加固、部署脚本、文档、测试。
+- 修改：
+  - 分析链路：`.prepare.lock` 获得与其他分析锁一致的死进程回收（原先死进程残留会永久卡死该会话分析）；prepare 的 checkpoint/job/lifecycle 改为原子写且损坏文件按“无检查点”容错重建（原先截断 JSON 会让分析永久崩溃）；窗口并行汇总在首个失败后取消队列中剩余窗口（不再继续消耗 API 费用）；`analysis_fingerprint` 不再包含窗口并行度（调整并行不再使已完成窗口作废）；变体名拒绝 Windows 保留设备名与结尾点；未配置单价时费用小节保留完整 Token 用量表并使用供应商中性文案；PDF 渲染错误按类型+消息去重；提示词参与者直接使用昵称集合（昵称含“，”不再被拆碎）。
+  - 飞书网关：serve 循环对 drain/reconcile/cleanup 逐项异常隔离（损坏的 send_requests JSON 或被占用的会话文件不再杀死整个网关进程并连带取消进行中的录音）；send_requests 列表跳过损坏条目；批准发布卡片补齐锁与事件去重（并发/重投不再产生双份公开文档或孤儿公开文档），历史“先撤回后批准”记录可被 approve 覆盖，未发布时点击撤回改为提示且不再写入阻断记录；消息与卡片回复发送失败时撤销去重标记，允许飞书重投重试；保留清理对本地删除失败记录后跳过；replies/feishu_events/send_requests 增加按保留期的清理。
+  - 控制器：重启后不再“收编”无驱动的录音会话，改为写入 `interrupted` 终态并释放录音占用（修复升级/崩溃后“录音已占用”最长卡 15 天的问题）；收编仅在本进程仍有存活录音任务时发生；start_flow 频道选择流程增加 10 分钟过期，发起者弃选不再阻塞全群。
+  - 录音与修复链路：`oopz-continuous repair` 兼容硬杀会话——缺失 `stopped_at` 时回退 `interrupted_at`/`started_at`（原先修复在全部转写完成后必然 KeyError）、缺失 `delete_after` 时按最长保留期推算、排队未处理的分片（无 lifecycle.json）不再让修复整体中止；repair 的活动会话保护补上 `reconnecting` 状态；重连退避限制指数上限（小上限+低初始延迟的合法组合下约 17 分钟后溢出崩溃）；合并转写时同步重基准 `start_time`/`end_time`（原先与重基准后的毫秒值相差整数个分片时长）；单个损坏音频块不再被误判为连接丢失触发整轮重连，停机排水阶段也不再因坏块终止会话；VAD 跳过非数字 WAV 文件名（崩溃残留的 `.part.wav` 不再使分片转写失败）。
+  - 发布器：群成员显示名解析改用工作线程并按页翻页（超 100 人群不再解析失败，慢响应不再阻塞事件循环）；Base 索引时间戳显式按北京时区（海外服务器时区不再导致日期偏移 8 小时）；文档刷新按页统计旧块。
+  - 基础设施：`jsonio.atomic_json` 在 Windows 上遇读者短暂占用目标文件时重试 3 次；分析 API 传输层把 `http.client.HTTPException`（含 IncompleteRead）归入可重试；PDF 渲染 subprocess 增加 180 秒超时并先删除陈旧输出；`settings` 数值校验拒绝 `1_0`/`+1` 写法、`.env` 解析统一为成对引号剥离（与 `env_loader` 一致）；诊断脚本跳过非数字 WAV 文件名；`normalize_intent` docstring 记录 @提及截断的已知限制。
+  - 部署脚本与文档：`启动OOPZ全流程.bat` 补入 `invoke_full_stack_launcher.ps1` 所需的 `OOPZ full-stack launcher` 标记串（自启动入口此前必然抛错）；`install_release.ps1` 新增 `shared\tools\node\node.exe` 校验并把发布目录 `tools\node` 联接到共享目录（修复发布包不含 Node 运行时导致服务器首次 PDF 渲染必然失败的缺口）；云部署指南补充 Node 运行时放置步骤、示例 Release ID 更新为 v0.11.7、Python 版本措辞修正；README 指令措辞、飞书配置手册“原子写入”表述、部署状态基线 Python 版本与目录结构同步修正。
+- 范围：`src/oopz_capture/` 下 10 个模块、`scripts/install_release.ps1`、`启动OOPZ全流程.bat`、根目录 3 份 README 与 2 份 docs 部署文档；测试新增 5 项。
+- 验证：完整测试 `182 passed, 1 skipped`（新增 prepare 死锁回收、损坏分析文件容错、start_flow 过期、atomic_json 重试、仅存活任务时收编）。
+- 部署影响：见 `docs/DEPLOYMENT_CHANGELOG.md` 未发布条目（安装脚本新增 tools\node 校验与一次性 Node 运行时放置步骤）。
+
 ## 0.11.7 — 2026-09-04
 
 Release：[OOPZ Capture v0.11.7 (7791e58)](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.7-7791e58f0359)

@@ -2,6 +2,17 @@
 
 本文件只记录会影响构建、配置、部署、运行、数据或回滚的变更；普通业务修复仍应由 Git 提交记录。不得写入密钥或隐私数据。
 
+## 未发布
+
+### 2026-09-04 — 修复部署缺口（Node 运行时与自启动入口）并加固网关循环
+
+- 类型：部署脚本修正与运行健壮性（部署影响：安装脚本新增一次性 Node 运行时放置步骤与校验；升级并重启网关后生效）。
+- 修改：`install_release.ps1` 校验 `C:\OOPZ\shared\tools\node\node.exe` 存在（缺失时中止安装并给出提示），并把发布目录 `tools\node` 联接到该共享目录——发布包本身不含 Node 运行时，此前按文档部署的服务器在首次 PDF 渲染时必然失败；`README_CLOUD_SERVER_DEPLOYMENT.md` 第 2、4、9 节同步补充 `node.exe` 的放置步骤与目录结构。`启动OOPZ全流程.bat` 补入 `invoke_full_stack_launcher.ps1` 依赖的 `OOPZ full-stack launcher` 标记串（计划任务自启动入口此前必然抛错）。网关侧：serve 循环对 drain/reconcile/cleanup 逐项异常隔离，损坏的 send_requests 条目跳过、被占用的会话文件在保留清理中记录后跳过，不再导致网关进程退出并连带取消进行中的录音。崩溃恢复链路：`oopz-continuous repair` 现在能收敛被中断（interrupted）的会话——此前修复会在转写完成后因缺失 `stopped_at` 必然崩溃，排队分片缺失 lifecycle.json 也会让修复中止。
+- 配置/数据迁移：无新环境变量、无数据迁移。已部署服务器需一次性把 Node.js LTS 的 `node.exe` 放入 `C:\OOPZ\shared\tools\node\`，再安装本版本。
+- 部署步骤：放置 node.exe → 按正常流程安装发布包 → 重启网关；开机自启动任务无需改动（入口脚本修复后自动恢复）。
+- 回滚：回滚代码即可；`shared\tools\node` 目录残留无害。回滚到 0.11.7 及更早版本后，serve 循环与自启动入口的缺陷随之恢复。
+- 验证：完整测试 `182 passed, 1 skipped`。
+
 ## 0.11.7 — 2026-09-04
 
 ### 2026-09-04 — 修复 `.env` 写入破坏发布目录硬链接

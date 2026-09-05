@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import http.client
 import os
 import random
 import threading
@@ -158,7 +159,7 @@ def urllib_transport(endpoint: str, headers: dict[str, str], payload: dict[str, 
         if error.code == 429 or 500 <= error.code < 600:
             raise RetryableAnalysisAPIError(f"analysis API HTTP {error.code}") from error
         raise AnalysisAPIError(f"analysis API HTTP {error.code}") from error
-    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as error:
+    except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, http.client.HTTPException) as error:
         raise RetryableAnalysisAPIError(f"analysis API transport failure: {type(error).__name__}") from error
 
 

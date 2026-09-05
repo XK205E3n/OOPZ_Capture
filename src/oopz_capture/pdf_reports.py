@@ -79,14 +79,21 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
         raise FileNotFoundError(f"md-to-pdf dependencies are not installed; {PDF_SETUP_HINT}")
     if markdown_path.suffix.lower() != ".md":
         raise ValueError(f"expected Markdown input: {markdown_path}")
-    result = subprocess.run(
-        [str(NODE_PATH), str(RENDERER), str(markdown_path), str(output_path)],
-        cwd=str(PROJECT_ROOT),
-        check=True,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-    )
+    # A stale renderer output must never pass as fresh; delete it first so the
+    # size check below can only succeed on a file produced by this run.
+    output_path.unlink(missing_ok=True)
+    try:
+        result = subprocess.run(
+            [str(NODE_PATH), str(RENDERER), str(markdown_path), str(output_path)],
+            cwd=str(PROJECT_ROOT),
+            check=True,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=180,
+        )
+    except subprocess.TimeoutExpired as error:
+        raise RuntimeError(f"PDF renderer timed out after 180s: {markdown_path}") from error
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RuntimeError(f"PDF renderer returned without creating {output_path}: {result.stdout}")
     return output_path

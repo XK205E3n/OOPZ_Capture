@@ -51,6 +51,11 @@ try {
     foreach ($name in @('models', 'output', 'feishu_state', 'logs')) {
         New-Item -ItemType Junction -Path (Join-Path $releasePath $name) -Target (Join-Path $sharedRoot $name) | Out-Null
     }
+    $toolsNodeSource = Join-Path $sharedRoot 'tools\node'
+    if (-not (Test-Path -LiteralPath (Join-Path $toolsNodeSource 'node.exe') -PathType Leaf)) {
+        throw "PDF rendering Node runtime is missing: $toolsNodeSource\node.exe. See README_CLOUD_SERVER_DEPLOYMENT.md section 4."
+    }
+    New-Item -ItemType Junction -Path (Join-Path $releasePath 'tools\node') -Target $toolsNodeSource | Out-Null
 
     & $PythonExe -m venv (Join-Path $releasePath '.venv')
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the release virtual environment.' }

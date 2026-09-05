@@ -77,7 +77,10 @@ def run_vad_session(session_dir: Path, backend: VADBackend, config: VADConfig) -
     session = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
     session_id = str(session.get("session_id") or session_dir.name)
     users = _load_users(session_dir)
-    audio_files = sorted((session_dir / "audio").glob("*.wav"), key=lambda item: int(item.stem))
+    audio_files = sorted(
+        (item for item in (session_dir / "audio").glob("*.wav") if item.stem.isdigit()),
+        key=lambda item: int(item.stem),
+    )
     if not audio_files:
         raise ValueError(f"no WAV tracks found in {session_dir / 'audio'}")
     segments: list[dict[str, Any]] = []

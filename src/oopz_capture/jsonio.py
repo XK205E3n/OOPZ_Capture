@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,11 +21,22 @@ def iso_utc(value: datetime | None = None) -> str:
 
 
 def atomic_json(path: Path, value: Any) -> None:
-    """Write JSON through a pid-suffixed sibling, then atomically replace."""
+    """Write JSON through a pid-suffixed sibling, then atomically replace.
+
+    A concurrent reader holding the target open briefly denies delete access
+    on Windows; retry the replace before surfacing the error.
+    """
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".{os.getpid()}.tmp")
     temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    for attempt in range(3):
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if attempt == 2:
+                raise
+            time.sleep(0.05 * (attempt + 1))
 
 
 def read_json(path: Path) -> Any:

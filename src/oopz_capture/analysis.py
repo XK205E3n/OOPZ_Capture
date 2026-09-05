@@ -36,7 +36,10 @@ def analyze_session(session_dir: Path, *, threshold_dbfs: float = -45.0, window_
     if window_ms <= 0:
         raise ValueError("window_ms must be positive")
     audio_dir = session_dir / "audio"
-    files = sorted(audio_dir.glob("*.wav"), key=lambda item: int(item.stem))
+    files = sorted(
+        (item for item in audio_dir.glob("*.wav") if item.stem.isdigit()),
+        key=lambda item: int(item.stem),
+    )
     if not files:
         raise ValueError(f"no WAV tracks found in {audio_dir}")
     users_path = session_dir / "users.json"

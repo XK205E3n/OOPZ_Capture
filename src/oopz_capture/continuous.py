@@ -431,6 +431,14 @@ def _merge_transcripts(session_dir: Path, chunk_results: list[dict[str, Any]]) -
                     "source_audio_deleted": True,
                     "source_audio_file": source_audio,
                 })
+                for key, local_ms in (("start_time", local_start), ("end_time", local_end)):
+                    if key not in item:
+                        continue
+                    try:
+                        local_dt = datetime.fromisoformat(str(item[key]).replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                    item[key] = (local_dt + timedelta(milliseconds=offset_ms)).isoformat(timespec="milliseconds")
                 records.append(item)
     records.sort(key=lambda item: (int(item["start_ms"]), int(item["agora_uid"]), int(item["end_ms"])))
     write_jsonl(session_dir / "transcript.jsonl", records)
@@ -518,7 +526,7 @@ async def repair_continuous_session(
     lifecycle = json.loads(lifecycle_path.read_text(encoding="utf-8"))
     if lifecycle.get("managed_by") != "oopz-worker-v1" or lifecycle.get("mode") != "continuous":
         raise ValueError("refusing to repair a non-continuous or unmanaged Session")
-    if lifecycle.get("status") in {"connecting", "recording", "stopping"}:
+    if lifecycle.get("status") in {"connecting", "recording", "reconnecting", "stopping"}:
         raise ValueError("cannot repair an active Session")
     request = _saved_continuous_request(json.loads(request_path.read_text(encoding="utf-8")))
     chunks_root = session_dir / "chunks"
@@ -529,7 +537,19 @@ async def repair_continuous_session(
         if not chunk_dir.is_dir() or _is_reparse_point(chunk_dir):
             raise ValueError(f"unsafe chunk entry: {chunk_dir}")
         chunk_lifecycle_path = chunk_dir / "lifecycle.json"
-        chunk_lifecycle = json.loads(chunk_lifecycle_path.read_text(encoding="utf-8"))
+        chunk_lifecycle: dict[str, Any]
+        if chunk_lifecycle_path.is_file():
+            try:
+                loaded = json.loads(chunk_lifecycle_path.read_text(encoding="utf-8"))
+                chunk_lifecycle = loaded if isinstance(loaded, dict) else {}
+            except (OSError, ValueError, TypeError):
+                # A half-written chunk lifecycle from a hard kill is treated as a
+                # failed chunk below, so repair still converges on the session.
+                chunk_lifecycle = {}
+        else:
+            # Chunks queued but never processed before the crash have no
+            # lifecycle yet; the audio branch below retries or records failure.
+            chunk_lifecycle = {}
         if chunk_lifecycle.get("status") == "transcribed":
             try:
                 validated = validate_transcript(chunk_dir)
@@ -557,8 +577,20 @@ async def repair_continuous_session(
                 result = {"chunk_dir": chunk_dir, "ok": False, "error": str(error)}
         results.append(result)
     segment_count, markdown = _merge_transcripts(session_dir, results)
-    stopped_at = datetime.fromisoformat(str(lifecycle["stopped_at"]).replace("Z", "+00:00"))
-    delete_after = datetime.fromisoformat(str(lifecycle["delete_after"]).replace("Z", "+00:00"))
+    # Hard-killed sessions were retired as "interrupted" and never wrote a
+    # stopped_at; fall back to the interrupted/started markers so repair can
+    # still converge instead of crashing after all transcription work.
+    stopped_at_text = str(lifecycle.get("stopped_at") or lifecycle.get("interrupted_at") or lifecycle.get("started_at") or "").strip()
+    if not stopped_at_text:
+        raise ValueError("Session lifecycle lacks a usable stop time for repair")
+    stopped_at = datetime.fromisoformat(stopped_at_text.replace("Z", "+00:00"))
+    delete_after_text = str(lifecycle.get("delete_after") or "").strip()
+    if delete_after_text:
+        delete_after = datetime.fromisoformat(delete_after_text.replace("Z", "+00:00"))
+    else:
+        # Keep a recovered session for the maximum retention horizon when the
+        # crash happened before the deadline was persisted.
+        delete_after = stopped_at + timedelta(hours=360)
     handoff = _write_final_handoff(
         session_dir, request, stopped_at=stopped_at, delete_after=delete_after,
         segment_count=segment_count, chunk_results=results, analysis_requested_at=utc_now(),
@@ -591,7 +623,9 @@ def reconnect_delay(attempt: int, initial_seconds: float, maximum_seconds: float
     """Return bounded exponential backoff for a one-based reconnect attempt."""
     if attempt < 1:
         raise ValueError("attempt must be at least 1")
-    return min(maximum_seconds, initial_seconds * (2 ** (attempt - 1)))
+    # Cap the exponent so long-lived sessions with a sub-second max delay do
+    # not overflow float conversion (2**1024) inside the reconnect handler.
+    return min(maximum_seconds, initial_seconds * (2 ** min(attempt - 1, 62)))
 
 
 def _append_connectivity_event(session_dir: Path, event: str, **fields: Any) -> None:
@@ -971,7 +1005,11 @@ async def run_continuous_capture(
                     break
                 loop_time = asyncio.get_running_loop().time()
                 for chunk in chunks:
-                    ingest_chunk(chunk, loop_time)
+                    try:
+                        ingest_chunk(chunk, loop_time)
+                    except Exception:
+                        # Teardown draining must not fail the session on one bad chunk.
+                        continue
             snapshot = await safe_snapshot()
             capture_stopped_at = utc_now()
             elapsed_ms = round(max(0.0, (capture_stopped_at - capture_started_wall).total_seconds()) * 1000)
@@ -1177,7 +1215,16 @@ async def run_continuous_capture(
                     probe.drain_audio(), timeout=request.browser_operation_timeout_seconds,
                 )
                 for chunk in drained:
-                    ingest_chunk(chunk, loop_time)
+                    try:
+                        ingest_chunk(chunk, loop_time)
+                    except (KeyError, ValueError, TypeError) as error:
+                        # One malformed browser chunk (bad base64, unknown UID,
+                        # rate change) is data corruption, not a connection
+                        # loss: skip it instead of forcing a full reconnect.
+                        _append_connectivity_event(
+                            session_dir, "audio_chunk_skipped",
+                            error=f"{type(error).__name__}: {error}",
+                        )
             except Exception as error:
                 disconnect_error = VoiceConnectionLost(
                     f"browser audio drain failed: {type(error).__name__}: {error}"

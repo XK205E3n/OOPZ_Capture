@@ -13,7 +13,12 @@ from uuid import NAMESPACE_URL, uuid5
 
 from .analysis_windows import determine_session_duration_ms
 from .analyzer_job import AnalyzerInput, _acquire_run_lock, _release_lock, load_analyzer_input, prepare_analysis
-from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json as _read_json
+from .jsonio import (
+    atomic_json as _atomic_json,
+    iso_utc as _iso,
+    read_json as _read_json,
+    read_json_or_none as _read_json_or_none,
+)
 from .output import write_jsonl
 from .pdf_reports import render_session_reports
 from .reports import split_text
@@ -220,8 +225,13 @@ def _speaker_nicknames(values: list[dict[str, Any]]) -> str:
 
 
 def _speaker_nickname_list(values: list[dict[str, Any]]) -> list[str]:
-    rendered = _speaker_nicknames(values)
-    return [] if rendered == "无" else rendered.split("，")
+    """Deduplicated nicknames in speech order, without any join/split roundtrip."""
+    nicknames: list[str] = []
+    for value in values:
+        nickname = str(value.get("nickname") or "未知用户").strip()
+        if nickname and nickname not in nicknames:
+            nicknames.append(nickname)
+    return nicknames
 
 
 def _minute_grouped_turns(value: AnalyzerInput, segments: list[dict[str, Any]]) -> list[list[Any]]:
@@ -460,8 +470,8 @@ def _checkpoint(
     analysis_profile: dict[str, Any],
 ) -> dict[str, Any]:
     if path.is_file():
-        current = _read_json(path)
-        if current.get("analysis_fingerprint") == analysis_fingerprint:
+        current = _read_json_or_none(path)
+        if current is not None and current.get("analysis_fingerprint") == analysis_fingerprint:
             return current
     return {
         "schema_version": "oopz.analysis.checkpoint.v1",
@@ -1042,9 +1052,19 @@ def _render_usage_summary(
     if cost_estimate.get("status") == "unavailable":
         lines.extend([
             f"本次请求模型为 `{cost_estimate.get('requested_model', 'unknown')}`；"
-            "项目没有该模型的已核验 OpenCode Go 参考单价，因此仅保留 Token 用量，不估算费用。",
+            "项目没有该模型的已核验参考单价，因此仅保留 Token 用量，不估算费用。",
             "",
+            "| 阶段 | API调用 | 输入 | 缓存命中输入 | 缓存未命中输入 | 输出 | 其中推理 | 总Token |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
         ])
+        for key, label in _USAGE_STAGE_LABELS:
+            usage = usage_by_stage[key]
+            lines.append(
+                f"| {label} | {usage['api_calls']} | {usage['prompt_tokens']} | "
+                f"{usage['prompt_cache_hit_tokens']} | {usage['prompt_cache_miss_tokens']} | "
+                f"{usage['completion_tokens']} | {usage['reasoning_tokens']} | {usage['total_tokens']} |"
+            )
+        lines.append("")
         return
     lines.append(
         f"计价基准：`{cost_estimate['pricing_model']}`。本报告按 DeepSeek 公布、计划于北京时间 "
@@ -1123,6 +1143,8 @@ def _variant_paths(value: AnalyzerInput, variant: str) -> tuple[Path, Path, str]
         return value.session_dir / "analysis", value.session_dir / "handoff" / "report_messages.jsonl", "analysis"
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", variant):
         raise ValueError("analysis variant must contain only lowercase letters, digits, dot, underscore, or dash")
+    if re.fullmatch(r"(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.[a-z0-9._-]*)?", variant) or variant.endswith((".", " ")):
+        raise ValueError("analysis variant uses a reserved Windows device name or a trailing separator")
     relative = f"analysis_variants/{variant}"
     return (
         value.session_dir / "analysis_variants" / variant,
@@ -1147,11 +1169,13 @@ def run_analysis(
     checkpoint_path = analysis_dir / "checkpoint.json"
     analysis_profile = _client_profile(client)
     window_parallelism = _window_parallelism(client)
-    analysis_profile["window_parallelism"] = window_parallelism
     analysis_profile["short_request_mode"] = "one_request_per_window"
     if variant != "default":
         analysis_profile["variant"] = variant
+    # Parallelism only changes scheduling, not outputs, so it stays out of the
+    # fingerprint: tuning it must never invalidate completed window results.
     analysis_fingerprint = _analysis_fingerprint(value, analysis_profile)
+    analysis_profile["window_parallelism"] = window_parallelism
     _acquire_run_lock(lock_path)
     try:
         windows = prepared["windows"]
@@ -1237,8 +1261,14 @@ def run_analysis(
                         value, _public_report_path(report_path), f"{variant or 'default'}-report",
                     )
                     if pdf_error:
-                        existing.setdefault("errors", []).append(pdf_error)
-                        _atomic_json(result_path, existing)
+                        errors = [item for item in existing.get("errors", []) if isinstance(item, dict)]
+                        if not any(
+                            item.get("type") == pdf_error.get("type") and item.get("message") == pdf_error.get("message")
+                            for item in errors
+                        ):
+                            errors.append(pdf_error)
+                            existing["errors"] = errors
+                            _atomic_json(result_path, existing)
                 return {
                     "result": existing,
                     "result_path": result_path,
@@ -1285,17 +1315,23 @@ def run_analysis(
                 executor.submit(summarize_short, window): window
                 for window in windows["short_windows"]
             }
-            for completed_count, future in enumerate(as_completed(futures), start=1):
-                window = futures[future]
-                summary = future.result()
-                short_values_by_id[window["window_id"]] = summary
-                if window["window_id"] not in checkpoint["completed_short_window_ids"]:
-                    checkpoint["completed_short_window_ids"].append(window["window_id"])
-                    _save_checkpoint(checkpoint_path, checkpoint)
-                _report_progress(
-                    progress_reporter, stage="short", completed=completed_count,
-                    total=len(windows["short_windows"]), window_index=window["index"],
-                )
+            try:
+                for completed_count, future in enumerate(as_completed(futures), start=1):
+                    window = futures[future]
+                    summary = future.result()
+                    short_values_by_id[window["window_id"]] = summary
+                    if window["window_id"] not in checkpoint["completed_short_window_ids"]:
+                        checkpoint["completed_short_window_ids"].append(window["window_id"])
+                        _save_checkpoint(checkpoint_path, checkpoint)
+                    _report_progress(
+                        progress_reporter, stage="short", completed=completed_count,
+                        total=len(windows["short_windows"]), window_index=window["index"],
+                    )
+            except BaseException:
+                # The run has already failed; queued windows would only burn API
+                # budget, so cancel them before waiting out in-flight requests.
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
         short_values = [short_values_by_id[window["window_id"]] for window in windows["short_windows"]]
         write_jsonl(analysis_dir / "short_summaries.jsonl", short_values)
 
@@ -1347,20 +1383,25 @@ def run_analysis(
                 executor.submit(summarize_long, window): window
                 for window in windows["long_windows"]
             }
-            for completed, future in enumerate(as_completed(futures), start=1):
-                window = futures[future]
-                summary = future.result()
-                long_values_by_id[window["window_id"]] = summary
-                if window["window_id"] not in checkpoint["completed_long_window_ids"]:
-                    checkpoint["completed_long_window_ids"].append(window["window_id"])
-                    _save_checkpoint(checkpoint_path, checkpoint)
-                _report_progress(
-                    progress_reporter,
-                    stage="long",
-                    completed=completed,
-                    total=len(windows["long_windows"]),
-                    window_index=window["index"],
-                )
+            try:
+                for completed, future in enumerate(as_completed(futures), start=1):
+                    window = futures[future]
+                    summary = future.result()
+                    long_values_by_id[window["window_id"]] = summary
+                    if window["window_id"] not in checkpoint["completed_long_window_ids"]:
+                        checkpoint["completed_long_window_ids"].append(window["window_id"])
+                        _save_checkpoint(checkpoint_path, checkpoint)
+                    _report_progress(
+                        progress_reporter,
+                        stage="long",
+                        completed=completed,
+                        total=len(windows["long_windows"]),
+                        window_index=window["index"],
+                    )
+            except BaseException:
+                # See the short-window stage: cancel queued work on first failure.
+                executor.shutdown(wait=False, cancel_futures=True)
+                raise
         long_values = [long_values_by_id[window["window_id"]] for window in windows["long_windows"]]
         write_jsonl(analysis_dir / "long_summaries.jsonl", long_values)
 
@@ -1472,7 +1513,7 @@ def run_analysis(
             "pdf_error": pdf_error,
         }
     except Exception as error:
-        lifecycle = _read_json(lifecycle_path) if lifecycle_path.is_file() else {}
+        lifecycle = _read_json_or_none(lifecycle_path) or {}
         lifecycle.update({
             "schema_version": "oopz.analysis.lifecycle.v1",
             "request_id": value.request_id,

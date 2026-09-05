@@ -1,4 +1,5 @@
 @echo off
+rem OOPZ full-stack launcher
 setlocal EnableExtensions
 cd /d "%~dp0"
 

@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import time
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -14,7 +15,7 @@ from uuid import uuid4
 
 from .feishu_protocol import FeishuInbound, display_intent, normalize_intent, synthetic_controller_id
 from .feishu_publisher import FeishuPublisher, PublicationConfig, public_report_fingerprint, recording_title
-from .jsonio import atomic_json as _atomic_json, iso_utc as _iso
+from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none as _read_json_or_none
 from .controller import ControllerConfig, ControllerService, _env_bool
 from .controller_protocol import SenderPolicy
 from .reports import find_pending_sessions, find_recent_reports
@@ -573,10 +574,16 @@ class FeishuGateway:
                     "received_at": _iso(),
                 })
                 self._audit("accepted_command", message_id=inbound.message_id, sender_open_id=inbound.sender_open_id, command=command)
-        if outbound.get("card"):
-            await self._send_card(outbound["card"])
-        else:
-            await self._send_reply(str(outbound.get("text") or "已处理。"))
+        try:
+            if outbound.get("card"):
+                await self._send_card(outbound["card"])
+            else:
+                await self._send_reply(str(outbound.get("text") or "已处理。"))
+        except Exception:
+            # Feishu redelivers unacked events; dropping the dedup mark lets the
+            # retry re-run instead of being swallowed as a duplicate.
+            path.unlink(missing_ok=True)
+            raise
 
     async def handle_card_action(self, *, action_id: str, open_id: str, event_id: str, chat_id: str) -> None:
         if chat_id != self.config.admin_chat_id:
@@ -603,48 +610,81 @@ class FeishuGateway:
             return
         _, decision, payload = parts
         await self._handle_publication_card_action(
-            decision=decision, payload=payload, open_id=open_id,
+            decision=decision, payload=payload, open_id=open_id, event_id=event_id,
         )
 
-    async def _handle_publication_card_action(self, *, decision: str, payload: str, open_id: str) -> None:
+    async def _handle_publication_card_action(
+        self, *, decision: str, payload: str, open_id: str, event_id: str,
+    ) -> None:
         session_id, separator, expected_fingerprint = payload.rpartition("|")
         if not separator:
             session_id, expected_fingerprint = payload, ""
         if decision not in {"approve", "reject", "withdraw"} or not _SESSION_ID.fullmatch(session_id):
             return
         path = self.state_root / "publication_decisions" / f"{session_id}.json"
-        if path.exists():
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            if decision == "withdraw" and existing.get("publication_created") and not existing.get("revoked_at"):
-                if self.publisher is None:
-                    await self._send_text("未配置 M3 发布目标，无法撤回已发布报告。")
-                    return
-                await self.publisher.revoke(existing)
-                existing.update({"revoked_at": _iso(), "revoked_by_open_id": open_id})
-                _atomic_json(path, existing)
-                self._audit("publication_withdrawn", session_id=session_id, withdrawn_by_open_id=open_id)
-                await self._send_text("已撤回公开文档，并从公开日历中隐藏该报告。")
+        event_path = self._event_path(event_id)
+        send_text: str
+        async with self._lock:
+            if event_path.exists():
+                self._audit("duplicate_card_action", action_id=f"publication:{decision}", event_id=event_id)
                 return
-            await self._send_text(f"Session={session_id} 的发布审查已记录，未重复执行。")
-            return
-        record = {"schema_version": "oopz.feishu.publication_decision.v1", "session_id": session_id, "decision": decision, "approved_by_open_id": open_id, "decided_at": _iso(), "publication_created": False}
-        if decision == "approve":
-            if self.publisher is None:
-                _atomic_json(path, record)
-                await self._send_text("未配置 M3 发布目标，已拒绝执行公开发布。请配置公开文档文件夹、Base 和固定索引链接。")
-                return
-            approved_by_name = await self._approver_display_name(open_id)
-            result = await self.publisher.publish(
-                session_id=session_id, approved_by_open_id=open_id,
-                approved_by_name=approved_by_name, expected_fingerprint=expected_fingerprint or None,
-            )
-            if approved_by_name:
-                record["approved_by_name"] = approved_by_name
-            record.update({"publication_created": True, **result})
-        _atomic_json(path, record)
-        self._audit("publication_decision", **record)
-        labels = {"approve": f"已发布到固定公开索引：{record['public_index_url']}", "reject": "已记录：不发布该候选报告。", "withdraw": "已记录撤回请求；M3 发布后才会实际撤回公开链接。"}
-        await self._send_text(labels[decision])
+            existing = _read_json_or_none(path)
+            if isinstance(existing, dict) and existing.get("decision") == "withdraw" and not existing.get("publication_created"):
+                # A pre-publication withdraw never blocked anything worth keeping;
+                # retire the legacy record so a later approval can proceed.
+                existing = None
+            if isinstance(existing, dict):
+                if decision == "withdraw" and existing.get("publication_created") and not existing.get("revoked_at"):
+                    if self.publisher is None:
+                        await self._send_text("未配置 M3 发布目标，无法撤回已发布报告。")
+                        return
+                    await self.publisher.revoke(existing)
+                    existing.update({"revoked_at": _iso(), "revoked_by_open_id": open_id})
+                    _atomic_json(path, existing)
+                    self._audit("publication_withdrawn", session_id=session_id, withdrawn_by_open_id=open_id)
+                    send_text = "已撤回公开文档，并从公开日历中隐藏该报告。"
+                else:
+                    send_text = f"Session={session_id} 的发布审查已记录，未重复执行。"
+            elif decision == "withdraw":
+                # Nothing was published, so there is nothing to withdraw; record
+                # nothing, otherwise the record would block a later approval.
+                self._audit("publication_withdraw_before_publish_ignored", session_id=session_id, open_id=open_id)
+                send_text = "该报告尚未发布公开文档，无需撤回；如要放弃发布，请点击“不发布”。"
+            else:
+                record = {"schema_version": "oopz.feishu.publication_decision.v1", "session_id": session_id, "decision": decision, "approved_by_open_id": open_id, "decided_at": _iso(), "publication_created": False}
+                if decision == "approve":
+                    if self.publisher is None:
+                        _atomic_json(path, record)
+                        self._audit("publication_decision", **record)
+                        send_text = "未配置 M3 发布目标，已拒绝执行公开发布。请配置公开文档文件夹、Base 和固定索引链接。"
+                    else:
+                        approved_by_name = await self._approver_display_name(open_id)
+                        result = await self.publisher.publish(
+                            session_id=session_id, approved_by_open_id=open_id,
+                            approved_by_name=approved_by_name, expected_fingerprint=expected_fingerprint or None,
+                        )
+                        if approved_by_name:
+                            record["approved_by_name"] = approved_by_name
+                        record.update({"publication_created": True, **result})
+                        _atomic_json(path, record)
+                        self._audit("publication_decision", **record)
+                        send_text = f"已发布到固定公开索引：{record['public_index_url']}"
+                else:
+                    _atomic_json(path, record)
+                    self._audit("publication_decision", **record)
+                    send_text = "已记录：不发布该候选报告。"
+            _atomic_json(event_path, {
+                "feishu_card_event_id": event_id,
+                "action_id": f"publication:{decision}",
+                "sender_open_id": open_id,
+                "session_id": session_id,
+                "received_at": _iso(),
+            })
+        try:
+            await self._send_text(send_text)
+        except Exception:
+            event_path.unlink(missing_ok=True)
+            raise
 
     async def _handle_extended_card_action(self, *, action_id: str, open_id: str, event_id: str) -> None:
         """Handle Feishu-native report, pending-analysis and delete cards."""
@@ -678,14 +718,19 @@ class FeishuGateway:
                 "received_at": _iso(),
             })
             self._audit("accepted_card_action", action_id=action_id, sender_open_id=open_id)
-        if outbound.get("card"):
-            await self._send_card(outbound["card"])
-        elif outbound.get("file_path"):
-            file_path = Path(str(outbound["file_path"]))
-            await self.channel.send(self.config.admin_chat_id, {"file": {"source": str(file_path), "file_name": file_path.name}})
-            await self._send_text(str(outbound.get("text") or "文件已上传到本群。"))
-        else:
-            await self._send_text(str(outbound.get("text") or "已处理。"))
+        try:
+            if outbound.get("card"):
+                await self._send_card(outbound["card"])
+            elif outbound.get("file_path"):
+                file_path = Path(str(outbound["file_path"]))
+                await self.channel.send(self.config.admin_chat_id, {"file": {"source": str(file_path), "file_name": file_path.name}})
+                await self._send_text(str(outbound.get("text") or "文件已上传到本群。"))
+            else:
+                await self._send_text(str(outbound.get("text") or "已处理。"))
+        except Exception:
+            # See handle_message: allow redelivery of a click whose reply was lost.
+            path.unlink(missing_ok=True)
+            raise
 
     async def _extended_card_outbound(self, *, family: str, action: str, session_id: str, session_dir: Path, open_id: str) -> dict[str, Any]:
         if family == "report":
@@ -827,6 +872,32 @@ class FeishuGateway:
                 expired.append(session_dir.name)
         return sorted(expired)
 
+    def _purge_stale_state_files(self) -> int:
+        """Delete long-finished control-plane files past the session retention horizon.
+
+        Replies, dedup markers and finished send requests only need to outlive
+        Feishu's redelivery window; pending send requests are never removed.
+        """
+        cutoff = time.time() - self.config.controller_config.retention_hours * 3600
+        removed = 0
+        for folder in ("replies", "feishu_events", "send_requests"):
+            root = self.state_root / folder
+            if not root.is_dir():
+                continue
+            for path in root.glob("*.json"):
+                try:
+                    if not path.is_file() or path.stat().st_mtime >= cutoff:
+                        continue
+                    if folder == "send_requests":
+                        payload = _read_json_or_none(path)
+                        if isinstance(payload, dict) and payload.get("status") not in {"sent", "failed", "cancelled"}:
+                            continue
+                    path.unlink()
+                    removed += 1
+                except OSError:
+                    continue
+        return removed
+
     async def cleanup_expired_sessions(self) -> int:
         """Delete an expired local Session only after its remote report is deleted."""
         removed = 0
@@ -854,14 +925,17 @@ class FeishuGateway:
                     _atomic_json(decision_path, publication)
                 try:
                     self.controller._delete_session(session_id)
-                except ValueError as error:
-                    self._audit("retention_local_delete_failed", session_id=session_id, error=str(error))
+                except Exception as error:
+                    # A locked file (viewer/antivirus) must not kill the gateway
+                    # loop; the session stays and is retried next minute.
+                    self._audit("retention_local_delete_failed", session_id=session_id, error=f"{type(error).__name__}: {error}")
                     continue
                 if publication is not None:
                     publication["deleted_at"] = _iso()
                     _atomic_json(decision_path, publication)
                 self._audit("retention_session_deleted", session_id=session_id)
                 removed += 1
+            removed += self._purge_stale_state_files()
         return removed
 
     def _backfill_approver_open_id(self) -> str:

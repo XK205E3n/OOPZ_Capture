@@ -19,6 +19,7 @@ _DEFAULT_ENV_PATH = _PROJECT_ROOT / ".env"
 _PHONE_RE = re.compile(r"^\d{5,20}$")
 _CUTOFF_RE = re.compile(r"^(?:([01]?\d|2[0-3])(?::00)?)$")
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)([smh]?)$", re.IGNORECASE)
+_DECIMAL_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
 _PROVIDERS = frozenset({"deepseek", "opencode-go", "openai-compatible"})
 _THINKING_MODES = frozenset({"auto", "enabled", "disabled"})
@@ -30,10 +31,11 @@ def _https_url(value: str) -> bool:
 
 
 def _number_between(value: str, minimum: float, maximum: float) -> bool:
-    try:
-        number = float(value)
-    except ValueError:
+    # float() also accepts "1_0"/"+1"; restrict to plain decimal notation so a
+    # typo cannot silently change the magnitude.
+    if not _DECIMAL_RE.fullmatch(value):
         return False
+    number = float(value)
     return minimum <= number <= maximum
 
 
@@ -326,7 +328,10 @@ def _env_file_values(path: Path) -> dict[str, str]:
         if not stripped or stripped.startswith("#") or "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        loaded[key.strip()] = value.strip().strip("\"'")
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        loaded[key.strip()] = value
     return loaded
 
 
