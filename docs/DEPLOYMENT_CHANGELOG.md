@@ -135,8 +135,8 @@
 
 ### 0.11.8 — 2026-09-05
 
-- 发布 ID：`v0.11.8-<git_commit_short>`（GitHub Release 创建后回填精确值与链接）。
-- Git 提交：精确值见发布包内 `RELEASE_MANIFEST.json` 的 `git_commit`（即含全仓复审修复与部署缺口修正的提交）。
+- 发布 ID：`v0.11.8-0ebf17f9f464`（[GitHub Release](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.8-0ebf17f9f464)）。
+- Git 提交：`0ebf17f9f46496d920bae9c95f9eafda0e0b8d8c`（含全仓复审修复与部署缺口修正）。
 - 部署时间：待首次服务器安装后回填。
 - 验证：发布包 SHA-256 与 `RELEASE_MANIFEST.json` 校验通过；release-audit 等价检查无新增命中；完整测试 `182 passed, 1 skipped`。
 - 依赖变化：无。

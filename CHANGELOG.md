@@ -6,6 +6,8 @@
 
 ## 0.11.8 — 2026-09-05
 
+Release：[OOPZ Capture v0.11.8 (0ebf17f)](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.8-0ebf17f9f464)
+
 ### 2026-09-04 — 全仓复审修复：网关健壮性、分析链路容错与部署缺口
 
 - 类型：Bug 修复、健壮性加固、部署脚本、文档、测试。
