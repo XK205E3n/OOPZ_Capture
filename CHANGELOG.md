@@ -4,6 +4,18 @@
 
 记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，还必须同步记录到 `docs/DEPLOYMENT_CHANGELOG.md`。
 
+## 0.11.9 — 2026-09-10
+
+Release：[OOPZ Capture v0.11.9](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.9)
+
+### 2026-09-10 — 文档：项目首页与试运行说明同步
+
+- 修改：重整 README 的能力、模块目录、处理流程与安装依赖；飞书配置以一键创建/更新为主，手动配置收为折叠保底；说明和配置模板仅推荐 MiMo V2.5，不推荐供应商。同步部署/运维文档的低负载试运行边界和未部署的试用实例状态。
+- 主要文件：根目录 README/飞书及云部署手册、`.env.example` 注释、`PROJECT_PROGRESS.md` 与 `docs/` 架构/部署/运维说明。
+- 验证：模块路径与命令已对照源码；完整测试 182 passed、1 skipped。现有发布包 SHA-256 与 GitHub 附件摘要一致，120 个文件与发布提交一致（仅 CRLF 换行转换）。
+- 发布补充：统一包元数据与模块版本为 0.11.9；经逐项复核、用户确认后补充 11 条既有测试/变量引用的误报指纹，未加入敏感值。重新构建发布包，使离线说明与 GitHub 首页保持一致。
+- 部署/配置影响：无处理逻辑、依赖范围、环境变量或数据格式变化；无需数据迁移，按标准安装/回滚流程使用版本包。
+
 ## 0.11.8 — 2026-09-05
 
 Release：[OOPZ Capture v0.11.8 (0ebf17f)](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.8-0ebf17f9f464)
@@ -117,7 +129,7 @@ Release：[OOPZ Capture v0.11.7 (7791e58)](https://github.com/XK205E3n/OOPZ_Capt
 - 修改：
   - 删除全仓零引用的死代码：`src/oopz_capture/recovery_guard.py` 整个模块（144 行，自述为临时方案，无入口、无引用、无测试）、`workflow.new_request`、`send_request.expedite_pending_send_requests`、`audio_io.write_mono_pcm16`、`analysis_pipeline._compact_turns`、`controller.ControllerService.wait_until_idle`，以及随之失效的 9 处无用导入。
   - 新增 `src/oopz_capture/jsonio.py`，收编此前分散在最多 5 个模块中、实现逐字节相同的 `_iso`（9 处）、`_atomic_json`（5 处）与 `_read_json`（4 处），并新增容错读 `read_json_or_none`；各模块以别名引用，调用点行为不变。
-  - 合并 `analysis_pipeline` 中函数体逐行同构、仅差输出键后缀的 `_stage_cost` 与 `_opencode_go_stage_cost`，改为同一函数的 `suffix` 参数。
+  - 合并 `analysis_pipeline` 中函数体逐行同构、仅差输出键后缀的两条阶段费用统计路径，改为同一函数的 `suffix` 参数。
   - 消除保护性编程盲区：4 处 `except Exception: pass` 与进度回调的静默吞异常改为记录 debug/warning 日志，控制流与容错语义保持不变；修复 `_acquire_run_lock` 只捕获 `ValueError/TypeError/JSONDecodeError` 而漏掉 `AttributeError` 与 `OSError` 的缺陷（锁文件为非 dict 内容时会异常冒泡）；`live_config_fields`（19 项）由每次调用重建的局部变量改为模块级常量 `LIVE_CONFIG_FIELDS`；移除恒为空集、导致条件恒假的 `restart_keys` 死分支。
   - PDF 渲染在缺失 `node_modules` 时给出含恢复命令的明确提示，替代原先难以定位的 Node 模块错误。
 - 范围：`src/oopz_capture/` 下 13 个模块及新增 `jsonio.py`；不含测试改动，不涉及依赖、环境变量、启动方式与数据格式。
@@ -136,7 +148,7 @@ Release：[OOPZ Capture v0.11.7 (7791e58)](https://github.com/XK205E3n/OOPZ_Capt
 ### 2026-08-23 — 分析 API 配置改为全量显式必填
 
 - 类型：配置契约、启动校验、文档、测试。
-- 修改：移除分析供应商、API 地址、模型及运行参数的环境默认值；生产网关启动时校验全部 11 个 `ANALYZER_*` 项，设置状态对缺失项统一显示“未设置”。OpenCode Go + `mimo-v2.5` 仅作为低成本、效果良好的当前推荐方案，不再由程序自动选择；300 秒窗口的默认 4 路并行设置不变。
+- 修改：移除分析供应商、API 地址、模型及运行参数的环境默认值；生产网关启动时校验全部 11 个 `ANALYZER_*` 项，设置状态对缺失项统一显示“未设置”。推荐说明于 2026-09-10 同步为仅推荐 MiMo V2.5，不推荐供应商；程序不自动选择，300 秒窗口的默认 4 路并行设置不变。
 - 范围：分析客户端、控制器与飞书网关配置、`.env.example`、项目/运维/架构/部署文档及相关测试。
 - 验证：缺项、端点/模型无回退、设置状态与生产启动失败均有自动化覆盖；完整测试 `162 passed, 1 skipped`。
 - 部署影响：现有本地和服务器 `.env` 必须在更新代码前显式填写全部 `ANALYZER_*` 项；不涉及会话数据迁移。回滚代码可恢复旧默认行为，已显式填写的配置仍可保留。

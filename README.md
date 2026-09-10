@@ -1,13 +1,40 @@
-# OOPZ Capture — 飞书控制版
+# OOPZ Capture
 
-OOPZ Capture 用于录制 OOPZ 语音频道、分片转写并生成会话报告。飞书群是唯一的远程控制和报告投递入口；不再使用 QQ、NapCat 或 OneBot。
+通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，以本地 CPU 模型分片转写，再通过可配置的分析 API 生成会话报告。报告经群内审查后，可发布为飞书文档并写入 Base 索引。
+
+当前应用版本 **0.11.9**。远程控制入口为飞书群，部署目标为 **Windows x64**；QQ、NapCat、OneBot 不属于当前运行链路。版本与发布包见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+
+## 核心能力
+
+- **独立音轨与分片录制**：基于 OOPZ SDK / Agora 浏览器音频后端，按 UID 采集，默认每 300 秒关闭一个分片。
+- **本地语音转写**：Silero VAD 检测语音，SenseVoiceSmall 在 CPU 上识别；默认自动识别语言并保留中文、粤语和英语结果，无需 GPU。
+- **可恢复的处理状态**：分片与分析结果写入会话目录；提供转写修复、分析检查点复用和失效进程锁回收。
+- **分层报告**：300 秒短窗、60 分钟长窗及最终综合，输出内部 Markdown 与候选公开 PDF。
+- **审查后发布**：通过飞书卡片批准、撤回和删除；公开飞书文档与 Base 索引由应用管理。
+
+## 项目结构
+
+| 路径 / 模块 | 职责 |
+| --- | --- |
+| `src/oopz_capture/feishu_*` | 飞书应用配置、长连接网关、消息与卡片协议、文档发布 |
+| `controller.py`、`controller_protocol.py` | 录音任务控制、群内指令、分析与发布决策 |
+| `continuous.py`、`browser_probe.py`、`recorder.py` | 浏览器音频采集、分片队列、断线处理与 WAV 写入 |
+| `pipeline.py`、`vad.py`、`asr.py`、`transcript.py` | 语音检测、重采样、模型推理、转写输出 |
+| `analyzer_job.py`、`analysis_windows.py`、`analysis_pipeline.py` | 分析输入校验、时间窗口、API 调用与检查点 |
+| `pdf_reports.py`、`tools/md_to_pdf.mjs` | Node.js 与 Chrome/Edge PDF 渲染 |
+| `scripts/` | 启停监视、固定版本模型下载、发布包构建、安装和回滚 |
+| `tests/`、`schemas/` | 行为测试与数据契约 |
+| `docs/` | 架构、运维、部署状态与发布迁移说明 |
+| `output/`、`feishu_state/`、`logs/`、`models/` | 本地会话、网关状态、日志和模型；均不进入 Git / 发布包 |
+
+上表省略路径前缀的 Python 模块均位于 `src/oopz_capture/`。
 
 ## 生产流程
 
 ```text
 飞书受控群 @OOPZ
   → 选择 OOPZ 域与语音频道 → 录音 → 分片转写 → 选择是否分析
-  → OpenCode Go / MiMo-V2.5 生成报告 → 群内审查
+  → 配置的分析 API 生成报告 → 群内审查
   → 批准后创建公开飞书文档，并写入 Base 公开索引
 ```
 
@@ -17,12 +44,16 @@ OOPZ Capture 用于录制 OOPZ 语音频道、分片转写并生成会话报告�
 - 结束录音后先完成转写，再由群内卡片决定“开始分析”或“暂不分析”。
 - 分析完成后，内部 Markdown 与候选公开 PDF 会发到群内。只有点击“批准发布”才会创建对外可读的飞书文档和 Base 索引记录。
 
+录制下一片时，后台串行处理已关闭的分片；当前每片通过独立 Python 进程运行 VAD / ASR，重新加载模型，各语音段逐个识别。`OOPZ_PROCESSING_DEADLINE_SECONDS` 是失败超时，不是完成速度保证。默认成功转写后删除分片音频；会话和报告默认保留 15 天，详见 [架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)。
+
 ## 安装与启动
 
-1. 复制 `.env.example` 为 `.env`，至少填写 OOPZ 手机号/密码和分析 API Key；不要提交 `.env`。
-2. 安装依赖：`pip install -e ".[speech,feishu]"`。
-3. 还没有飞书机器人应用时，运行 `.\.venv\Scripts\oopz-feishu.exe setup`，用飞书 App 扫码并确认：应用创建、全部 11 项应用身份权限、长连接事件和卡片回调一次性完成，App ID/Secret 自动写入 `.env`（默认更新 `.env` 中已有应用；覆盖为另一应用需 `--force`）。失败或需要手动操作时按 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md) 配置。
-4. 确认 `models/SenseVoiceSmall/model.pt` 存在，并安装 64 位 Chrome 或 Edge 供 OOPZ 浏览器音频和 PDF 渲染使用。
+推荐使用已验证的 Python 3.12 x64、Node.js LTS，以及 64 位 Chrome 或 Edge。以下是在本地检出目录中的准备步骤；服务器请走下文的 Release 安装流程。
+
+1. 创建虚拟环境：`py -3.12 -m venv .venv`。复制 `.env.example` 为 `.env`，填写 OOPZ 登录配置和下文全部 `ANALYZER_*` 项；飞书 App ID/Secret 由第 3 步自动写入，不需要先去开放平台手动创建应用。不要提交 `.env`。
+2. 安装 Python 依赖：`.\.venv\Scripts\python.exe -m pip install -e ".[speech,feishu]"`。安装报告工具依赖：`npx pnpm@10.15.0 install --frozen-lockfile`。PDF 使用固定路径 `tools/node/node.exe`，需将已安装 Node.js 的 `node.exe` 放到该目录。
+3. **一键创建/更新飞书机器人（主流程）**：运行 `.\.venv\Scripts\oopz-feishu.exe setup`，用飞书 App 扫码并确认。程序创建或更新应用、申请 11 项应用身份权限、配置长连接事件和卡片回调，自动将 App ID/Secret 写入 `.env`。无法显示二维码时加 `--url-only`；默认更新已有应用，切换应用需明确使用 `--force`。完成后检查是否需要发布应用版本、再邀请进群；公开报告资源授权仍须单独完成。完整步骤见 [一键配置主流程](README_FEISHU_BOT_SETUP.md#首选一键创建或更新机器人)。只有一键流程失败、租户不支持或受管理员策略限制时，才展开手册中的手动保底步骤。
+4. 下载并校验固定修订版模型：`.\.venv\Scripts\python.exe scripts/download_sensevoice_model.py --target models/SenseVoiceSmall`。确保已安装 Chrome 或 Edge，供 OOPZ 浏览器音频和 PDF 渲染使用。
 5. 运行 [启动OOPZ全流程.bat](启动OOPZ全流程.bat)。
 
 启动后会打开两个可见窗口：飞书收发记录，以及录音/转写/分析进度。首次启动会在群内发送启动提示与帮助；重启只发送生命周期状态，不重复帮助。关闭和重启分别使用 [一键关闭OOPZ全流程.bat](一键关闭OOPZ全流程.bat)、[一键重启OOPZ全流程.bat](一键重启OOPZ全流程.bat)。
@@ -70,19 +101,31 @@ ANALYZER_THINKING_MODE=
 ANALYZER_JSON_MODE=
 ```
 
-当前项目推荐 OpenCode Go 的 `mimo-v2.5`：现有实测中成本较低、中文语音总结效果较好。推荐值为 `ANALYZER_PROVIDER=opencode-go`、`ANALYZER_BASE_URL=https://opencode.ai/zen/go/v1`、`ANALYZER_MODEL=mimo-v2.5`；这只是建议，程序不会自动填入，价格与模型可用性以供应商最新信息为准。
+模型仅推荐 **MiMo V2.5**，不推荐特定供应商。`ANALYZER_PROVIDER`、`ANALYZER_BASE_URL` 和 `ANALYZER_MODEL` 请按自行选择的服务填写；模型标识以该服务实际支持的名称为准。推荐不构成配置默认值，程序不会自动填入。
 
-短窗口与长窗口使用普通 JSON Chat Completions。最终报告在流水线中是“最终综合”阶段。若用户选择 OpenCode Go 的 MiMo 端点，建议显式设置 `ANALYZER_THINKING_MODE=auto`，以标准 OpenAI-compatible 方式请求；只有供应商明确支持扩展字段时才设为 `enabled`。
+短窗口与长窗口使用普通 JSON Chat Completions，最终报告为“最终综合”阶段。思考模式、JSON 模式、Token 上限与超时须按所选 API 的能力显式配置；只有服务明确支持扩展字段时才启用对应选项。
 
-每个非静音的 300 秒短窗口固定对应一次独立 API 请求，不合并多个窗口的文本。生产 OpenCode Go 路线默认最多并行 4 个独立窗口请求，由 `OOPZ_ANALYSIS_MAX_PARALLELISM=1..8` 调整；输出仍按原始时间顺序汇总。
+每个非静音的 300 秒短窗口固定对应一次独立 API 请求，不合并多个窗口的文本。窗口默认最多并行 4 路，由 `OOPZ_ANALYSIS_MAX_PARALLELISM=1..8` 调整；实际调用还受客户端限流约束，输出按原始时间顺序汇总。
 
 失败报告会写入对应 Session 的 `analysis_variants/configured-api/lifecycle.json`。再次选择“待分析”会复用已完成的窗口结果，只重试未完成阶段。
 
 如果机器人在分析期间异常退出，下一次启动会检查分析锁的 PID。仅当原进程已不存在时，系统才释放旧锁、将会话标为“中断可恢复”，并让它重新出现在“待分析”和“删除会话”中；“状态”会提示恢复入口。仍在运行的分析任务不会被抢占。尚未完成分析的会话没有最终 PDF 或完整报告，因此需先从“待分析”恢复。
 
-## 云服务器下限
+## 云服务器与发布
 
-保持当前 Windows 脚本、本地 CPU 转写和 PDF 渲染逻辑不变时，最低可接受配置为：Windows Server 2022/2025 64 位、4 vCPU、8 GiB 内存、80 GiB SSD、稳定 10 Mbps 出站网络、系统管理页面文件；无需 GPU。4 GiB 内存或 2 vCPU 突发型实例不满足当前本地 ASR 和 900 秒处理期限的生产余量。详细依据见运维文档。
+长期运行的保守起点是 Windows Server 2022/2025 Desktop Experience、4 vCPU / 8 GiB、80 GiB SSD，并启用系统管理页面文件。低密度交流可以从 2 vCPU / 4–8 GiB **试运行**，但本机限额实验不等于云端整机验收；4 GiB 更依赖页面文件，共享型 CPU 还会受资源争抢影响。按实际频道验证每片耗时、内存、磁盘与队列，再决定是否升配。测试边界见 [运维说明](docs/OPERATIONS.md#云服务器容量与试运行)。
+
+本项目通过出站连接访问 OOPZ、飞书与分析 API，**不要求开放业务入站端口**。RDP 管理端口应只允许可信来源。服务器尚未完成应用部署验收；实际状态以 [部署状态基线](docs/DEPLOYMENT_STATE.md) 为准。
+
+服务器使用 [Release ZIP 和 SHA-256 文件](https://github.com/XK205E3n/OOPZ_Capture/releases)，由 `scripts/install_release.ps1` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared` 中。不要把包含 `.env`、模型或会话数据的整个开发目录上传，也不要直接修改服务器版本目录。
+
+## 开发验证
+
+```powershell
+.\.venv\Scripts\python.exe -m pytest
+```
+
+提交与发布前按 [AGENTS.md](AGENTS.md) 执行审计、更新变更记录；正式发布包只由 `scripts/build_release.ps1` 从干净的已提交 `HEAD` 构建。
 
 更多部署和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)；架构与数据生命周期见 [docs/CURRENT_ARCHITECTURE.md](docs/CURRENT_ARCHITECTURE.md)。
 

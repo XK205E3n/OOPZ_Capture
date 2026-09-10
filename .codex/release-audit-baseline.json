@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-08-22",
-  "reviewed_head": "cdfe7408e8ae011e9897ab95fbde3035754b769a",
+  "reviewed_at": "2026-09-10",
+  "reviewed_head": "d2d0709736b1e0a2eb3c83aadf5ab4e7bc4b2b29",
   "notes": "只记录已人工复核的误报指纹和必须隔离的路径，不记录任何匹配文本或密钥值。指纹变化后必须重新复核。",
   "ignored_paths": [
     ".env",
@@ -25,6 +25,17 @@
   ],
   "large_file_threshold_bytes": 5242880,
   "known_findings": [
+    {"path":"src/oopz_capture/feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"90b66fde7e6c58f2","reason":"已逐项复核并获用户确认：注册响应字段引用，不含硬编码凭据。"},
+    {"path":"tests/test_deepseek_client.py","signature":"nonempty-secret-assignment","fingerprint":"e3ccdc5abd1b2c90","reason":"已逐项复核并获用户确认：UUID 生成的测试虚构值。"},
+    {"path":"tests/test_deepseek_client.py","signature":"nonempty-secret-assignment","fingerprint":"a671b3a1c6a64563","reason":"已逐项复核并获用户确认：测试变量引用。"},
+    {"path":"tests/test_deepseek_client.py","signature":"nonempty-secret-assignment","fingerprint":"12bd8ed35cfa829f","reason":"已逐项复核并获用户确认：测试生成函数调用。"},
+    {"path":"tests/test_feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"5d5a914f909c0b21","reason":"已逐项复核并获用户确认：临时测试配置中的虚构值。"},
+    {"path":"tests/test_feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"74c362c4eaf5194a","reason":"已逐项复核并获用户确认：虚构测试配置断言。"},
+    {"path":"tests/test_feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"ab0d4a4bddbd4d17","reason":"已逐项复核并获用户确认：临时测试配置中的虚构值。"},
+    {"path":"tests/test_feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"68cce954a8105541","reason":"已逐项复核并获用户确认：临时测试配置未变化的断言。"},
+    {"path":"tests/test_feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"7607f7ada251352a","reason":"已逐项复核并获用户确认：虚构测试配置断言。"},
+    {"path":"tests/test_final_m11_13_fixes.py","signature":"nonempty-secret-assignment","fingerprint":"1f624a9fd258ec2a","reason":"已逐项复核并获用户确认：UUID 生成的测试虚构值。"},
+    {"path":"tests/test_final_m11_13_fixes.py","signature":"nonempty-secret-assignment","fingerprint":"dd2a5d438a8a7bc2","reason":"已逐项复核并获用户确认：测试变量引用。"},
     {
       "path": "docs/MILESTONES_11_13.md",
       "signature": "nonempty-secret-assignment",

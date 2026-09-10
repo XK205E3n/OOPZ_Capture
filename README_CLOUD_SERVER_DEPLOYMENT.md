@@ -21,7 +21,7 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 ## 2. 服务器要求
 
 - Windows Server 2022/2025 x64 Desktop Experience；
-- 最低 4 vCPU、8 GiB 内存、80 GiB SSD，建议 8 vCPU、16 GiB 内存、120 GiB SSD；
+- 长期运行保守起点为 4 vCPU、8 GiB 内存、80 GiB SSD；需要更多余量时选 8 vCPU、16 GiB 内存、120 GiB SSD。低密度交流可用 2 vCPU/4–8 GiB 试运行，但必须验证整机内存、页面文件、磁盘与分片耗时，见 [容量与试运行](docs/OPERATIONS.md#云服务器容量与试运行)；
 - 系统管理页面文件，系统盘长期至少保留 20 GiB；
 - 稳定出站网络，可访问 GitHub、PyPI、npm、魔搭社区、OOPZ、飞书和分析 API；
 - 不需要 GPU，也不需要开放应用业务入站端口；
@@ -123,7 +123,7 @@ Copy-Item C:\OOPZ\source\scripts\rollback_release.ps1 C:\OOPZ\admin\ -Force
 
 ## 6. 下载 GitHub Release
 
-将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，例如 `v0.11.7-7791e58f0359`（当前发布版本）：
+将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，当前版本为 `v0.11.9`；ZIP 文件名和包内 `release_id` 另含构建提交后缀，安装时以包内清单为准：
 
 ```powershell
 gh release download <release-id> `
@@ -152,23 +152,27 @@ notepad C:\OOPZ\shared\config\.env
 
 至少填写：
 
-- `OOPZ_FEISHU_APP_ID`、`OOPZ_FEISHU_APP_SECRET`；
+- `OOPZ_FEISHU_APP_ID`、`OOPZ_FEISHU_APP_SECRET`，优先由下方一键流程获取，无需先手动创建应用；
 - `OOPZ_LOGIN_PHONE`、`OOPZ_LOGIN_PASSWORD`；
 - 全部 `ANALYZER_*` 项：Provider、API Key、Base URL、模型、超时、重试、请求间隔、普通/思考 Token 上限、思考模式和 JSON 模式；程序不提供默认值；
 - 控制群 ID，或首次启动时保持为空并执行自动绑定；
 - 启用公开发布时所需的文件夹和 Base 四项配置。
 
-`OOPZ_FEISHU_APP_ID`/`OOPZ_FEISHU_APP_SECRET` 可通过以下任一方式获得：
+### 主流程：一键创建或更新飞书机器人
 
-1. 在本地开发机运行一键配置 `.\.venv\Scripts\oopz-feishu.exe setup`（见主 README 安装步骤），完成后把本机 `.env` 中这两行人工抄入服务器 `.env`；
-2. 服务器完成安装后，在服务器终端运行 `C:\OOPZ\current\.venv\Scripts\oopz-feishu.exe setup`（RDP 终端会渲染二维码；无法显示时加 `--url-only` 只打印确认链接）。该写入经 `.env` 硬链接直接落入 `shared\config\.env`；
-3. 按 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md) 第 2–5 节手动创建应用并抄写凭据。
+1. 首次部署前，在已经装好项目依赖的本地电脑运行 `.\.venv\Scripts\oopz-feishu.exe setup`，通过飞书扫码确认创建/更新。完成后安全地把本机 `.env` 中的 App ID/Secret 两行写入服务器 `shared\config\.env`。
+2. 依照一键命令的后续提示检查应用版本是否需要发布；准备控制群。如需公开报告，另行完成文件夹/Base 的配置与协作者授权。
+3. 已安装好的服务器需要更新应用配置时，在 `C:\OOPZ\current` 目录运行 `.\.venv\Scripts\oopz-feishu.exe setup`。二维码无法显示时加 `--url-only`；配置写入经 `.env` 硬链接落入 `shared\config\.env`。
 
-首次安装（第 9 节）之前服务器尚无虚拟环境，因此首次部署只能用第 1 或第 3 种方式；无论哪种方式，都不要用 Git 在本地和服务器之间同步 `.env` 文件。
+首次安装（第 9 节）之前服务器尚无 `current` 虚拟环境，不能先运行第 3 步；按第 1 步获取凭据后再继续安装。已有可用机器人时可直接安全填写其现有凭据，不必重复创建。不要用 Git 在本地和服务器之间同步 `.env`。
+
+### 保底：一键流程不可用时手动配置
+
+仅当一键配置失败、租户不支持或管理员策略要求手动操作时，使用 [飞书手册](README_FEISHU_BOT_SETUP.md) 中折叠的第 2–4 节，再按第 5 节发布应用并安全写入凭据。手动配置不是默认安装步骤。
 
 生产 `.env` 只保存在 `C:\OOPZ\shared\config\.env`。不要用 Git 在本地和服务器之间同步它。飞书应用的完整配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。
 
-分析 API 必须由服务器运维人员按实际账户填写。当前项目推荐 OpenCode Go + `mimo-v2.5`，现有实测中成本较低、总结效果较好，但发布包不会自动选择该供应商或模型；供应商价格和模型可用性应在部署时重新确认。
+分析 API 必须由服务器运维人员按实际账户填写。模型仅推荐 MiMo V2.5，不推荐供应商。供应商标识、API 地址、实际模型名称和运行参数由运维人员按所选服务配置；发布包不会自动选择或填入。
 
 ## 8. SenseVoice 模型自动下载
 
