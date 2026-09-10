@@ -34,7 +34,7 @@ def test_anonymous_staging_and_config_preservation(tmp_path):
     assert 'PowerShell deployment checks passed' in result.stdout
 
 
-@pytest.mark.parametrize('marker,script', [('prepare-release', 'prepare_release.ps1'), ('server-env', 'configure_server_env.ps1')])
+@pytest.mark.parametrize('marker,script', [('prepare-release', 'prepare_release.ps1'), ('server-env', 'configure_server_env.ps1'), ('dependency-recovery', 'retry_dependency_install.ps1')])
 def test_documented_powershell_sources_match(marker, script):
     root = Path(__file__).resolve().parents[1]
     doc = (root / 'README_CLOUD_SERVER_DEPLOYMENT.md').read_text(encoding='utf-8')

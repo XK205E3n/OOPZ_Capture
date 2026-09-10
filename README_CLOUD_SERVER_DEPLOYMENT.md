@@ -547,6 +547,146 @@ if ($LASTEXITCODE -ne 0) { throw '安装未完成，请保留终端错误并检�
 
 首次安装依赖和约 0.94 GB 模型耗时可能较长。不要在安装过程中关闭 PowerShell 或重启服务器。
 
+### 9.1 NumPy 候选不存在 / 首次依赖安装失败
+
+如果 pip 报 `No matching distribution found for numpy<3,>=1.26`，只能说明当前解析没有取得满足要求的候选，不能仅据此判定 NumPy 不支持 Python 3.12，也不是内存不足的直接证据。[PyPI 上存在 CPython 3.12 Windows x64 wheel](https://pypi.org/project/numpy/1.26.4/)。具体需排查解释器平台、pip 索引/过滤配置和网络；不要把完整 pip 配置贴到群聊，索引 URL 可能包含凭据。
+
+失败发生在依赖阶段时，原脚本会留下 `releases\<release-id>`，尚未切换新版本。直接再次运行第 9 节会被“版本已存在”阻止。**不要递归删除这个目录**，里面的联接指向 shared。
+
+以下恢复代码限定本指南 v0.11.9 的首次安装失败。在管理员 PowerShell 运行，它会：
+
+1. 确认无 `current`、无进程正在使用失败目录，核对原 ZIP / SHA-256 和路径边界。
+2. 检查基础及失败环境中的 Python 3.12 x64；临时忽略 pip 环境覆盖和配置文件，指定官方 PyPI，使用新建独立缓存，执行 NumPy wheel 的 dry-run 解析。检查可能下载 wheel，但不会在此阶段安装它。
+3. 只有检查成功，才将失败目录移到 `C:\OOPZ\failed-installs`，保留其中的虚拟环境及 shared 链接，再从已校验 ZIP 恢复原安装脚本并重试。正常成功后会继续模型下载、启动和健康检查。
+4. 结束或报错时恢复调用前的 pip 环境变量；不改全局 pip.ini、不禁用证书验证、不删除共享数据。备份和独立缓存保留，不自动清理。
+
+<!-- dependency-recovery-copy:start -->
+```powershell
+& {
+param(
+    [string]$InstallRoot = 'C:\OOPZ',
+    [switch]$DiagnoseOnly
+)
+$ErrorActionPreference = 'Stop'
+
+function Assert-OopzPlainDirectory {
+    param([string]$Path)
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Expected a normal directory, not a link: $Path" }
+}
+
+function Test-OopzRecoveryPython {
+    param([string]$Python)
+    & $Python -I -c "import sys,struct,sysconfig; print(sys.executable); print(sys.version); print(sysconfig.get_platform()); assert sys.version_info[:2]==(3,12) and struct.calcsize('P')==8 and sysconfig.get_platform()=='win-amd64', 'Expected CPython 3.12 Windows x64'"
+    if ($LASTEXITCODE -ne 0) { throw 'Unexpected Python version/platform. No release directory was moved.' }
+}
+
+function Invoke-OopzDependencyProbe {
+    param([string]$Python)
+    Test-OopzRecoveryPython $Python
+    & $Python -m pip --version
+    if ($LASTEXITCODE -ne 0) { throw 'pip is not usable in the failed environment.' }
+    $pipArgs = @('-m','pip','install','--dry-run','--ignore-installed','--no-deps','--only-binary=:all:','--index-url','https://pypi.org/simple','--timeout','120','--retries','3','numpy>=1.26,<3')
+    & $Python @pipArgs
+    if ($LASTEXITCODE -ne 0) { throw 'Official PyPI did not yield a compatible NumPy candidate. No directory was moved. Keep the error output for network/platform diagnosis.' }
+}
+
+function Test-OopzReleaseBusy {
+    param([string]$Path)
+    $active = @(Get-CimInstance Win32_Process -ErrorAction Stop | Where-Object {
+        $_.CommandLine -and $_.CommandLine.IndexOf($Path, [StringComparison]::OrdinalIgnoreCase) -ge 0
+    })
+    return $active.Count -gt 0
+}
+
+function Invoke-OopzOriginalInstaller {
+    param([string]$ScriptPath, [string]$Artifact, [string]$Root, [string]$Python)
+    $arguments = @('-NoProfile','-ExecutionPolicy','Bypass','-File',$ScriptPath,'-Artifact',$Artifact,'-InstallRoot',$Root,'-PythonExe',$Python)
+    & powershell.exe @arguments
+    if ($LASTEXITCODE -ne 0) { throw 'Installation failed again. The previous failed directory remains in failed-installs; retain this new error output.' }
+}
+
+function Invoke-OopzDependencyRecovery {
+    param([string]$Root, [switch]$ProbeOnly)
+    $Root = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    Assert-OopzPlainDirectory $Root
+    if (Get-Item -LiteralPath (Join-Path $Root 'current') -Force -ErrorAction SilentlyContinue) { throw 'This helper is for first-install dependency failures only. An existing current path must be inspected separately.' }
+    $inputs = Get-Content -LiteralPath (Join-Path $Root 'artifacts\deployment-inputs.json') -Raw | ConvertFrom-Json
+    if ($inputs.ReleaseId -ne 'v0.11.9-5769293b3236' -or $inputs.Commit -ne '5769293b3236460d24bc0553561fa3ac68ae79be') { throw 'This recovery helper targets the verified v0.11.9 first-install failure only.' }
+    $artifact = [IO.Path]::GetFullPath($inputs.Artifact)
+    $artifactPrefix = (Join-Path $Root 'artifacts').TrimEnd('\') + '\'
+    if (-not $artifact.StartsWith($artifactPrefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Artifact must remain inside this installation root.' }
+    $expected = '31f349ebd021af2d416d99157c7cfca96f324c9cc8cd5c6f53d4f6777b27e4de'
+    if ((Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Official release ZIP hash mismatch.' }
+    $sidecar = ((Get-Content -LiteralPath "$artifact.sha256" -Raw).Trim() -split '\s+')[0]
+    if ($sidecar -ne $expected) { throw 'Release checksum file mismatch.' }
+    $releases = Join-Path $Root 'releases'
+    Assert-OopzPlainDirectory $releases
+    $failed = [IO.Path]::GetFullPath((Join-Path $releases $inputs.ReleaseId))
+    if (-not $failed.StartsWith($releases.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Release path escaped the intended directory.' }
+    Assert-OopzPlainDirectory $failed
+    $python = Join-Path $failed '.venv\Scripts\python.exe'
+    $basePython = Join-Path $Root 'tools\Python312\python.exe'
+    foreach ($file in @($python,$basePython,(Join-Path $Root 'shared\config\.env'))) {
+        if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Required file missing: $file" }
+    }
+    Test-OopzRecoveryPython $basePython
+    if (Test-OopzReleaseBusy $failed) { throw 'A process still references the failed release. No process was stopped and no directory was moved.' }
+
+    # Snapshot process-only pip overrides; never print their values (URLs may contain credentials).
+    $saved = @{}
+    [Environment]::GetEnvironmentVariables('Process').GetEnumerator() | Where-Object { $_.Key -like 'PIP_*' } | ForEach-Object { $saved[$_.Key] = $_.Value }
+    Write-Host ('Temporary pip overrides present: ' + (($saved.Keys | Sort-Object) -join ', '))
+    try {
+        foreach ($name in @($saved.Keys)) { [Environment]::SetEnvironmentVariable($name, $null, 'Process') }
+        # Lowercase 'nul' matches Python's os.devnull on Windows and disables all pip.ini files.
+        $env:PIP_CONFIG_FILE = 'nul'
+        $env:PIP_INDEX_URL = 'https://pypi.org/simple'
+        $env:PIP_TIMEOUT = '120'
+        $env:PIP_RETRIES = '5'
+        $env:PIP_DISABLE_PIP_VERSION_CHECK = '1'
+        $env:PIP_CACHE_DIR = Join-Path $Root ('installer-cache\pip-recovery-' + [guid]::NewGuid().ToString('N'))
+        Invoke-OopzDependencyProbe $python
+        if ($ProbeOnly) { Write-Host 'Diagnosis passed; no release directory was moved.'; return }
+        if (Get-Item -LiteralPath (Join-Path $Root 'current') -Force -ErrorAction SilentlyContinue) { throw 'A current path appeared during diagnosis. No directory was moved.' }
+        if (Test-OopzReleaseBusy $failed) { throw 'Release became active; refusing to move it.' }
+        Assert-OopzPlainDirectory $releases
+        Assert-OopzPlainDirectory $failed
+        Assert-OopzPlainDirectory (Join-Path $Root 'admin')
+        $backupRoot = Join-Path $Root 'failed-installs'
+        New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
+        Assert-OopzPlainDirectory $backupRoot
+        $backup = [IO.Path]::GetFullPath((Join-Path $backupRoot ($inputs.ReleaseId + '-' + [DateTime]::UtcNow.ToString('yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N'))))
+        if (-not $backup.StartsWith($backupRoot.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Backup path escaped the intended directory.' }
+        # Same installation root / volume: move the directory entry, do not traverse or delete shared junction targets.
+        Move-Item -LiteralPath $failed -Destination $backup
+        Write-Host "Previous failed installation preserved at $backup"
+        $scriptPath = Join-Path $Root 'admin\install_release.ps1'
+        # Restore the exact installer from the hash-verified ZIP, never modify program files in releases.
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($artifact)
+        try {
+            $entry = $zip.GetEntry('scripts/install_release.ps1')
+            if (-not $entry) { throw 'Official installer missing from release ZIP.' }
+            $inputStream = $entry.Open(); $outputStream = [IO.File]::Create($scriptPath)
+            try { $inputStream.CopyTo($outputStream) } finally { $inputStream.Dispose(); $outputStream.Dispose() }
+        } finally { $zip.Dispose() }
+        Invoke-OopzOriginalInstaller $scriptPath $artifact $Root $basePython
+    } finally {
+        [Environment]::GetEnvironmentVariables('Process').GetEnumerator() | Where-Object { $_.Key -like 'PIP_*' } | ForEach-Object { [Environment]::SetEnvironmentVariable($_.Key, $null, 'Process') }
+        foreach ($name in $saved.Keys) { [Environment]::SetEnvironmentVariable($name, $saved[$name], 'Process') }
+    }
+}
+
+if ($MyInvocation.InvocationName -ne '.') { Invoke-OopzDependencyRecovery $InstallRoot -ProbeOnly:$DiagnoseOnly }
+}
+```
+<!-- dependency-recovery-copy:end -->
+
+代码与 [scripts/retry_dependency_install.ps1](scripts/retry_dependency_install.ps1) 一致；该辅助脚本不在旧 ZIP 中。只诊断而不备份重试时，可把代码末尾改为 ` } -DiagnoseOnly`，或保存脚本后使用 `-DiagnoseOnly` 参数。若 Python 平台检查或 dry-run 失败，目录不会移动；请提供这部分错误输出，不要发送生产 .env 或完整 pip 配置。
+
+已有运行版本、`current` 已存在、校验不一致或仍有相关进程时，脚本会停止，必须单独检查；此入口不是通用升级修复工具。路径请原样复制为 `C:\OOPZ\shared\config\.env`，不要省略目录分隔符或把终端提示符当作命令。
+
 ## 10. 部署后验证
 
 确认发布清单：

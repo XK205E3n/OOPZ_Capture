@@ -13,12 +13,12 @@
 | 操作系统 | Windows | 已创建 Windows Server 2022 x64 中文版试用实例，应用尚未安装验收 | 待实施 |
 | 计算与磁盘 | 本机 CPU 限额实验已完成，不能代替云端验收 | 经济型 e：2 vCPU / 4 GiB、40 GiB ESSD Entry；运行中，容量待实测 | 属于低负载试运行目标，未验证生产稳定性 |
 | 网络与管理 | 本地开发网络 | 普通安全组默认允许出站；现有 TCP 3389、TCP 22 和 ICMP 入站规则，本次未更改 | 无需新增业务端口；RDP 当前面向所有 IPv4，需按实际管理来源收紧 |
-| Python | 3.12.14 | 未安装/未确认 | 是：建议 3.12 x64 |
-| Node.js | 本地已安装，版本待确认 | 未安装/未确认 | 是：建议当前 LTS x64 |
+| Python | 3.12.14 | 用户终端确认 3.12.10 x64，路径为 `C:\OOPZ\tools\Python312\python.exe` | 基础环境已准备，应用安装待完成 |
+| Node.js | 本地已安装，版本待确认 | 用户终端确认 24.21.0，npm/npx 11.19.0，Edge 已存在 | PDF 与应用运行待验收 |
 | 基础环境引导 | `main` 的引导脚本仅安装运行依赖，不再检测或安装 Git / GitHub CLI；已完成检查与模拟分支测试 | 等待用户在服务器执行；不假定工具已安装 | 此后续脚本未加入现有 v0.11.9 ZIP，首次部署使用在线文档代码 |
-| 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 未安装 | 是 |
+| 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 首次安装中断于 NumPy 候选解析，尚未完成；具体网络/索引原因未确认 | 使用首装诊断/恢复指引；不可直接重跑覆盖现有版本目录 |
 | ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 计划由服务器从魔搭 `iic/SenseVoiceSmall` 自动下载固定修订版并校验 | 首次安装待实施 |
-| 生产配置 | 本地 `.env`（不进 Git）；全部 `ANALYZER_*` 项显式配置 | 尚未创建 | 是：服务器独立配置全部分析器变量，不复制本地密钥文件作为长期同步方式 |
+| 生产配置 | 本地 `.env`（不进 Git）；全部 `ANALYZER_*` 项显式配置 | 用户已准备，安装脚本通过文件存在性检查；未读取或验证值 | 启动时仍需通过配置校验 |
 | 输出/状态/日志 | `output`、`feishu_state`、`logs`；分析检查点与中断恢复状态保存在会话目录 | 尚未创建 | 否：属于各环境持久数据，禁止互相覆盖；重启后仅回收已退出进程留下的分析锁 |
 | 启动方式 | 交互式批处理 | 目标为任务计划程序调用稳定 `current` 路径 | 待实施 |
 | 代码远端 | `origin=https://github.com/XK205E3n/OOPZ_Capture.git`（2026-09-10 实查 Public；本次未改变可见性） | 可通过 PowerShell 匿名下载固定 Release，ZIP / SHA-256 / 清单校验已在本机实测 | 服务器无需 GitHub 登录；业务凭据仍仅本地保存 |
