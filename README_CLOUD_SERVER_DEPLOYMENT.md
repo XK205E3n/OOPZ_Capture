@@ -1,12 +1,12 @@
 # OOPZ Capture — Windows 云服务器部署指南
 
-本文说明如何从私有 GitHub 仓库 `XK205E3n/OOPZ_Capture` 将经过测试的 OOPZ Capture 发布包部署到 Windows 云服务器，并在后续版本中安全更新或回滚。
+本文说明如何通过 PowerShell 从公开 GitHub Release 匿名获取经过测试的 OOPZ Capture 发布包，准备配置并部署到 Windows 云服务器，再安全更新或回滚。下载不需要 GitHub 登录，业务账户授权仍须由使用者完成。
 
 ## 1. 部署模型
 
 ```text
 本地开发与测试
-  → Git 提交并推送私有 GitHub 仓库
+  → Git 提交并推送 GitHub 仓库
   → 生成与提交绑定的 ZIP 和 SHA-256
   → 上传为 GitHub Release 附件
   → Windows 服务器下载指定 Release
@@ -267,9 +267,9 @@ if ($MyInvocation.InvocationName -ne '.') {
 
 | 软件 | 在部署中的用途 | 官方下载地址 |
 | --- | --- | --- |
-| Git for Windows | 克隆运维副本、按提交检出脚本 | https://git-scm.com/download/win |
+| Git for Windows | 开发与维护工具；服务器默认安装流程直接使用 Release，不需要克隆仓库 | https://git-scm.com/download/win |
 | Visual C++ v14 x64 运行库 | 支持 PyTorch 等 Windows 原生依赖，缺少时自动安装 | https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist |
-| GitHub CLI (gh) | 登录私有仓库、下载指定 Release 与校验文件 | https://cli.github.com/ |
+| GitHub CLI (gh) | 可选维护工具；默认下载流程使用 PowerShell，无需 gh 登录 | https://cli.github.com/ |
 | Python 3.12 x64 | 通过官方安装管理器安装；发布虚拟环境必须使用 3.12，后续 `install_release.ps1` 可用 `-PythonExe` 显式指定其路径 | https://docs.python.org/3/using/windows.html#advanced-installation |
 | Node.js 当前 LTS | 提供 `npx`/`npm`（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 固定 pnpm 版本，**无需预装 pnpm**）；另需把其中的 `node.exe` 复制到 `C:\OOPZ\shared\tools\node\` 供 PDF 渲染使用（见第 4 节） | https://nodejs.org/ （取 LTS 版） |
 | Chrome 或 Edge | `md-to-pdf`/报表渲染所需的无头浏览器内核 | https://www.google.com/chrome/ 或 https://www.microsoft.com/edge |
@@ -286,132 +286,242 @@ npm.cmd --version
 
 这里使用 `npm.cmd` 与 `npm --version` 检查同一个 npm，避免 PowerShell 优先匹配 `npm.ps1` 而受到执行策略限制。无需为此修改机器的全局执行策略。脚本没有登录 GitHub、创建飞书应用或部署 OOPZ；基础环境就绪后继续第 3 节。
 
-## 3. 登录私有 GitHub 仓库
+## 3. 匿名下载正式发布包（无需登录 GitHub）
 
-在服务器执行：
+截至 2026-09-10，仓库为 Public，已实际验证匿名访问正式附件成功。服务器不需要执行 `gh auth login`，不需要 Token，也不需要克隆仓库。若未来访问返回 401/403/404，请核对网络和仓库可见性；私有资源不能靠换命令绕过授权。
 
+在管理员 PowerShell 中复制执行以下代码。它匿名下载当前 **v0.11.9** 正式 ZIP 和校验文件到 `C:\OOPZ\artifacts`，同时与这里固定的 SHA-256 比对，再验证清单和提取内容。已下载的同名文件放入该目录后会自动跳过下载；文件不符则停止，不覆盖。
+
+此步骤还会建立持久目录、从已校验的包提取管理脚本，并生成后续命令使用的 `deployment-inputs.json`。不执行软件安装或启动网关。将来升级版本时应同步修改审核过的标签、文件名、提交和 SHA-256，不能只换标签或使用滚动的 latest 文件冒充固定版本。
+
+<!-- prepare-release-copy:start -->
 ```powershell
-gh auth login --hostname github.com --git-protocol https --web
-gh auth status
-```
+& {
+param([string]$InstallRoot = 'C:\OOPZ')
+$ErrorActionPreference = 'Stop'
 
-在浏览器中登录有权读取 `XK205E3n/OOPZ_Capture` 的账号并完成设备授权。不要把 GitHub Token 写进项目、`.env`、计划任务参数或脚本。长期生产服务器宜使用权限尽可能小的只读凭据，并由 Windows 凭据存储保护。
+function Get-OopzPinnedRelease {
+    return @{
+        Tag = 'v0.11.9'
+        File = 'oopz-capture-v0.11.9-5769293b3236.zip'
+        Sha256 = '31f349ebd021af2d416d99157c7cfca96f324c9cc8cd5c6f53d4f6777b27e4de'
+        Commit = '5769293b3236460d24bc0553561fa3ac68ae79be'
+        ReleaseId = 'v0.11.9-5769293b3236'
+    }
+}
 
-## 4. 建立持久目录
+function Initialize-OopzRelease {
+    param([string]$Root)
+    $release = Get-OopzPinnedRelease
+    $Root = [IO.Path]::GetFullPath($Root)
+    $artifacts = Join-Path $Root 'artifacts'
+    New-Item -ItemType Directory -Force -Path $artifacts | Out-Null
+    $zip = Join-Path $artifacts $release.File
+    $baseUrl = "https://github.com/XK205E3n/OOPZ_Capture/releases/download/$($release.Tag)"
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    foreach ($item in @(@{Path=$zip; Name=$release.File}, @{Path="$zip.sha256"; Name="$($release.File).sha256"})) {
+        if (Test-Path -LiteralPath $item.Path -PathType Leaf) { Write-Host "SKIP download: $($item.Path)"; continue }
+        # No token, Authorization header, gh login or Git clone is needed.
+        try { Invoke-WebRequest -UseBasicParsing -Uri "$baseUrl/$($item.Name)" -OutFile "$($item.Path).partial" }
+        catch { throw 'Anonymous download failed. Check network/repository visibility; do not bypass authentication if the repository becomes private.' }
+        Move-Item -LiteralPath "$($item.Path).partial" -Destination $item.Path
+    }
+    $actual = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+    $sidecar = ((Get-Content -LiteralPath "$zip.sha256" -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+    if ($actual -ne $release.Sha256 -or $sidecar -ne $release.Sha256) { throw 'Release checksum mismatch. Existing files were preserved; do not execute them.' }
 
-以管理员 PowerShell 执行：
+    $source = Join-Path (Join-Path $Root 'source') $release.ReleaseId
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $archive = [IO.Compression.ZipFile]::OpenRead($zip)
+    try {
+        $entry = $archive.GetEntry('RELEASE_MANIFEST.json')
+        if (-not $entry) { throw 'Missing release manifest; use the official ZIP attachment, not Source code.' }
+        $reader = [IO.StreamReader]::new($entry.Open())
+        try { $manifest = $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+        if ($manifest.git_commit -ne $release.Commit -or $manifest.release_id -ne $release.ReleaseId) { throw 'Manifest does not match the pinned release.' }
+        $prefix = $source.TrimEnd('\') + '\'
+        foreach ($entry in $archive.Entries) {
+            $target = [IO.Path]::GetFullPath((Join-Path $source $entry.FullName))
+            if (-not $target.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe ZIP entry.' }
+        }
+        if (-not (Test-Path -LiteralPath $source)) { New-Item -ItemType Directory -Force -Path $source | Out-Null; [IO.Compression.ZipFileExtensions]::ExtractToDirectory($archive, $source) }
+        if ((Get-Item -LiteralPath $source).Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Source directory must not be a directory link.' }
+        # Reuse only byte-identical package files; preserve extra local setup files.
+        foreach ($entry in $archive.Entries) {
+            if (-not $entry.Name) { continue }
+            $target = Join-Path $source $entry.FullName
+            if (-not (Test-Path -LiteralPath $target -PathType Leaf)) { throw "Incomplete extracted package: $target" }
+            $stream = $entry.Open(); $sha = [Security.Cryptography.SHA256]::Create()
+            try { $expected = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '') }
+            finally { $stream.Dispose(); $sha.Dispose() }
+            if ((Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash -ne $expected) { throw "Extracted file was changed: $target. No overwrite was performed." }
+        }
+    } finally { $archive.Dispose() }
+    foreach ($name in @('admin','releases','shared\config','shared\models','shared\output','shared\feishu_state','shared\logs','shared\tools\node')) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $Root $name) | Out-Null
+    }
+    foreach ($name in @('install_release.ps1','rollback_release.ps1')) {
+        Copy-Item -LiteralPath (Join-Path $source "scripts\$name") -Destination (Join-Path $Root "admin\$name") -Force
+    }
+    $inputs = @{Artifact=$zip; Source=$source; InstallRoot=$Root; ReleaseId=$release.ReleaseId; Commit=$release.Commit}
+    $inputs | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $artifacts 'deployment-inputs.json') -Encoding UTF8
+    Write-Host "Prepared $($release.Tag); SHA256 verified. Source=$source"
+}
 
-```powershell
-$oopzDirectories = @(
-    'C:\OOPZ\admin',
-    'C:\OOPZ\artifacts',
-    'C:\OOPZ\releases',
-    'C:\OOPZ\shared\config',
-    'C:\OOPZ\shared\models',
-    'C:\OOPZ\shared\output',
-    'C:\OOPZ\shared\feishu_state',
-    'C:\OOPZ\shared\logs',
-    'C:\OOPZ\shared\tools\node'
-)
-$oopzDirectories | ForEach-Object {
-    New-Item -ItemType Directory -Path $_ -Force | Out-Null
+if ($MyInvocation.InvocationName -ne '.') { Initialize-OopzRelease $InstallRoot }
 }
 ```
+<!-- prepare-release-copy:end -->
 
-最终结构：
+以上代码与 [scripts/prepare_release.ps1](scripts/prepare_release.ps1) 一致。官方下载为：
+- [正式 ZIP](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.9/oopz-capture-v0.11.9-5769293b3236.zip)
+- [SHA-256](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.9/oopz-capture-v0.11.9-5769293b3236.zip.sha256)
+
+## 4. 持久目录已自动建立
+
+第 3 节已经建立以下结构，不需要手动建目录或克隆 Git：
 
 ```text
 C:\OOPZ\
-  current -> releases\<release-id>
-  releases\<release-id>\
-  admin\
-  artifacts\
-  shared\config\.env
-  shared\models\SenseVoiceSmall\
+  artifacts\                        # ZIP、校验文件、deployment-inputs.json
+  source\<release-id>\              # 从已校验 ZIP 提取的安装准备副本
+  admin\                            # 安装与回滚脚本
+  releases\                         # 正式安装时创建独立运行版本
+  shared\config\.env                # 第 7 节创建
+  shared\models\
   shared\output\
   shared\feishu_state\
   shared\logs\
-  shared\tools\node\
+  shared\tools\node\node.exe         # 第 2.1 节基础环境脚本准备
 ```
 
-`shared` 是持久区；更新和代码回滚都不得删除或覆盖其中的数据。
+`shared` 是持久区，更新和回滚不得覆盖它。无需在服务器配置 GitHub 账户或同步整个开发目录。
 
-PDF 渲染使用项目内固定的 Node 运行时：把已安装 Node.js LTS 目录中的 `node.exe` 复制到 `C:\OOPZ\shared\tools\node\node.exe`。发布包不含该文件，安装脚本会把它联接到每个版本目录的 `tools\node`，缺失时安装中止并给出明确提示。
+## 5. 使用发布包内的管理脚本
 
-## 5. 获取指定版本的管理脚本
-
-首次部署时克隆运维副本；后续更新时只获取新提交：
+管理脚本已经从同一个经过校验的发布包复制到 `C:\OOPZ\admin`。可在 PowerShell 检查：
 
 ```powershell
-if (Test-Path C:\OOPZ\source\.git) {
-    git -C C:\OOPZ\source fetch --tags --prune
-} else {
-    gh repo clone XK205E3n/OOPZ_Capture C:\OOPZ\source
+Get-Item C:\OOPZ\admin\install_release.ps1
+Get-Item C:\OOPZ\admin\rollback_release.ps1
+Get-Content C:\OOPZ\artifacts\deployment-inputs.json
+```
+
+准备副本在 `source\<release-id>`，不直接作为生产运行目录；不要提前手动解压进 `releases`，否则正式安装会报告版本已存在。第 3 节再次执行时会验证提取文件与 ZIP 字节一致，发现修改则停止。
+
+## 6. 确认待安装版本
+
+```powershell
+$oopzInputs = Get-Content C:\OOPZ\artifacts\deployment-inputs.json -Raw | ConvertFrom-Json
+Get-FileHash -LiteralPath $oopzInputs.Artifact -Algorithm SHA256
+Get-Content -LiteralPath ($oopzInputs.Artifact + '.sha256')
+Get-Content -LiteralPath (Join-Path $oopzInputs.Source 'RELEASE_MANIFEST.json')
+```
+
+当前版本的校验值应为 `31f349ebd021af2d416d99157c7cfca96f324c9cc8cd5c6f53d4f6777b27e4de`。安装脚本还会再次校验，不能用 GitHub 自动生成的 Source code ZIP 代替正式附件。
+
+## 7. 在 PowerShell 创建配置并一键配置飞书
+
+所有文件准备、凭据输入和安装命令都可在服务器 PowerShell 完成；不需要记事本、本地电脑上的 GitHub 登录或仓库克隆。首次安装仍需要你已有的 OOPZ 登录信息与分析 API 账户；飞书扫码确认、版本审批和邀请进群是账户授权操作，不能通过匿名下载替代。
+
+### 7.1 填写缺少的必填项
+
+复制执行下面代码：不存在的生产配置从已校验模板创建，已有文件不覆盖，已有非空配置不重复询问。密码、手机号和 API Key 隐藏输入；只显示字段名，不显示配置值。无需复制凭据到命令行字符串或聊天中。
+
+模型仅推荐 **MiMo V2.5**；供应商、API 地址、模型标识和运行参数按你自行选择的服务填写。控制群 ID 可以保持为空，由首次入群自动绑定；公开报告文件夹和 Base 的四项配置可在首次公开发布前补齐。
+
+<!-- server-env-copy:start -->
+```powershell
+& {
+param(
+    [string]$EnvPath = 'C:\OOPZ\shared\config\.env',
+    [string]$TemplatePath
+)
+$ErrorActionPreference = 'Stop'
+
+function Read-OopzConfigValue {
+    param([string]$Key)
+    if ($Key -match 'PASSWORD|PHONE|API_KEY|SECRET|TOKEN') {
+        $secure = Read-Host $Key -AsSecureString
+        $pointer = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+        try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($pointer) }
+        finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($pointer); $secure.Dispose() }
+    }
+    return Read-Host $Key
 }
-```
 
-在 GitHub Release 页面取得目标 Release 对应的完整 Git 提交，然后显式检出；不要依赖随时间变化的 `main`：
+function Initialize-OopzServerEnv {
+    param([string]$Path, [string]$Template)
+    if (-not (Test-Path -LiteralPath $Path)) {
+        if (-not $Template -or -not (Test-Path -LiteralPath $Template -PathType Leaf)) { throw 'A verified .env.example template is required for the first setup.' }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $Path) | Out-Null
+        Copy-Item -LiteralPath $Template -Destination $Path
+    }
+    $keys = @('OOPZ_LOGIN_PHONE','OOPZ_LOGIN_PASSWORD','ANALYZER_PROVIDER','ANALYZER_API_KEY','ANALYZER_BASE_URL','ANALYZER_MODEL','ANALYZER_TIMEOUT_SECONDS','ANALYZER_MAX_RETRIES','ANALYZER_MIN_INTERVAL_SECONDS','ANALYZER_MAX_TOKENS','ANALYZER_THINKING_MAX_TOKENS','ANALYZER_THINKING_MODE','ANALYZER_JSON_MODE')
+    foreach ($key in $keys) {
+        $lines = [IO.File]::ReadAllLines($Path, [Text.Encoding]::UTF8)
+        $pattern = '^\s*' + [regex]::Escape($key) + '\s*=(.*)$'
+        $existing = @($lines | Where-Object { $_ -match $pattern })
+        if ($existing.Count -gt 1) { throw "Duplicate configuration key: $key. Inspect the file locally before continuing." }
+        if ($existing.Count -eq 1) {
+            $null = $existing[0] -match $pattern
+            $current = $Matches[1].Trim()
+            if ($current -and $current -notin @('""', "''")) { Write-Host "KEEP $key"; continue }
+        }
+        $value = Read-OopzConfigValue $key
+        if ([string]::IsNullOrWhiteSpace($value) -or $value -match '[\r\n]') { throw "Missing or multiline value for $key; nothing was written for this key." }
+        $replacement = $key + '="' + $value + '"'
+        if ($existing.Count) { $lines = @($lines | ForEach-Object { if ($_ -match $pattern) { $replacement } else { $_ } }) }
+        else { $lines = @($lines) + $replacement }
+        # Write in place: replacing the file would break release/shared hard links.
+        [IO.File]::WriteAllLines($Path, [string[]]$lines, [Text.UTF8Encoding]::new($false))
+        $value = $null; $replacement = $null
+        Write-Host "SAVED $key"
+    }
+    Write-Host 'Required OOPZ/API fields are present. Run the one-click Feishu setup next; do not print or share the .env contents.'
+}
+
+if ($MyInvocation.InvocationName -ne '.') { Initialize-OopzServerEnv $EnvPath $TemplatePath }
+} -TemplatePath ((Get-Content C:\OOPZ\artifacts\deployment-inputs.json -Raw | ConvertFrom-Json).Source + '\.env.example')
+```
+<!-- server-env-copy:end -->
+
+代码与 [scripts/configure_server_env.ps1](scripts/configure_server_env.ps1) 一致。配置仍由程序在启动时校验；不要用 `Get-Content` 打印生产 `.env`。从前次配置中保留的错误值不会被此脚本自动改写，应在本机确认后单独修正。
+
+### 7.2 服务器直接发起一键飞书配置（主流程）
+
+如果生产 `.env` 已安全填写经过验证的飞书 App ID/Secret，可跳过本节直接安装；首次创建或需要更新应用时执行以下命令。
+
+在同一个管理员 PowerShell 中执行：
 
 ```powershell
-git -C C:\OOPZ\source fetch --tags
-git -C C:\OOPZ\source checkout <full-git-commit>
-
-Copy-Item C:\OOPZ\source\scripts\install_release.ps1 C:\OOPZ\admin\ -Force
-Copy-Item C:\OOPZ\source\scripts\rollback_release.ps1 C:\OOPZ\admin\ -Force
+$ErrorActionPreference = 'Stop'
+$oopzInputs = Get-Content C:\OOPZ\artifacts\deployment-inputs.json -Raw | ConvertFrom-Json
+$oopzPython = if (Test-Path 'C:\OOPZ\tools\Python312\python.exe') {
+    'C:\OOPZ\tools\Python312\python.exe'
+} else {
+    (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source
+}
+& $oopzPython -I -c "import sys,struct; assert sys.version_info[:2]==(3,12) and struct.calcsize('P')==8"
+if ($LASTEXITCODE -ne 0) { throw '请使用第 2.1 节输出的 PythonExe 路径（3.12 x64）。' }
+$oopzSetupPython = 'C:\OOPZ\setup-venv\Scripts\python.exe'
+if (-not (Test-Path $oopzSetupPython)) {
+    & $oopzPython -m venv C:\OOPZ\setup-venv
+    if ($LASTEXITCODE -ne 0) { throw '创建飞书配置环境失败。' }
+}
+& $oopzSetupPython -m pip install -e ($oopzInputs.Source + '[feishu]')
+if ($LASTEXITCODE -ne 0) { throw '安装飞书配置依赖失败。' }
+& $oopzSetupPython -c "from pathlib import Path; from oopz_capture.env_loader import load_project_env; from oopz_capture.feishu_setup import run_setup; p=Path(r'C:\OOPZ\shared\config\.env'); load_project_env(p); raise SystemExit(run_setup(env_path=p))"
+if ($LASTEXITCODE -ne 0) { throw '飞书一键配置未完成，请按终端提示处理。' }
 ```
 
-## 6. 下载 GitHub Release
+这调用的是 `oopz-feishu setup` 的同一个配置实现，显式把 App ID/Secret 写入 `shared\config\.env`。首次部署无需先有 `current` 虚拟环境；`setup-venv` 仅用于配置，正式版本仍由第 9 节单独安装。已有 App ID 时沿用一键流程的更新行为，避免重复手动创建应用。
 
-将 `<release-id>` 替换为 GitHub Releases 页面显示的标签，当前版本为 `v0.11.9`；ZIP 文件名和包内 `release_id` 另含构建提交后缀，安装时以包内清单为准：
-
-```powershell
-gh release download <release-id> `
-    --repo XK205E3n/OOPZ_Capture `
-    --dir C:\OOPZ\artifacts `
-    --pattern '*.zip' `
-    --pattern '*.sha256'
-```
-
-确认 ZIP 和同名 `.zip.sha256` 均存在：
-
-```powershell
-Get-ChildItem C:\OOPZ\artifacts
-```
-
-安装脚本会再次核对 SHA-256；校验文件缺失或不匹配时拒绝安装。
-
-## 7. 创建生产配置
-
-首次部署时从目标提交的模板创建配置：
-
-```powershell
-Copy-Item C:\OOPZ\source\.env.example C:\OOPZ\shared\config\.env
-notepad C:\OOPZ\shared\config\.env
-```
-
-至少填写：
-
-- `OOPZ_FEISHU_APP_ID`、`OOPZ_FEISHU_APP_SECRET`，优先由下方一键流程获取，无需先手动创建应用；
-- `OOPZ_LOGIN_PHONE`、`OOPZ_LOGIN_PASSWORD`；
-- 全部 `ANALYZER_*` 项：Provider、API Key、Base URL、模型、超时、重试、请求间隔、普通/思考 Token 上限、思考模式和 JSON 模式；程序不提供默认值；
-- 控制群 ID，或首次启动时保持为空并执行自动绑定；
-- 启用公开发布时所需的文件夹和 Base 四项配置。
-
-### 主流程：一键创建或更新飞书机器人
-
-1. 首次部署前，在已经装好项目依赖的本地电脑运行 `.\.venv\Scripts\oopz-feishu.exe setup`，通过飞书扫码确认创建/更新。完成后安全地把本机 `.env` 中的 App ID/Secret 两行写入服务器 `shared\config\.env`。
-2. 依照一键命令的后续提示检查应用版本是否需要发布；准备控制群。如需公开报告，另行完成文件夹/Base 的配置与协作者授权。
-3. 已安装好的服务器需要更新应用配置时，在 `C:\OOPZ\current` 目录运行 `.\.venv\Scripts\oopz-feishu.exe setup`。二维码无法显示时加 `--url-only`；配置写入经 `.env` 硬链接落入 `shared\config\.env`。
-
-首次安装（第 9 节）之前服务器尚无 `current` 虚拟环境，不能先运行第 3 步；按第 1 步获取凭据后再继续安装。已有可用机器人时可直接安全填写其现有凭据，不必重复创建。不要用 Git 在本地和服务器之间同步 `.env`。
+使用飞书 App 扫描二维码并确认，检查平台是否需要发布应用版本或管理员审批。随后继续第 9 节安装，网关启动后邀请机器人进群并验收。公开报告资源的协作者授权仍需按[飞书手册](README_FEISHU_BOT_SETUP.md)完成。
 
 ### 保底：一键流程不可用时手动配置
 
-仅当一键配置失败、租户不支持或管理员策略要求手动操作时，使用 [飞书手册](README_FEISHU_BOT_SETUP.md) 中折叠的第 2–4 节，再按第 5 节发布应用并安全写入凭据。手动配置不是默认安装步骤。
-
-生产 `.env` 只保存在 `C:\OOPZ\shared\config\.env`。不要用 Git 在本地和服务器之间同步它。飞书应用的完整配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。
-
-分析 API 必须由服务器运维人员按实际账户填写。模型仅推荐 MiMo V2.5，不推荐供应商。供应商标识、API 地址、实际模型名称和运行参数由运维人员按所选服务配置；发布包不会自动选择或填入。
+仅在租户不支持、一键配置失败或管理员策略要求时，使用飞书手册中折叠的手动保底章节；它不是正常安装的前置步骤。整个流程不需要 GitHub 登录，但不会绕过 OOPZ、分析 API 或飞书自身的必要认证。
 
 ## 8. SenseVoice 模型自动下载
 
@@ -436,12 +546,15 @@ C:\OOPZ\shared\models\SenseVoiceSmall\MODEL_SOURCE.json
 
 ## 9. 安装并切换版本
 
-将 `<artifact.zip>` 替换成实际文件名：
+在 PowerShell 中读取第 3 节保存的路径，并明确指定 3.12 解释器：
 
 ```powershell
+$oopzInputs = Get-Content C:\OOPZ\artifacts\deployment-inputs.json -Raw | ConvertFrom-Json
+$oopzPython = if (Test-Path 'C:\OOPZ\tools\Python312\python.exe') { 'C:\OOPZ\tools\Python312\python.exe' } else { (Get-Command python.exe -CommandType Application -ErrorAction Stop).Source }
 powershell -NoProfile -ExecutionPolicy Bypass `
     -File C:\OOPZ\admin\install_release.ps1 `
-    -Artifact C:\OOPZ\artifacts\<artifact.zip>
+    -Artifact $oopzInputs.Artifact -PythonExe $oopzPython
+if ($LASTEXITCODE -ne 0) { throw '安装未完成，请保留终端错误并检查后重试。' }
 ```
 
 安装脚本会：
@@ -487,33 +600,40 @@ Get-Content C:\OOPZ\shared\logs\feishu_runtime.err.log -Tail 100
 
 ## 11. 设置自动启动
 
-在 Windows 任务计划程序中创建任务：
+在管理员 PowerShell 注册当前账户的登录启动任务，无需打开任务计划程序界面：
 
-```text
-程序：powershell.exe
-参数：-NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\current\scripts\invoke_full_stack_launcher.ps1
-起始目录：C:\OOPZ\current
-触发器：系统启动或指定运行账户登录
-选项：使用最高权限运行
+```powershell
+$oopzTaskName = 'OOPZ Capture'
+if (Get-ScheduledTask -TaskName $oopzTaskName -ErrorAction SilentlyContinue) {
+    Write-Host '任务已存在，未覆盖。请检查下面显示的动作与触发器。'
+    Get-ScheduledTask -TaskName $oopzTaskName | Select-Object TaskName, Actions, Triggers
+} else {
+    $oopzRunAs = "$env:USERDOMAIN\$env:USERNAME"
+    $oopzAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\current\scripts\invoke_full_stack_launcher.ps1' -WorkingDirectory 'C:\OOPZ\current'
+    $oopzTrigger = New-ScheduledTaskTrigger -AtLogOn -User $oopzRunAs
+    $oopzPrincipal = New-ScheduledTaskPrincipal -UserId $oopzRunAs -LogonType Interactive -RunLevel Highest
+    $oopzSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+    Register-ScheduledTask -TaskName $oopzTaskName -Action $oopzAction -Trigger $oopzTrigger -Principal $oopzPrincipal -Settings $oopzSettings
+}
 ```
 
-当前项目会启动两个监视窗口。需要看到窗口时选择“仅当用户登录时运行”；后台运行时这些窗口不会出现在普通桌面会话。RDP 维护结束后使用“断开连接”，不要注销运行账户，除非计划任务已验证能在无登录会话下恢复。
+此配置在该用户登录时启动，不声称服务器重启后无人登录也能恢复录制。当前项目有交互式监视窗口，RDP 维护结束应断开连接而非注销运行账户。注册任务不会立刻另启一个网关；正式安装已负责启动应用。
 
-创建任务后必须进行一次服务器重启演练，确认网关无需人工打开项目目录即可恢复。
+创建任务后须重启并登录该账户进行演练，确认无需手动打开项目目录即可恢复。无人登录启动需要另行验证 Windows 会话和浏览器音频，不能直接套用此交互式任务配置。
 
 ## 12. 后续更新
 
 本地完成 Bug 修复后执行（顺序遵循 AGENTS.md 发布规则）：
 
 ```text
-审阅修改 → 同步 CHANGELOG / DEPLOYMENT 文档 → 工作树干净
-→ 跑测试（开发沙箱中 2 个 Windows rmdir/symlink 环境测试会失败，用 scripts/build_release.ps1 -SkipTests）
-→ 用 scripts/build_release.ps1 从已提交 HEAD 生成 ZIP/SHA-256（禁止复制工作目录部署）
-→ 用 release-audit 技能 + .codex/release-audit-baseline.json 审计，脱敏结果写入 logs/release_audit/latest.json
-→ Git 提交并推送 main → 打 tag（v<版本>-<提交>） → 创建 GitHub Release 并附 ZIP 与 .sha256
+审阅修改 → 同步 CHANGELOG / DEPLOYMENT 文档 → 完成测试与 release-audit
+→ Git 提交并推送，确保工作区干净
+→ 用 scripts/build_release.ps1 从已提交 HEAD 生成 ZIP/SHA-256
+→ 创建对应提交的 GitHub Release 并附 ZIP 与 .sha256
+→ 更新已审核的匿名下载版本、提交与校验值
 ```
 
-服务器更新只需要重复第 5、6、9、10 节。生产 `.env`、已校验模型和业务数据保持不变。模型修订版只有在项目代码、校验值和部署变更记录同时更新时才会变化。
+服务器更新重复采用新版本固定信息的第 3 节，再执行第 6、9、10 节。生产 `.env`、已校验模型和业务数据保持不变。模型修订版只有在项目代码、校验值和部署变更记录同时更新时才会变化。不得为绕过测试失败而默认跳过发布测试。
 
 如果配置契约发生变化，先按新版本 `.env.example` 人工合并到生产 `.env`，禁止用模板直接覆盖生产文件。
 
@@ -530,7 +650,7 @@ Get-ChildItem C:\OOPZ\releases -Directory
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass `
     -File C:\OOPZ\admin\rollback_release.ps1 `
-    -ReleaseId <previous-release-id>
+    -ReleaseId (Read-Host '请输入上方列表中要回滚到的完整 Release ID')
 ```
 
 回滚只切换代码和依赖，不回滚共享配置与业务数据。若某次版本包含不可逆数据迁移，必须按照该版本部署变更记录执行备份恢复，不能只切换代码。

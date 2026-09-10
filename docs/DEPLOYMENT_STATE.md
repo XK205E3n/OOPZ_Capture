@@ -8,7 +8,7 @@
 
 | 项目 | 本地开发环境 | 生产服务器 | 是否需同步 |
 | --- | --- | --- | --- |
-| Git 提交 | `main` 跟踪私有 GitHub 仓库；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：发布并部署首个 GitHub Release 后登记发布 ID |
+| Git 提交 | `main` 跟踪 GitHub 仓库；精确提交以 `git rev-parse HEAD` 和发布清单为准 | 尚未部署 | 是：应用部署后登记发布 ID |
 | 应用版本 | `0.11.9` | 应用待部署；部署使用 [Release v0.11.9](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.9)，精确提交见包内清单 | 是 |
 | 操作系统 | Windows | 已创建 Windows Server 2022 x64 中文版试用实例，应用尚未安装验收 | 待实施 |
 | 计算与磁盘 | 本机 CPU 限额实验已完成，不能代替云端验收 | 经济型 e：2 vCPU / 4 GiB、40 GiB ESSD Entry；运行中，容量待实测 | 属于低负载试运行目标，未验证生产稳定性 |
@@ -21,7 +21,7 @@
 | 生产配置 | 本地 `.env`（不进 Git）；全部 `ANALYZER_*` 项显式配置 | 尚未创建 | 是：服务器独立配置全部分析器变量，不复制本地密钥文件作为长期同步方式 |
 | 输出/状态/日志 | `output`、`feishu_state`、`logs`；分析检查点与中断恢复状态保存在会话目录 | 尚未创建 | 否：属于各环境持久数据，禁止互相覆盖；重启后仅回收已退出进程留下的分析锁 |
 | 启动方式 | 交互式批处理 | 目标为任务计划程序调用稳定 `current` 路径 | 待实施 |
-| 代码远端 | `origin=https://github.com/XK205E3n/OOPZ_Capture.git`（Private） | 计划通过只读认证下载指定 Release | 首次服务器配置待实施 |
+| 代码远端 | `origin=https://github.com/XK205E3n/OOPZ_Capture.git`（2026-09-10 实查 Public；本次未改变可见性） | 可通过 PowerShell 匿名下载固定 Release，ZIP / SHA-256 / 清单校验已在本机实测 | 服务器无需 GitHub 登录；业务凭据仍仅本地保存 |
 
 ## 生产目录约定
 
@@ -53,7 +53,7 @@ C:\OOPZ\
 ## 首次部署待办
 
 - [x] 将已审查、测试的当前版本生成并上传为首个 GitHub Release（Release ID 以发布清单为准）。
-- [x] 建立私有 Git 远端并推送 `main`。
+- [x] 建立 Git 远端并推送 `main`；当前仓库公开可读，不包含生产配置或运行数据。
 - [ ] 准备 Windows Server，安装 Python 3.12 x64、Node.js LTS、Git、Chrome/Edge。
 - [ ] 建立 `C:\OOPZ\shared`，安全创建生产 `.env`，由安装脚本从魔搭社区下载并校验 SenseVoiceSmall。
 - [ ] 本地生成首个发布包及 SHA-256，传到 `C:\OOPZ\artifacts`。

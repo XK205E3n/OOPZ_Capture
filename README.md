@@ -121,6 +121,8 @@ ANALYZER_JSON_MODE=
 
 服务器使用 [Release ZIP 和 SHA-256 文件](https://github.com/XK205E3n/OOPZ_Capture/releases)，由 `scripts/install_release.ps1` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared` 中。不要把包含 `.env`、模型或会话数据的整个开发目录上传，也不要直接修改服务器版本目录。
 
+当前公开 Release 可匿名获取。从零部署指南提供完整 PowerShell：自动下载校验、提取管理脚本、终端配置、一键飞书配置及正式安装，不需要服务器登录 GitHub 或克隆仓库。业务账号、飞书扫码和租户审批仍由使用者完成。
+
 ## 开发验证
 
 ```powershell
