@@ -27,13 +27,250 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 - 不需要 GPU，也不需要开放应用业务入站端口；
 - RDP 仅允许可信管理 IP。
 
-安装以下 x64 软件（均从官方渠道获取，避免使用第三方镜像或非 LTS 版本）：
+### 2.1 自动安装全部基础环境（首次部署主流程）
+
+默认从一台尚未安装开发工具的 Windows Server 开始。**在服务器打开 64 位管理员 PowerShell，复制执行下面整段代码**，无需先装 Git、gh、Python、Node、npm 或 winget。已有组件会跳过下载和安装；失败会停止，不会继续执行应用部署。
+
+- 安装器统一保存在 `C:\OOPZ\installers`，MSI 日志保存在安装器旁边；先检查数字签名，再静默安装，不自动重启。
+- Visual C++ x64 运行库：检测 v14 x64 注册信息与运行库 DLL，缺少时安装微软官方运行库，以满足 PyTorch 等原生组件的加载需求。
+- Git / gh：从各自官方 GitHub Release 获取 x64 安装器；已有安装不升级、不重装。
+- Python：检测已安装的 **3.12 x64**；只有其他版本时保留原版本，通过官方 Python 安装管理器 MSI 安装官方渠道可用的 3.12 x64 到 `C:\OOPZ\tools\Python312`，不固定到旧 EXE 的补丁版本。实际补丁号以安装输出为准；新安装目录加入系统 PATH。
+- Node.js / npm / npx：缺少 Node 时安装 Node 24 LTS x64，npm 与 npx 随附；三者都有则跳过。已有 Node 但缺 npm 或 npx 时使用同版本官方 MSI 修复，不静默降级。非标准或损坏的既有安装若修复失败会停止，保留现场供排查。现有 Node 若不是 LTS，脚本保留原版本，需在部署前确认兼容性。
+- Edge / Chrome：检测到任一常见安装位置即跳过，否则安装官方 Chrome x64；自动准备 PDF 所需的 `C:\OOPZ\shared\tools\node\node.exe`，已有共享运行时不覆盖。
+- 安装完成后输出各工具版本与精确 `PythonExe` 路径。出现重启提示时先重启，再执行一次检查。新开 PowerShell 会读取更新的系统 PATH；特殊路径的现有 Python 请在后续安装命令中显式传入输出的 `-PythonExe`，不依赖默认解释器顺序。
+
+已有仓库脚本时，也可以运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_prerequisites.ps1`；加 `-CheckOnly` 仅检查，不下载或安装。已下载的 v0.11.9 ZIP 不包含这个后续新增脚本，直接复制本节代码即可，无需先更新服务器程序包。
+
+<!-- prerequisites-copy:start -->
+```powershell
+& {
+param(
+    [string]$DownloadDirectory = 'C:\OOPZ\installers',
+    [string]$PythonDirectory = 'C:\OOPZ\tools\Python312',
+    [switch]$CheckOnly
+)
+
+$ErrorActionPreference = 'Stop'
+
+function Find-OopzCommand {
+    param([string]$Name, [string[]]$Candidates = @())
+    $paths = @((Get-Command $Name -CommandType Application -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })) + $Candidates
+    foreach ($path in $paths) {
+        if ($path -and $path -notmatch '\\Microsoft\\WindowsApps\\' -and (Test-Path -LiteralPath $path -PathType Leaf)) { return $path }
+    }
+    return $null
+}
+
+function Update-OopzProcessPath {
+    # Preserve the caller's PATH too; never use setx (which may truncate PATH).
+    $combined = @([Environment]::GetEnvironmentVariable('Path', 'Machine'), [Environment]::GetEnvironmentVariable('Path', 'User'), $env:Path) -join ';'
+    $env:Path = (($combined -split ';' | Where-Object { $_.Trim() } | ForEach-Object { $_.Trim() } | Select-Object -Unique) -join ';')
+}
+
+function Find-OopzPython {
+    param([string]$Target)
+    $candidates = @((Join-Path $Target 'python.exe'), "$env:ProgramFiles\Python312\python.exe", "$env:LOCALAPPDATA\Programs\Python\Python312\python.exe")
+    $candidates += @(Get-Command python.exe -CommandType Application -All -ErrorAction SilentlyContinue | ForEach-Object { $_.Source })
+    foreach ($hive in @('HKCU:', 'HKLM:')) {
+        foreach ($tag in @('3.12', '3.12-64')) {
+            $key = Get-Item -LiteralPath "$hive\SOFTWARE\Python\PythonCore\$tag\InstallPath" -ErrorAction SilentlyContinue
+            if ($key) { $candidates += Join-Path $key.GetValue('') 'python.exe' }
+        }
+    }
+    foreach ($path in ($candidates | Select-Object -Unique)) {
+        if (-not $path -or $path -match '\\Microsoft\\WindowsApps\\' -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { continue }
+        try {
+            $probe = & $path -I -c "import sys,struct; print('%s.%s/%s' % (sys.version_info.major,sys.version_info.minor,struct.calcsize('P')*8))" 2>$null
+            if ($LASTEXITCODE -eq 0 -and "$probe".Trim() -eq '3.12/64') { return $path }
+        } catch { }
+    }
+    return $null
+}
+
+function Get-OopzTools {
+    param([string]$PythonTarget)
+    $vcRuntime = $null
+    foreach ($key in @('HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64')) {
+        $vc = Get-ItemProperty -LiteralPath $key -ErrorAction SilentlyContinue
+        if ($vc -and $vc.Installed -eq 1 -and (Test-Path -LiteralPath "$env:WINDIR\System32\vcruntime140_1.dll")) { $vcRuntime = 'Visual C++ v14 x64' }
+    }
+    return @{
+        VCRuntime = $vcRuntime
+        Git = Find-OopzCommand 'git.exe' @("$env:ProgramFiles\Git\cmd\git.exe", "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe")
+        Gh = Find-OopzCommand 'gh.exe' @("$env:ProgramFiles\GitHub CLI\gh.exe", "$env:LOCALAPPDATA\Programs\GitHub CLI\gh.exe")
+        Python = Find-OopzPython $PythonTarget
+        Node = Find-OopzCommand 'node.exe' @("$env:ProgramFiles\nodejs\node.exe")
+        Npm = Find-OopzCommand 'npm.cmd' @("$env:ProgramFiles\nodejs\npm.cmd")
+        Npx = Find-OopzCommand 'npx.cmd' @("$env:ProgramFiles\nodejs\npx.cmd")
+        Browser = Find-OopzCommand 'msedge.exe' @("${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe", "$env:ProgramFiles\Google\Chrome\Application\chrome.exe", "${env:ProgramFiles(x86)}\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Google\Chrome\Application\chrome.exe", "$env:LOCALAPPDATA\Microsoft\Edge\Application\msedge.exe")
+    }
+}
+
+function Get-OopzInstaller {
+    param([string]$Url, [string]$Directory)
+    if ($Url -notmatch '^https://(github\.com|www\.python\.org|nodejs\.org|dl\.google\.com|aka\.ms)/') { throw 'Installer URL is not an approved official source.' }
+    New-Item -ItemType Directory -Path $Directory -Force | Out-Null
+    $name = [IO.Path]::GetFileName(([Uri]$Url).AbsolutePath)
+    $target = Join-Path $Directory $name
+    if (-not (Test-Path -LiteralPath $target -PathType Leaf)) {
+        Write-Host "Downloading $Url"
+        Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile "$target.partial"
+        Move-Item -LiteralPath "$target.partial" -Destination $target
+    }
+    $signature = Get-AuthenticodeSignature -LiteralPath $target
+    if ($signature.Status -ne 'Valid') { throw "Installer signature is not valid: $target ($($signature.Status)). Nothing was executed." }
+    Write-Host "Verified installer: $target"
+    return $target
+}
+
+function Get-OopzGitHubInstallerUrl {
+    param([string]$Repository, [string]$AssetPattern)
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent' = 'OOPZ-prerequisites' }
+    $assets = @($release.assets | Where-Object { $_.name -match $AssetPattern })
+    if ($assets.Count -ne 1) { throw "Expected one x64 installer in $Repository; found $($assets.Count)." }
+    return $assets[0].browser_download_url
+}
+
+function Invoke-OopzInstaller {
+    param([string]$Path, [string[]]$Arguments = @())
+    if ([IO.Path]::GetExtension($Path) -eq '.msi') {
+        $msiArguments = @('/i', ('"' + $Path + '"'), '/qn', '/norestart', '/L*v', ('"' + $Path + '.install.log"')) + $Arguments
+        $process = Start-Process -FilePath 'msiexec.exe' -ArgumentList $msiArguments -Wait -PassThru -WindowStyle Hidden
+    } else {
+        $process = Start-Process -FilePath $Path -ArgumentList $Arguments -Wait -PassThru -WindowStyle Hidden
+    }
+    if ($process.ExitCode -notin @(0, 3010)) { throw "Installer failed with code $($process.ExitCode): $Path" }
+    if ($process.ExitCode -eq 3010) { Write-Warning 'Installer requests a reboot. Reboot before deployment, then rerun this script.' }
+    Update-OopzProcessPath
+}
+
+function Install-OopzTool {
+    param([string]$Tool, [hashtable]$Detected, [string]$Downloads, [string]$PythonTarget)
+    switch ($Tool) {
+        'VCRuntime' {
+            Invoke-OopzInstaller (Get-OopzInstaller 'https://aka.ms/vc14/vc_redist.x64.exe' $Downloads) @('/install', '/quiet', '/norestart')
+        }
+        'Git' {
+            $url = Get-OopzGitHubInstallerUrl 'git-for-windows/git' '^Git-[0-9.]+(?:\.[0-9]+)?-64-bit\.exe$'
+            $file = Get-OopzInstaller $url $Downloads
+            Invoke-OopzInstaller $file @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-')
+        }
+        'Gh' {
+            $url = Get-OopzGitHubInstallerUrl 'cli/cli' '^gh_[0-9.]+_windows_amd64\.msi$'
+            Invoke-OopzInstaller (Get-OopzInstaller $url $Downloads)
+        }
+        'Python' {
+            $manager = Find-OopzCommand 'pymanager.exe'
+            if (-not $manager) {
+                # Official MSI works without Microsoft Store or winget.
+                Invoke-OopzInstaller (Get-OopzInstaller 'https://www.python.org/ftp/python/pymanager/python-manager-26.3.msi' $Downloads)
+                $manager = Find-OopzCommand 'pymanager.exe'
+            }
+            if (-not $manager) { throw 'Python install manager is not on PATH. Reopen administrator PowerShell and retry.' }
+            if (Test-Path -LiteralPath $PythonTarget) { throw "Python target already exists but is not a usable 3.12 x64 installation: $PythonTarget. Preserve it and inspect before retrying." }
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $PythonTarget) | Out-Null
+            $env:PYTHON_MANAGER_AUTOMATIC_INSTALL = 'false'
+            & $manager install --yes "--target=$PythonTarget" '3.12-64'
+            if ($LASTEXITCODE -ne 0) { throw 'Python 3.12 installation failed; rerun only after checking the output.' }
+            if (-not (Find-OopzPython $PythonTarget)) { throw 'Downloaded Python is not a usable 3.12 x64 runtime.' }
+            $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+            $pythonPaths = @($PythonTarget, (Join-Path $PythonTarget 'Scripts'))
+            foreach ($entry in $pythonPaths) {
+                if ($entry -notin ($machinePath -split ';')) { $machinePath = $entry + ';' + $machinePath }
+            }
+            [Environment]::SetEnvironmentVariable('Path', $machinePath, 'Machine')
+            Update-OopzProcessPath
+        }
+        'Node' {
+            if ($Detected.Node) {
+                # npm is bundled with Node. Repair/install the SAME version; never downgrade silently.
+                $version = (& $Detected.Node --version).Trim()
+                if ($LASTEXITCODE -ne 0 -or $version -notmatch '^v\d+\.\d+\.\d+$') { throw 'Existing Node is not usable; inspect it before retrying.' }
+            } else {
+                $index = Invoke-RestMethod 'https://nodejs.org/dist/index.json'
+                $version = ($index | Where-Object { $_.version -match '^v24\.' -and $_.lts } | Select-Object -First 1).version
+                if (-not $version) { throw 'No Node 24 LTS release found in the official index.' }
+            }
+            $file = Get-OopzInstaller "https://nodejs.org/dist/$version/node-$version-x64.msi" $Downloads
+            if ($Detected.Node) { Invoke-OopzInstaller $file @('REINSTALL=ALL', 'REINSTALLMODE=vomus', 'ADDLOCAL=ALL') }
+            else { Invoke-OopzInstaller $file }
+        }
+        'Browser' {
+            Invoke-OopzInstaller (Get-OopzInstaller 'https://dl.google.com/dl/chrome/install/googlechromestandaloneenterprise64.msi' $Downloads)
+        }
+    }
+}
+
+function Assert-OopzInstallerHost {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        if (-not ([Security.Principal.WindowsPrincipal]$identity).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'Run this script in an administrator PowerShell.' }
+        if (-not [Environment]::Is64BitProcess -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') { throw 'Use 64-bit PowerShell on x64 Windows.' }
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+}
+
+function Complete-OopzPrerequisites {
+    param([hashtable]$Detected, [string]$Downloads)
+    foreach ($tool in @('Git', 'Gh', 'Python', 'Node', 'Npm', 'Npx')) {
+        $env:Path = (Split-Path -Parent $Detected[$tool]) + ';' + $env:Path
+    }
+    $python = $Detected.Python
+    $env:Path = (Split-Path -Parent $python) + ';' + $env:Path
+    & $python -m pip --version
+    if ($LASTEXITCODE -ne 0) {
+        & $python -m ensurepip --upgrade
+        if ($LASTEXITCODE -ne 0) { throw 'Python pip setup failed.' }
+    }
+    $nodeTarget = 'C:\OOPZ\shared\tools\node\node.exe'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $nodeTarget) | Out-Null
+    if (-not (Test-Path -LiteralPath $nodeTarget)) { Copy-Item -LiteralPath $Detected.Node -Destination $nodeTarget }
+    & $nodeTarget --version
+    if ($LASTEXITCODE -ne 0) { throw 'The existing shared Node runtime is not usable; inspect it before replacing it.' }
+    foreach ($tool in @('Git', 'Gh', 'Python', 'Node', 'Npm', 'Npx')) {
+        & $Detected[$tool] --version
+        if ($LASTEXITCODE -ne 0) { throw "$tool version check failed." }
+    }
+    Write-Host "Ready. PythonExe=$python"
+    Write-Host "Use install_release.ps1 -PythonExe `"$python`" when deploying. Installers: $Downloads"
+}
+
+function Invoke-OopzPrerequisites {
+    param([string]$Downloads, [string]$PythonTarget, [switch]$InspectOnly)
+    Update-OopzProcessPath
+    $detected = Get-OopzTools $PythonTarget
+    if (-not $InspectOnly) { Assert-OopzInstallerHost }
+    foreach ($tool in @('VCRuntime', 'Git', 'Gh', 'Python', 'Node', 'Browser')) {
+        $ready = [bool]$detected[$tool]
+        if ($tool -eq 'Node') { $ready = $ready -and [bool]$detected.Npm -and [bool]$detected.Npx }
+        if ($ready) { Write-Host "SKIP $tool : $($detected[$tool])"; continue }
+        if ($InspectOnly) { Write-Host "MISSING $tool"; continue }
+        Write-Host "INSTALL $tool"
+        Install-OopzTool $tool $detected $Downloads $PythonTarget
+        $detected = Get-OopzTools $PythonTarget
+        if (-not $detected[$tool] -or ($tool -eq 'Node' -and (-not $detected.Npm -or -not $detected.Npx))) { throw "$tool was not detected after installation. Inspect installer logs, then retry." }
+    }
+    if ($InspectOnly) { return }
+    Complete-OopzPrerequisites $detected $Downloads
+}
+
+if ($MyInvocation.InvocationName -ne '.') {
+    Invoke-OopzPrerequisites -Downloads $DownloadDirectory -PythonTarget $PythonDirectory -InspectOnly:$CheckOnly
+}
+}
+```
+<!-- prerequisites-copy:end -->
+
+代码与 [scripts/install_prerequisites.ps1](scripts/install_prerequisites.ps1) 保持一致。下载失败或签名检查失败时，保留输出并排查网络，不从未知镜像替换安装器。
+
+### 2.2 官方来源与安装后验证
+
+以下链接用于核对来源或处理自动安装失败；正常部署优先执行上面的自动流程：
 
 | 软件 | 在部署中的用途 | 官方下载地址 |
 | --- | --- | --- |
 | Git for Windows | 克隆运维副本、按提交检出脚本 | https://git-scm.com/download/win |
+| Visual C++ v14 x64 运行库 | 支持 PyTorch 等 Windows 原生依赖，缺少时自动安装 | https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist |
 | GitHub CLI (gh) | 登录私有仓库、下载指定 Release 与校验文件 | https://cli.github.com/ |
-| Python 3.12 | 运行环境与发布专用虚拟环境；须为 3.12.x（`install_release.ps1` 默认 `PythonExe=python.exe`，`[speech,feishu]` 依赖已按 3.12 验证、脚本不做版本强制，勿用 3.13/3.14） | https://www.python.org/downloads/windows/ |
+| Python 3.12 x64 | 通过官方安装管理器安装；发布虚拟环境必须使用 3.12，后续 `install_release.ps1` 可用 `-PythonExe` 显式指定其路径 | https://docs.python.org/3/using/windows.html#advanced-installation |
 | Node.js 当前 LTS | 提供 `npx`/`npm`（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 固定 pnpm 版本，**无需预装 pnpm**）；另需把其中的 `node.exe` 复制到 `C:\OOPZ\shared\tools\node\` 供 PDF 渲染使用（见第 4 节） | https://nodejs.org/ （取 LTS 版） |
 | Chrome 或 Edge | `md-to-pdf`/报表渲染所需的无头浏览器内核 | https://www.google.com/chrome/ 或 https://www.microsoft.com/edge |
 
@@ -44,8 +281,10 @@ git --version
 gh --version
 python --version
 node --version
-npm --version
+npm.cmd --version
 ```
+
+这里使用 `npm.cmd` 与 `npm --version` 检查同一个 npm，避免 PowerShell 优先匹配 `npm.ps1` 而受到执行策略限制。无需为此修改机器的全局执行策略。脚本没有登录 GitHub、创建飞书应用或部署 OOPZ；基础环境就绪后继续第 3 节。
 
 ## 3. 登录私有 GitHub 仓库
 

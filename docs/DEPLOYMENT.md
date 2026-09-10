@@ -8,6 +8,8 @@
 
 ## 一次性准备
 
+新服务器按[从零部署第 2.1 节](../README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)复制执行 PowerShell，或运行 `scripts/install_prerequisites.ps1`，自动安装缺少的 Git、gh、Python 3.12 x64、Node/npm 及浏览器。已有可用组件跳过；该步骤同时准备 PDF 的共享 Node 运行时，但不创建应用配置、不部署程序。已有 v0.11.9 发布包不含此后续新增脚本，可直接使用在线文档中的代码。
+
 1. 使用私有 GitHub、GitLab 或自建 Git 建立 `origin`。主分支只接收通过测试的提交；不要提交 `.env`、模型和运行数据。
 2. 准备 Windows Server 2022/2025 x64 Desktop Experience（长期运行保守起点为 4 vCPU/8 GiB，需要更多余量时选 8 vCPU/16 GiB），安装 Python 3.12 x64、Node.js LTS、Chrome 或 Edge，并启用系统管理页面文件。2 vCPU/4–8 GiB 可用于低密度交流试运行，不能视为云端整机验收通过；测试条件与限制见 [运维说明](OPERATIONS.md#云服务器容量与试运行)。
 3. 在服务器创建 `C:\OOPZ\shared\config`、`models`、`output`、`feishu_state`、`logs` 和 `C:\OOPZ\artifacts`。从 `.env.example` 创建 `shared\config\.env`，并显式填写全部 `ANALYZER_*` 项；模板和程序均不提供分析供应商、API 地址、模型或运行参数默认值。飞书应用优先在已安装项目依赖的本地电脑运行 `oopz-feishu setup` 一键创建/更新，再安全填写服务器凭据；手动配置仅作保底，见 [部署指南第 7 节](../README_CLOUD_SERVER_DEPLOYMENT.md#7-创建生产配置)。首次安装时，服务器自动从魔搭社区官方 `iic/SenseVoiceSmall` 下载固定修订版到 `shared\models` 并校验 SHA-256；不从本地复制模型。

@@ -4,6 +4,16 @@
 
 记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，还必须同步记录到 `docs/DEPLOYMENT_CHANGELOG.md`。
 
+## 未发布
+
+### 2026-09-10 — 部署：自动准备基础环境
+
+- 新增可重复执行的 Windows PowerShell 引导脚本，缺少才下载和安装 Visual C++ x64 运行库、Git、gh、Python 3.12 x64、Node/npm/npx 及浏览器，支持仅检查、安装器签名校验与失败中止；补齐共享 Node 运行时准备。
+- 从零部署指南包含与脚本一致的完整可复制代码、官方下载来源及安装路径；同步 README、部署说明和状态基线。既有组件不升级或卸载，现有 Release 不变。
+- 主要文件：`scripts/install_prerequisites.ps1`、`README_CLOUD_SERVER_DEPLOYMENT.md`、相关部署文档、`tests/test_prerequisites.py` 与 PowerShell 分支测试。
+- 验证：184 passed、1 skipped；Windows PowerShell 检查模式、模拟分支及文档代码一致性测试通过，6 个官方下载地址经 HTTP 检查可用。覆盖重复执行、缺少 npm/npx、安装失败及不可信安装器阻断；未在服务器执行实际安装。
+- 部署影响：新增可选的基础软件准备入口；不变更应用配置/数据契约，迁移与回滚边界见部署变更记录。
+
 ## 0.11.9 — 2026-09-10
 
 Release：[OOPZ Capture v0.11.9](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.9)

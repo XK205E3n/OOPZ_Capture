@@ -50,6 +50,8 @@
 
 推荐使用已验证的 Python 3.12 x64、Node.js LTS，以及 64 位 Chrome 或 Edge。以下是在本地检出目录中的准备步骤；服务器请走下文的 Release 安装流程。
 
+新服务器先执行[从零部署第 2.1 节](README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)的完整 PowerShell：缺少才安装 Git、gh、Python 3.12、Node/npm 和浏览器，已安装则跳过。它不依赖预装 winget，也不要求先登录 GitHub。
+
 1. 创建虚拟环境：`py -3.12 -m venv .venv`。复制 `.env.example` 为 `.env`，填写 OOPZ 登录配置和下文全部 `ANALYZER_*` 项；飞书 App ID/Secret 由第 3 步自动写入，不需要先去开放平台手动创建应用。不要提交 `.env`。
 2. 安装 Python 依赖：`.\.venv\Scripts\python.exe -m pip install -e ".[speech,feishu]"`。安装报告工具依赖：`npx pnpm@10.15.0 install --frozen-lockfile`。PDF 使用固定路径 `tools/node/node.exe`，需将已安装 Node.js 的 `node.exe` 放到该目录。
 3. **一键创建/更新飞书机器人（主流程）**：运行 `.\.venv\Scripts\oopz-feishu.exe setup`，用飞书 App 扫码并确认。程序创建或更新应用、申请 11 项应用身份权限、配置长连接事件和卡片回调，自动将 App ID/Secret 写入 `.env`。无法显示二维码时加 `--url-only`；默认更新已有应用，切换应用需明确使用 `--force`。完成后检查是否需要发布应用版本、再邀请进群；公开报告资源授权仍须单独完成。完整步骤见 [一键配置主流程](README_FEISHU_BOT_SETUP.md#首选一键创建或更新机器人)。只有一键流程失败、租户不支持或受管理员策略限制时，才展开手册中的手动保底步骤。
