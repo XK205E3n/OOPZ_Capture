@@ -8,7 +8,7 @@
 
 ## 一次性准备
 
-新服务器按[从零部署第 2.1 节](../README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)复制执行 PowerShell，或运行 `scripts/install_prerequisites.ps1`，自动安装缺少的 Git、gh、Python 3.12 x64、Node/npm 及浏览器。已有可用组件跳过；该步骤同时准备 PDF 的共享 Node 运行时，但不创建应用配置、不部署程序。已有 v0.11.9 发布包不含此后续新增脚本，可直接使用在线文档中的代码。
+新服务器按[从零部署第 2.1 节](../README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)复制执行 PowerShell，或运行 `scripts/install_prerequisites.ps1`，自动安装缺少的 Visual C++ 运行库、Python 3.12 x64、Node/npm/npx 及浏览器。服务器不需要安装 Git 或 GitHub CLI。已有可用组件跳过；该步骤同时准备 PDF 的共享 Node 运行时，但不创建应用配置、不部署程序。已有 v0.11.9 发布包不含此后续新增脚本，可直接使用在线文档中的代码。
 
 1. 开发端使用 Git 远端管理版本，主分支只接收通过测试的提交；不要提交 `.env`、模型和运行数据。服务器下载当前公开 Release 不需要 GitHub 账户或 Token。
 2. 准备 Windows Server 2022/2025 x64 Desktop Experience（长期运行保守起点为 4 vCPU/8 GiB，需要更多余量时选 8 vCPU/16 GiB），安装 Python 3.12 x64、Node.js LTS、Chrome 或 Edge，并启用系统管理页面文件。2 vCPU/4–8 GiB 可用于低密度交流试运行，不能视为云端整机验收通过；测试条件与限制见 [运维说明](OPERATIONS.md#云服务器容量与试运行)。

@@ -50,7 +50,7 @@
 
 推荐使用已验证的 Python 3.12 x64、Node.js LTS，以及 64 位 Chrome 或 Edge。以下是在本地检出目录中的准备步骤；服务器请走下文的 Release 安装流程。
 
-新服务器先执行[从零部署第 2.1 节](README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)的完整 PowerShell：缺少才安装 Git、gh、Python 3.12、Node/npm 和浏览器，已安装则跳过。它不依赖预装 winget，也不要求先登录 GitHub。
+新服务器先执行[从零部署第 2.1 节](README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)的完整 PowerShell：缺少才安装 Visual C++ 运行库、Python 3.12、Node/npm/npx 和浏览器，已安装则跳过。服务器不需要安装 Git 或 GitHub CLI，也不需要预装 winget 或登录 GitHub。
 
 1. 创建虚拟环境：`py -3.12 -m venv .venv`。复制 `.env.example` 为 `.env`，填写 OOPZ 登录配置和下文全部 `ANALYZER_*` 项；飞书 App ID/Secret 由第 3 步自动写入，不需要先去开放平台手动创建应用。不要提交 `.env`。
 2. 安装 Python 依赖：`.\.venv\Scripts\python.exe -m pip install -e ".[speech,feishu]"`。安装报告工具依赖：`npx pnpm@10.15.0 install --frozen-lockfile`。PDF 使用固定路径 `tools/node/node.exe`，需将已安装 Node.js 的 `node.exe` 放到该目录。

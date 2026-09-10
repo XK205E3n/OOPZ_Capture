@@ -50,8 +50,6 @@ function Get-OopzTools {
     }
     return @{
         VCRuntime = $vcRuntime
-        Git = Find-OopzCommand 'git.exe' @("$env:ProgramFiles\Git\cmd\git.exe", "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe")
-        Gh = Find-OopzCommand 'gh.exe' @("$env:ProgramFiles\GitHub CLI\gh.exe", "$env:LOCALAPPDATA\Programs\GitHub CLI\gh.exe")
         Python = Find-OopzPython $PythonTarget
         Node = Find-OopzCommand 'node.exe' @("$env:ProgramFiles\nodejs\node.exe")
         Npm = Find-OopzCommand 'npm.cmd' @("$env:ProgramFiles\nodejs\npm.cmd")
@@ -77,14 +75,6 @@ function Get-OopzInstaller {
     return $target
 }
 
-function Get-OopzGitHubInstallerUrl {
-    param([string]$Repository, [string]$AssetPattern)
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent' = 'OOPZ-prerequisites' }
-    $assets = @($release.assets | Where-Object { $_.name -match $AssetPattern })
-    if ($assets.Count -ne 1) { throw "Expected one x64 installer in $Repository; found $($assets.Count)." }
-    return $assets[0].browser_download_url
-}
-
 function Invoke-OopzInstaller {
     param([string]$Path, [string[]]$Arguments = @())
     if ([IO.Path]::GetExtension($Path) -eq '.msi') {
@@ -103,15 +93,6 @@ function Install-OopzTool {
     switch ($Tool) {
         'VCRuntime' {
             Invoke-OopzInstaller (Get-OopzInstaller 'https://aka.ms/vc14/vc_redist.x64.exe' $Downloads) @('/install', '/quiet', '/norestart')
-        }
-        'Git' {
-            $url = Get-OopzGitHubInstallerUrl 'git-for-windows/git' '^Git-[0-9.]+(?:\.[0-9]+)?-64-bit\.exe$'
-            $file = Get-OopzInstaller $url $Downloads
-            Invoke-OopzInstaller $file @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-')
-        }
-        'Gh' {
-            $url = Get-OopzGitHubInstallerUrl 'cli/cli' '^gh_[0-9.]+_windows_amd64\.msi$'
-            Invoke-OopzInstaller (Get-OopzInstaller $url $Downloads)
         }
         'Python' {
             $manager = Find-OopzCommand 'pymanager.exe'
@@ -164,7 +145,7 @@ function Assert-OopzInstallerHost {
 
 function Complete-OopzPrerequisites {
     param([hashtable]$Detected, [string]$Downloads)
-    foreach ($tool in @('Git', 'Gh', 'Python', 'Node', 'Npm', 'Npx')) {
+    foreach ($tool in @('Python', 'Node', 'Npm', 'Npx')) {
         $env:Path = (Split-Path -Parent $Detected[$tool]) + ';' + $env:Path
     }
     $python = $Detected.Python
@@ -179,7 +160,7 @@ function Complete-OopzPrerequisites {
     if (-not (Test-Path -LiteralPath $nodeTarget)) { Copy-Item -LiteralPath $Detected.Node -Destination $nodeTarget }
     & $nodeTarget --version
     if ($LASTEXITCODE -ne 0) { throw 'The existing shared Node runtime is not usable; inspect it before replacing it.' }
-    foreach ($tool in @('Git', 'Gh', 'Python', 'Node', 'Npm', 'Npx')) {
+    foreach ($tool in @('Python', 'Node', 'Npm', 'Npx')) {
         & $Detected[$tool] --version
         if ($LASTEXITCODE -ne 0) { throw "$tool version check failed." }
     }
@@ -192,7 +173,7 @@ function Invoke-OopzPrerequisites {
     Update-OopzProcessPath
     $detected = Get-OopzTools $PythonTarget
     if (-not $InspectOnly) { Assert-OopzInstallerHost }
-    foreach ($tool in @('VCRuntime', 'Git', 'Gh', 'Python', 'Node', 'Browser')) {
+    foreach ($tool in @('VCRuntime', 'Python', 'Node', 'Browser')) {
         $ready = [bool]$detected[$tool]
         if ($tool -eq 'Node') { $ready = $ready -and [bool]$detected.Npm -and [bool]$detected.Npx }
         if ($ready) { Write-Host "SKIP $tool : $($detected[$tool])"; continue }

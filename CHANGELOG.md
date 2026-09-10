@@ -6,6 +6,12 @@
 
 ## 未发布
 
+### 2026-09-10 — 部署：移除服务器 Git 工具依赖
+
+- 从基础环境脚本及从零部署说明中移除 Git for Windows、GitHub CLI 的检测、下载、安装与版本检查，保留匿名 Release 下载路径；已安装的软件不卸载。
+- 同步 README、部署基线和分支测试，确保全新服务器仅安装应用运行依赖。开发端版本管理流程不变。
+- 主要文件：`scripts/install_prerequisites.ps1`、`tests/prerequisites_checks.ps1` 与部署说明。无配置契约或数据迁移；187 passed、1 skipped，脚本与文档一致性、跳过/安装分支及发布审计通过。
+
 ### 2026-09-10 — 部署：匿名下载与 PowerShell 全流程
 
 - 实查仓库为 Public，匿名访问正式 Release 成功；本次未改变仓库可见性。新增 `prepare_release.ps1`，下载固定 ZIP 与 SHA-256，校验固定摘要/提交及提取文件，重复执行跳过下载；不调用 GitHub 登录或 Git 克隆。

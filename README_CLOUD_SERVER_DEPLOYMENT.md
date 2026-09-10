@@ -29,11 +29,10 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 
 ### 2.1 自动安装全部基础环境（首次部署主流程）
 
-默认从一台尚未安装开发工具的 Windows Server 开始。**在服务器打开 64 位管理员 PowerShell，复制执行下面整段代码**，无需先装 Git、gh、Python、Node、npm 或 winget。已有组件会跳过下载和安装；失败会停止，不会继续执行应用部署。
+默认从一台尚未安装运行环境的 Windows Server 开始。**在服务器打开 64 位管理员 PowerShell，复制执行下面整段代码**。流程不需要 Git for Windows 或 GitHub CLI，也不安装它们；无需预装 Python、Node、npm 或 winget。已有运行组件会跳过下载和安装；失败会停止，不会继续执行应用部署。
 
 - 安装器统一保存在 `C:\OOPZ\installers`，MSI 日志保存在安装器旁边；先检查数字签名，再静默安装，不自动重启。
 - Visual C++ x64 运行库：检测 v14 x64 注册信息与运行库 DLL，缺少时安装微软官方运行库，以满足 PyTorch 等原生组件的加载需求。
-- Git / gh：从各自官方 GitHub Release 获取 x64 安装器；已有安装不升级、不重装。
 - Python：检测已安装的 **3.12 x64**；只有其他版本时保留原版本，通过官方 Python 安装管理器 MSI 安装官方渠道可用的 3.12 x64 到 `C:\OOPZ\tools\Python312`，不固定到旧 EXE 的补丁版本。实际补丁号以安装输出为准；新安装目录加入系统 PATH。
 - Node.js / npm / npx：缺少 Node 时安装 Node 24 LTS x64，npm 与 npx 随附；三者都有则跳过。已有 Node 但缺 npm 或 npx 时使用同版本官方 MSI 修复，不静默降级。非标准或损坏的既有安装若修复失败会停止，保留现场供排查。现有 Node 若不是 LTS，脚本保留原版本，需在部署前确认兼容性。
 - Edge / Chrome：检测到任一常见安装位置即跳过，否则安装官方 Chrome x64；自动准备 PDF 所需的 `C:\OOPZ\shared\tools\node\node.exe`，已有共享运行时不覆盖。
@@ -96,8 +95,6 @@ function Get-OopzTools {
     }
     return @{
         VCRuntime = $vcRuntime
-        Git = Find-OopzCommand 'git.exe' @("$env:ProgramFiles\Git\cmd\git.exe", "$env:LOCALAPPDATA\Programs\Git\cmd\git.exe")
-        Gh = Find-OopzCommand 'gh.exe' @("$env:ProgramFiles\GitHub CLI\gh.exe", "$env:LOCALAPPDATA\Programs\GitHub CLI\gh.exe")
         Python = Find-OopzPython $PythonTarget
         Node = Find-OopzCommand 'node.exe' @("$env:ProgramFiles\nodejs\node.exe")
         Npm = Find-OopzCommand 'npm.cmd' @("$env:ProgramFiles\nodejs\npm.cmd")
@@ -123,14 +120,6 @@ function Get-OopzInstaller {
     return $target
 }
 
-function Get-OopzGitHubInstallerUrl {
-    param([string]$Repository, [string]$AssetPattern)
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent' = 'OOPZ-prerequisites' }
-    $assets = @($release.assets | Where-Object { $_.name -match $AssetPattern })
-    if ($assets.Count -ne 1) { throw "Expected one x64 installer in $Repository; found $($assets.Count)." }
-    return $assets[0].browser_download_url
-}
-
 function Invoke-OopzInstaller {
     param([string]$Path, [string[]]$Arguments = @())
     if ([IO.Path]::GetExtension($Path) -eq '.msi') {
@@ -149,15 +138,6 @@ function Install-OopzTool {
     switch ($Tool) {
         'VCRuntime' {
             Invoke-OopzInstaller (Get-OopzInstaller 'https://aka.ms/vc14/vc_redist.x64.exe' $Downloads) @('/install', '/quiet', '/norestart')
-        }
-        'Git' {
-            $url = Get-OopzGitHubInstallerUrl 'git-for-windows/git' '^Git-[0-9.]+(?:\.[0-9]+)?-64-bit\.exe$'
-            $file = Get-OopzInstaller $url $Downloads
-            Invoke-OopzInstaller $file @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-')
-        }
-        'Gh' {
-            $url = Get-OopzGitHubInstallerUrl 'cli/cli' '^gh_[0-9.]+_windows_amd64\.msi$'
-            Invoke-OopzInstaller (Get-OopzInstaller $url $Downloads)
         }
         'Python' {
             $manager = Find-OopzCommand 'pymanager.exe'
@@ -210,7 +190,7 @@ function Assert-OopzInstallerHost {
 
 function Complete-OopzPrerequisites {
     param([hashtable]$Detected, [string]$Downloads)
-    foreach ($tool in @('Git', 'Gh', 'Python', 'Node', 'Npm', 'Npx')) {
+    foreach ($tool in @('Python', 'Node', 'Npm', 'Npx')) {
         $env:Path = (Split-Path -Parent $Detected[$tool]) + ';' + $env:Path
     }
     $python = $Detected.Python
@@ -225,7 +205,7 @@ function Complete-OopzPrerequisites {
     if (-not (Test-Path -LiteralPath $nodeTarget)) { Copy-Item -LiteralPath $Detected.Node -Destination $nodeTarget }
     & $nodeTarget --version
     if ($LASTEXITCODE -ne 0) { throw 'The existing shared Node runtime is not usable; inspect it before replacing it.' }
-    foreach ($tool in @('Git', 'Gh', 'Python', 'Node', 'Npm', 'Npx')) {
+    foreach ($tool in @('Python', 'Node', 'Npm', 'Npx')) {
         & $Detected[$tool] --version
         if ($LASTEXITCODE -ne 0) { throw "$tool version check failed." }
     }
@@ -238,7 +218,7 @@ function Invoke-OopzPrerequisites {
     Update-OopzProcessPath
     $detected = Get-OopzTools $PythonTarget
     if (-not $InspectOnly) { Assert-OopzInstallerHost }
-    foreach ($tool in @('VCRuntime', 'Git', 'Gh', 'Python', 'Node', 'Browser')) {
+    foreach ($tool in @('VCRuntime', 'Python', 'Node', 'Browser')) {
         $ready = [bool]$detected[$tool]
         if ($tool -eq 'Node') { $ready = $ready -and [bool]$detected.Npm -and [bool]$detected.Npx }
         if ($ready) { Write-Host "SKIP $tool : $($detected[$tool])"; continue }
@@ -267,9 +247,7 @@ if ($MyInvocation.InvocationName -ne '.') {
 
 | 软件 | 在部署中的用途 | 官方下载地址 |
 | --- | --- | --- |
-| Git for Windows | 开发与维护工具；服务器默认安装流程直接使用 Release，不需要克隆仓库 | https://git-scm.com/download/win |
 | Visual C++ v14 x64 运行库 | 支持 PyTorch 等 Windows 原生依赖，缺少时自动安装 | https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist |
-| GitHub CLI (gh) | 可选维护工具；默认下载流程使用 PowerShell，无需 gh 登录 | https://cli.github.com/ |
 | Python 3.12 x64 | 通过官方安装管理器安装；发布虚拟环境必须使用 3.12，后续 `install_release.ps1` 可用 `-PythonExe` 显式指定其路径 | https://docs.python.org/3/using/windows.html#advanced-installation |
 | Node.js 当前 LTS | 提供 `npx`/`npm`（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 固定 pnpm 版本，**无需预装 pnpm**）；另需把其中的 `node.exe` 复制到 `C:\OOPZ\shared\tools\node\` 供 PDF 渲染使用（见第 4 节） | https://nodejs.org/ （取 LTS 版） |
 | Chrome 或 Edge | `md-to-pdf`/报表渲染所需的无头浏览器内核 | https://www.google.com/chrome/ 或 https://www.microsoft.com/edge |
@@ -277,8 +255,6 @@ if ($MyInvocation.InvocationName -ne '.') {
 重新打开管理员 PowerShell，确认：
 
 ```powershell
-git --version
-gh --version
 python --version
 node --version
 npm.cmd --version

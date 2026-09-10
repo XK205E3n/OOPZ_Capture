@@ -15,14 +15,14 @@ function Install-OopzTool {
     if ($Tool -eq 'Node') { $script:state.Npm = 'C:\fake\npm.cmd'; $script:state.Npx = 'C:\fake\npx.cmd' }
 }
 $script:failTool = ''
-$script:state = @{VCRuntime='vc'; Git='git'; Gh='gh'; Python='python'; Node='node'; Npm='npm'; Npx='npx'; Browser='edge'}
+$script:state = @{VCRuntime='vc'; Python='python'; Node='node'; Npm='npm'; Npx='npx'; Browser='edge'}
 Invoke-OopzPrerequisites $TestRoot $TestRoot
 Assert-True ($script:calls.Count -eq 0) 'Already installed tools must not invoke installers.'
-$script:state = @{VCRuntime=$null; Git=$null; Gh=$null; Python=$null; Node=$null; Npm=$null; Npx=$null; Browser=$null}
+$script:state = @{VCRuntime=$null; Python=$null; Node=$null; Npm=$null; Npx=$null; Browser=$null}
 Invoke-OopzPrerequisites $TestRoot $TestRoot -InspectOnly
 Assert-True ($script:calls.Count -eq 0) 'CheckOnly must not install anything.'
 Invoke-OopzPrerequisites $TestRoot $TestRoot
-Assert-True (($script:calls -join ',') -eq 'VCRuntime,Git,Gh,Python,Node,Browser') 'Missing tools must install in order.'
+Assert-True (($script:calls -join ',') -eq 'VCRuntime,Python,Node,Browser') 'Only runtime prerequisites should install, without Git or gh.'
 $script:calls.Clear()
 Invoke-OopzPrerequisites $TestRoot $TestRoot
 Assert-True ($script:calls.Count -eq 0) 'Second run must skip all installed tools.'

@@ -15,7 +15,7 @@
 | 网络与管理 | 本地开发网络 | 普通安全组默认允许出站；现有 TCP 3389、TCP 22 和 ICMP 入站规则，本次未更改 | 无需新增业务端口；RDP 当前面向所有 IPv4，需按实际管理来源收紧 |
 | Python | 3.12.14 | 未安装/未确认 | 是：建议 3.12 x64 |
 | Node.js | 本地已安装，版本待确认 | 未安装/未确认 | 是：建议当前 LTS x64 |
-| 基础环境引导 | `main` 新增 `scripts/install_prerequisites.ps1` 及可复制 PowerShell；本机仅完成检查与模拟分支测试 | 等待用户在服务器执行；不假定工具已安装 | 此后续脚本未加入现有 v0.11.9 ZIP，首次部署使用在线文档代码 |
+| 基础环境引导 | `main` 的引导脚本仅安装运行依赖，不再检测或安装 Git / GitHub CLI；已完成检查与模拟分支测试 | 等待用户在服务器执行；不假定工具已安装 | 此后续脚本未加入现有 v0.11.9 ZIP，首次部署使用在线文档代码 |
 | 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 未安装 | 是 |
 | ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 计划由服务器从魔搭 `iic/SenseVoiceSmall` 自动下载固定修订版并校验 | 首次安装待实施 |
 | 生产配置 | 本地 `.env`（不进 Git）；全部 `ANALYZER_*` 项显式配置 | 尚未创建 | 是：服务器独立配置全部分析器变量，不复制本地密钥文件作为长期同步方式 |
