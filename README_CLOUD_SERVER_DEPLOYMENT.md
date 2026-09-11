@@ -549,6 +549,8 @@ if ($LASTEXITCODE -ne 0) { throw '安装未完成，请保留终端错误并检�
 
 ### 9.1 NumPy 候选不存在 / 首次依赖安装失败
 
+**先区分失败阶段**：如果已经看到 Python 的 `Successfully installed` 和模型的 `downloaded-and-verified`，随后才在 npm / pnpm 失败，请使用第 9.2 节；不要再用本节备份并重装 Python 依赖。
+
 如果 pip 报 `No matching distribution found for numpy<3,>=1.26`，只能说明当前解析没有取得满足要求的候选，不能仅据此判定 NumPy 不支持 Python 3.12，也不是内存不足的直接证据。[PyPI 上存在 CPython 3.12 Windows x64 wheel](https://pypi.org/project/numpy/1.26.4/)。具体需排查解释器平台、pip 索引/过滤配置和网络；不要把完整 pip 配置贴到群聊，索引 URL 可能包含凭据。
 
 失败发生在依赖阶段时，原脚本会留下 `releases\<release-id>`，尚未切换新版本。直接再次运行第 9 节会被“版本已存在”阻止。**不要递归删除这个目录**，里面的联接指向 shared。
@@ -686,6 +688,145 @@ if ($MyInvocation.InvocationName -ne '.') { Invoke-OopzDependencyRecovery $Insta
 代码与 [scripts/retry_dependency_install.ps1](scripts/retry_dependency_install.ps1) 一致；该辅助脚本不在旧 ZIP 中。只诊断而不备份重试时，可把代码末尾改为 ` } -DiagnoseOnly`，或保存脚本后使用 `-DiagnoseOnly` 参数。若 Python 平台检查或 dry-run 失败，目录不会移动；请提供这部分错误输出，不要发送生产 .env 或完整 pip 配置。
 
 已有运行版本、`current` 已存在、校验不一致或仍有相关进程时，脚本会停止，必须单独检查；此入口不是通用升级修复工具。路径请原样复制为 `C:\OOPZ\shared\config\.env`，不要省略目录分隔符或把终端提示符当作命令。
+
+### 9.2 Python / 模型已完成，npm ECONNRESET 时只续装 Node
+
+若日志已经显示 Python `Successfully installed`，且模型状态为 `downloaded-and-verified`，随后在 `https://registry.npmjs.org/pnpm` 报 `ECONNRESET`，表示 npm 请求连接被重置。不要再次运行第 9.1 节：那会重新创建 Python 环境，并重复大量下载。
+
+在管理员 PowerShell 执行下面代码。它保留当前版本目录、Python 和模型，只对 pnpm / Node 依赖增加重试并降低并发，不关闭 TLS 校验、不使用 `--force`、不清空缓存。用户/全局 npm 配置临时隔离，原环境在结束时恢复。网络仍不通时会停止并保留进度，不承诺重试一定能修复运营商、代理或服务端问题。
+
+<!-- node-recovery-copy:start -->
+```powershell
+& {
+param([string]$InstallRoot = 'C:\OOPZ')
+$ErrorActionPreference = 'Stop'
+
+function Assert-OopzNodeStage {
+    param([string]$Root)
+    if (Get-Item -LiteralPath (Join-Path $Root 'current') -Force -ErrorAction SilentlyContinue) { throw 'Existing current detected. This helper only completes a first installation before activation.' }
+    $inputs = Get-Content -LiteralPath (Join-Path $Root 'artifacts\deployment-inputs.json') -Raw | ConvertFrom-Json
+    if ($inputs.ReleaseId -ne 'v0.11.9-5769293b3236' -or $inputs.Commit -ne '5769293b3236460d24bc0553561fa3ac68ae79be') { throw 'Unexpected release. This helper targets v0.11.9 only.' }
+    $release = Join-Path $Root ('releases\' + $inputs.ReleaseId)
+    foreach ($dir in @($Root,(Join-Path $Root 'releases'),$release)) {
+        $item = Get-Item -LiteralPath $dir -Force
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw "Expected normal installation directory: $dir" }
+    }
+    $artifact = [IO.Path]::GetFullPath($inputs.Artifact)
+    if (-not $artifact.StartsWith((Join-Path $Root 'artifacts').TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Artifact path escaped installation root.' }
+    if ((Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash -ne '31f349ebd021af2d416d99157c7cfca96f324c9cc8cd5c6f53d4f6777b27e4de') { throw 'Release ZIP checksum mismatch.' }
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    $zip = [IO.Compression.ZipFile]::OpenRead($artifact)
+    try {
+        foreach ($entry in $zip.Entries) {
+            if (-not $entry.Name) { continue }
+            $path = [IO.Path]::GetFullPath((Join-Path $release $entry.FullName))
+            if (-not $path.StartsWith($release.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Unsafe ZIP path.' }
+            $stream = $entry.Open(); $sha = [Security.Cryptography.SHA256]::Create()
+            try { $expected = ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace('-', '') }
+            finally { $stream.Dispose(); $sha.Dispose() }
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf) -or (Get-FileHash -LiteralPath $path -Algorithm SHA256).Hash -ne $expected) { throw "Release file changed or missing: $path" }
+        }
+    } finally { $zip.Dispose() }
+    foreach ($file in @('.venv\Scripts\python.exe','.env','tools\node\node.exe')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $release $file) -PathType Leaf)) { throw "Required installed file missing: $file" }
+    }
+    $active = @(Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -and $_.CommandLine.IndexOf($release,[StringComparison]::OrdinalIgnoreCase) -ge 0 })
+    if ($active.Count) { throw 'A process still references this release. Wait for it to finish; no process was stopped.' }
+    return $release
+}
+
+function Invoke-OopzNodePackages {
+    $arguments = @('--yes','pnpm@10.15.0','install','--frozen-lockfile','--ignore-scripts','--registry=https://registry.npmjs.org','--fetch-retries=5','--fetch-retry-mintimeout=10000','--fetch-retry-maxtimeout=60000','--fetch-timeout=600000','--network-concurrency=4')
+    & npx.cmd @arguments
+    if ($LASTEXITCODE -ne 0) { throw 'Node download/install failed again. Python, models and partial Node downloads were retained. Keep the latest npm error output.' }
+}
+
+function Test-OopzInstalledDependencies {
+    param([string]$Release, [string]$Root)
+    $python = Join-Path $Release '.venv\Scripts\python.exe'
+    & $python -m pip check
+    if ($LASTEXITCODE -ne 0) { throw 'Python dependency consistency check failed; do not activate or force version changes.' }
+    & $python -c "import numpy,torch,torchaudio,funasr,oopz_capture,lark_oapi; print('Python imports OK'); print('numpy',numpy.__version__,'torch',torch.__version__,'torchaudio',torchaudio.__version__)"
+    if ($LASTEXITCODE -ne 0) { throw 'Python import check failed. Preserve the traceback; successful pip installation alone is insufficient.' }
+    & $python -c "import runpy,sys; from pathlib import Path; check=runpy.run_path(sys.argv[1]); check['verify_model'](Path(sys.argv[2])); print('Existing model hashes verified; no download performed')" (Join-Path $Release 'scripts\download_sensevoice_model.py') (Join-Path $Root 'shared\models\SenseVoiceSmall')
+    if ($LASTEXITCODE -ne 0) { throw 'Existing model verification failed. No model file was removed.' }
+    & (Join-Path $Release 'tools\node\node.exe') --input-type=module -e "await import('md-to-pdf'); console.log('Node report dependency OK')"
+    if ($LASTEXITCODE -ne 0) { throw 'Node report dependency import failed.' }
+    $freeze = & $python -m pip freeze
+    if ($LASTEXITCODE -ne 0) { throw 'Could not record installed Python package versions.' }
+    $freeze | Set-Content -LiteralPath (Join-Path $Release 'DEPLOYED_PYTHON_PACKAGES.txt') -Encoding UTF8
+}
+
+function Resume-OopzNodeInstall {
+    param([string]$Root)
+    $Root = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+    $release = Assert-OopzNodeStage $Root
+    $readyPath = Join-Path $Root 'artifacts\first-start-ready.json'
+    if (Test-Path -LiteralPath $readyPath) { @{status='checking';release_path=$release} | ConvertTo-Json | Set-Content -LiteralPath $readyPath -Encoding UTF8 }
+    $saved = @{}
+    [Environment]::GetEnvironmentVariables('Process').GetEnumerator() | Where-Object { $_.Key -like 'npm_config_*' } | ForEach-Object { $saved[$_.Key]=$_.Value }
+    $temporaryConfig = Join-Path $Root ('installer-cache\npm-config-' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $temporaryConfig | Out-Null
+    [IO.File]::WriteAllText((Join-Path $temporaryConfig 'user.npmrc'),'')
+    [IO.File]::WriteAllText((Join-Path $temporaryConfig 'global.npmrc'),'')
+    try {
+        foreach($name in @($saved.Keys)){ [Environment]::SetEnvironmentVariable($name,$null,'Process') }
+        $env:npm_config_userconfig = Join-Path $temporaryConfig 'user.npmrc'
+        $env:npm_config_globalconfig = Join-Path $temporaryConfig 'global.npmrc'
+        $env:npm_config_registry = 'https://registry.npmjs.org'
+        $env:npm_config_fetch_retries = '5'
+        $env:npm_config_fetch_retry_mintimeout = '10000'
+        $env:npm_config_fetch_retry_maxtimeout = '60000'
+        $env:npm_config_fetch_timeout = '600000'
+        $env:npm_config_strict_ssl = 'true'
+        $env:npm_config_ignore_scripts = 'true'
+        Push-Location $release
+        try { Invoke-OopzNodePackages; Test-OopzInstalledDependencies $release $Root }
+        finally { Pop-Location }
+        $null = Assert-OopzNodeStage $Root
+        @{status='ready_for_first_start';release_id='v0.11.9-5769293b3236';release_path=$release;checked_at_utc=[DateTime]::UtcNow.ToString('o')} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $Root 'artifacts\first-start-ready.json') -Encoding UTF8
+        Write-Host 'READY_FOR_FIRST_START: dependencies verified. No current link was created and no gateway was started. Continue with deployment guide section 9.3.'
+    } finally {
+        [Environment]::GetEnvironmentVariables('Process').GetEnumerator() | Where-Object { $_.Key -like 'npm_config_*' } | ForEach-Object { [Environment]::SetEnvironmentVariable($_.Key,$null,'Process') }
+        foreach($name in $saved.Keys){ [Environment]::SetEnvironmentVariable($name,$saved[$name],'Process') }
+    }
+}
+
+if ($MyInvocation.InvocationName -ne '.') { Resume-OopzNodeInstall $InstallRoot }
+}
+```
+<!-- node-recovery-copy:end -->
+
+代码与 [scripts/resume_node_install.ps1](scripts/resume_node_install.ps1) 一致。它会执行 `pip check`、Python 关键模块导入、现有模型哈希验证和 Node 报告模块导入；依赖安装成功不代表这些检查一定通过。如果检查失败，保留新错误，不要自行强制升降级。
+
+只有本次输出 **READY_FOR_FIRST_START**，才继续第 9.3 节。这个脚本不会创建 current、不会启动网关，也不会修改 .env。仅适用尚未激活的 v0.11.9 首装；已有 current 时应另行检查。
+
+### 9.3 续装检查通过后的首次启动
+
+正常第 9 节安装已经成功启动的用户不执行本节。只在刚完成第 9.2 节、已出现 READY_FOR_FIRST_START 时，在管理员 PowerShell 执行：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$oopzReady = Get-Content 'C:\OOPZ\artifacts\first-start-ready.json' -Raw | ConvertFrom-Json
+$oopzRelease = 'C:\OOPZ\releases\v0.11.9-5769293b3236'
+if ($oopzReady.status -ne 'ready_for_first_start' -or $oopzReady.release_path -ne $oopzRelease) {
+    throw '没有匹配的依赖检查成功记录，请先完成第 9.2 节。'
+}
+$oopzManifest = Get-Content (Join-Path $oopzRelease 'RELEASE_MANIFEST.json') -Raw | ConvertFrom-Json
+if ($oopzManifest.git_commit -ne '5769293b3236460d24bc0553561fa3ac68ae79be') {
+    throw '版本不匹配，停止启动。'
+}
+if (Get-Item -LiteralPath 'C:\OOPZ\current' -Force -ErrorAction SilentlyContinue) {
+    throw 'current 已存在，不能重复首次激活。'
+}
+New-Item -ItemType Junction -Path 'C:\OOPZ\current' -Target $oopzRelease | Out-Null
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File 'C:\OOPZ\current\scripts\start_feishu_windows.ps1' -Lifecycle started
+if ($LASTEXITCODE -ne 0) { throw '启动命令失败，请保留 current 和日志并排查，不要删除共享目录。' }
+Start-Sleep -Seconds 10
+Get-Content 'C:\OOPZ\shared\logs\feishu_runtime.log' -Tail 50
+```
+
+命令发出不等于启动健康检查通过。继续第 10 节，确认本次日志出现“飞书长连接已就绪”、群内状态命令可响应；否则保留日志排查，不要重复运行首装恢复脚本。该手动首次激活路径不提供已有版本升级的自动回滚，不应用于更新已有运行实例。
 
 ## 10. 部署后验证
 

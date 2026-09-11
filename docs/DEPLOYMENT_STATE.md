@@ -2,7 +2,7 @@
 
 > 这是本地代码与生产服务器差异的唯一事实来源。任何部署相关修改和每次生产发布都必须同步更新本文件。禁止记录密钥、密码、完整服务器地址或个人信息。
 
-更新时间：2026-09-10
+更新时间：2026-09-11
 
 ## 当前状态
 
@@ -16,8 +16,8 @@
 | Python | 3.12.14 | 用户终端确认 3.12.10 x64，路径为 `C:\OOPZ\tools\Python312\python.exe` | 基础环境已准备，应用安装待完成 |
 | Node.js | 本地已安装，版本待确认 | 用户终端确认 24.21.0，npm/npx 11.19.0，Edge 已存在 | PDF 与应用运行待验收 |
 | 基础环境引导 | `main` 的引导脚本仅安装运行依赖，不再检测或安装 Git / GitHub CLI；已完成检查与模拟分支测试 | 等待用户在服务器执行；不假定工具已安装 | 此后续脚本未加入现有 v0.11.9 ZIP，首次部署使用在线文档代码 |
-| 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 首次安装中断于 NumPy 候选解析，尚未完成；具体网络/索引原因未确认 | 使用首装诊断/恢复指引；不可直接重跑覆盖现有版本目录 |
-| ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 计划由服务器从魔搭 `iic/SenseVoiceSmall` 自动下载固定修订版并校验 | 首次安装待实施 |
+| 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 用户日志确认 Python 依赖已安装；获取 pnpm 时 npm registry 连接被重置（ECONNRESET），尚未激活 | 只续装 Node 阶段；pip check / 导入 / 真实启动仍待验证 |
+| ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 用户日志确认固定修订版模型已 downloaded-and-verified | 保留现有模型，不重复下载 |
 | 生产配置 | 本地 `.env`（不进 Git）；全部 `ANALYZER_*` 项显式配置 | 用户已准备，安装脚本通过文件存在性检查；未读取或验证值 | 启动时仍需通过配置校验 |
 | 输出/状态/日志 | `output`、`feishu_state`、`logs`；分析检查点与中断恢复状态保存在会话目录 | 尚未创建 | 否：属于各环境持久数据，禁止互相覆盖；重启后仅回收已退出进程留下的分析锁 |
 | 启动方式 | 交互式批处理 | 目标为任务计划程序调用稳定 `current` 路径 | 待实施 |
