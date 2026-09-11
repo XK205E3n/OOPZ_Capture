@@ -20,6 +20,10 @@
 
 录音使用 OOPZ SDK 的无头浏览器语音后端；每个远端 Agora UID 单独采集 PCM。录音按最多 300 秒分片，分片结束后以本地 Silero VAD 和 SenseVoiceSmall（CPU）转写；默认 `OOPZ_RETAIN_AUDIO=false`，成功转写的分片音频随即删除。PDF 由项目内 Node 运行时调用 Chrome/Edge 无头渲染。
 
+## 录音浏览器依赖
+
+录音浏览器与 PDF 浏览器是两项独立依赖：默认录音后端使用 Playwright 的 Chromium 通道，必须通过该版本 Python 环境执行 `python -m playwright install --no-shell chromium` 并验证启动；已安装系统 Edge/Chrome 不会自动满足此要求。PDF 继续使用系统 Chrome/Edge。
+
 ## 分析模型
 
 `configured-api` 是控制器的生产入口。全部 `ANALYZER_*` 配置必须由用户显式提供，程序不推断供应商、不补全 API 地址、不选择模型，也不为超时、重试、Token、思考模式或 JSON 模式提供环境默认值；缺少任意一项时生产网关拒绝启动。

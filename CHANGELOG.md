@@ -6,6 +6,13 @@
 
 ## 未发布
 
+### 2026-09-11 — 部署：补齐录音 Chromium 安装与就绪检查
+
+- 正式安装脚本在 Python 依赖安装后安装匹配的 Playwright Chromium 并实际启动验证，失败不切换 current；续装脚本同样在首次启动就绪标记前检查浏览器。
+- README、架构和部署/运维说明区分录音 Chromium 与 PDF 的系统 Edge/Chrome；补充同账户、同虚拟环境的安装命令，以及旧 v0.11.9 包的手动补装要求。
+- 无应用配置或数据迁移，不修改已有发布包；Playwright 升级、更换运行账户或清理缓存后须重新验证。
+- 验证：191 passed、1 skipped，17 段 PowerShell 语法检查与文档/脚本一致性检查通过；本机 Chromium 通道启动验证通过，发布审计无新增命中。服务器补装结果仍待用户验证。
+
 ### 2026-09-11 — 部署：从 Node 依赖失败处继续安装
 
 - 新增 `resume_node_install.ps1`，针对 v0.11.9 首装中 Python / 模型已完成而 npm ECONNRESET 的场景，只重试锁定的 Node 依赖，不重建 Python 环境、不移动版本目录、不重复下载模型。

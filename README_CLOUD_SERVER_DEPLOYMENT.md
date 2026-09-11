@@ -36,6 +36,8 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 - Python：检测已安装的 **3.12 x64**；只有其他版本时保留原版本，通过官方 Python 安装管理器 MSI 安装官方渠道可用的 3.12 x64 到 `C:\OOPZ\tools\Python312`，不固定到旧 EXE 的补丁版本。实际补丁号以安装输出为准；新安装目录加入系统 PATH。
 - Node.js / npm / npx：缺少 Node 时安装 Node 24 LTS x64，npm 与 npx 随附；三者都有则跳过。已有 Node 但缺 npm 或 npx 时使用同版本官方 MSI 修复，不静默降级。非标准或损坏的既有安装若修复失败会停止，保留现场供排查。现有 Node 若不是 LTS，脚本保留原版本，需在部署前确认兼容性。
 - Edge / Chrome：检测到任一常见安装位置即跳过，否则安装官方 Chrome x64；自动准备 PDF 所需的 `C:\OOPZ\shared\tools\node\node.exe`，已有共享运行时不覆盖。
+
+**本节的 SKIP Browser 仅表示系统 PDF 浏览器已安装。录音 SDK 默认使用 Playwright 的 Chromium，必须在项目虚拟环境建好之后另行安装并验证（第 9.4 节）。不能因为 Edge 已存在就省略此步骤。**
 - 安装完成后输出各工具版本与精确 `PythonExe` 路径。出现重启提示时先重启，再执行一次检查。新开 PowerShell 会读取更新的系统 PATH；特殊路径的现有 Python 请在后续安装命令中显式传入输出的 `-PythonExe`，不依赖默认解释器顺序。
 
 已有仓库脚本时，也可以运行 `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install_prerequisites.ps1`；加 `-CheckOnly` 仅检查，不下载或安装。已下载的 v0.11.9 ZIP 不包含这个后续新增脚本，直接复制本节代码即可，无需先更新服务器程序包。
@@ -522,6 +524,8 @@ C:\OOPZ\shared\models\SenseVoiceSmall\MODEL_SOURCE.json
 
 ## 9. 安装并切换版本
 
+最新 `main` 安装脚本在 Python 依赖完成后会安装并启动检查录音 Chromium，失败时不切换 `current`。**已发布的 v0.11.9 ZIP 不会随文档更新：使用旧包时仍须执行第 9.4 节，确认录音浏览器可启动后再发起录音。**
+
 在 PowerShell 中读取第 3 节保存的路径，并明确指定 3.12 解释器：
 
 ```powershell
@@ -538,7 +542,7 @@ if ($LASTEXITCODE -ne 0) { throw '安装未完成，请保留终端错误并检�
 1. 校验发布包 SHA-256；
 2. 解压到新的 `releases\<release-id>`；
 3. 创建该版本独立的 Python 虚拟环境；
-4. 从魔搭社区下载或校验固定修订版 SenseVoiceSmall；
+4. 最新安装脚本先安装并验证 Playwright Chromium，再从魔搭社区下载或校验固定修订版 SenseVoiceSmall；旧 v0.11.9 包须另执行第 9.4 节；
 5. 安装 Node 依赖（安装脚本通过 `npx pnpm@10.15.0 install --frozen-lockfile` 完成，`pnpm-lock.yaml` 已随发布包提供，需服务器可访问 npm），并将 `.env`、模型、输出、状态和日志连接到 `shared`；同时校验 `shared\tools\node\node.exe` 存在并把 `tools\node` 联接到它，缺失时中止安装；
 6. 运行 Python 导入检查；
 7. 停止旧网关并切换 `current`；
@@ -744,6 +748,10 @@ function Invoke-OopzNodePackages {
 function Test-OopzInstalledDependencies {
     param([string]$Release, [string]$Root)
     $python = Join-Path $Release '.venv\Scripts\python.exe'
+    & $python -m playwright install --no-shell chromium
+    if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium installation failed; first-start readiness was not granted.' }
+    & $python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(channel='chromium',headless=True,timeout=30000); print('Voice Chromium launch OK'); b.close(); p.stop()"
+    if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium launch check failed; first-start readiness was not granted.' }
     & $python -m pip check
     if ($LASTEXITCODE -ne 0) { throw 'Python dependency consistency check failed; do not activate or force version changes.' }
     & $python -c "import numpy,torch,torchaudio,funasr,oopz_capture,lark_oapi; print('Python imports OK'); print('numpy',numpy.__version__,'torch',torch.__version__,'torchaudio',torchaudio.__version__)"
@@ -828,6 +836,28 @@ Get-Content 'C:\OOPZ\shared\logs\feishu_runtime.log' -Tail 50
 
 命令发出不等于启动健康检查通过。继续第 10 节，确认本次日志出现“飞书长连接已就绪”、群内状态命令可响应；否则保留日志排查，不要重复运行首装恢复脚本。该手动首次激活路径不提供已有版本升级的自动回滚，不应用于更新已有运行实例。
 
+### 9.4 录音浏览器缺失或connecting持续失败
+
+出现 `Executable doesn't exist ... ms-playwright ... chromium ... chrome.exe` 时，是录音浏览器二进制缺失。系统 Edge/Chrome 的检查只覆盖 PDF 渲染；录音 SDK 默认使用 `channel='chromium'`，不会自动改用 Edge。此时不应扩大端口范围或把错误归因于服务器 CPU。
+
+在实际启动网关的同一个 Windows 账户下，以管理员 PowerShell 执行。使用当前版本的虚拟环境，不用全局 Python 或 npx 安装不同版本：
+
+```powershell
+$ErrorActionPreference = 'Stop'
+$oopzPython = 'C:\OOPZ\current\.venv\Scripts\python.exe'
+if (-not (Test-Path -LiteralPath $oopzPython)) {
+    $oopzPython = 'C:\OOPZ\releases\v0.11.9-5769293b3236\.venv\Scripts\python.exe'
+}
+& $oopzPython -m playwright install --no-shell chromium
+if ($LASTEXITCODE -ne 0) { throw '录音 Chromium 安装失败，请保留错误输出。' }
+& $oopzPython -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(channel='chromium',headless=True,timeout=30000); print('Voice Chromium launch OK'); b.close(); p.stop()"
+if ($LASTEXITCODE -ne 0) { throw '录音 Chromium 启动验证失败，请保留错误输出。' }
+```
+
+`--no-shell` 安装完整 Chromium，省略此通道不使用的独立 headless shell。[Playwright 浏览器说明](https://playwright.dev/python/docs/browsers)。下载通常位于当前账户的 `%LOCALAPPDATA%\ms-playwright`；更换运行账户、清理浏览器缓存或升级 Playwright 后，需要再次安装对应版本并验证。不要只凭下载到 100% 判定成功，必须看到 `Voice Chromium launch OK`。
+
+只有此检查成功才能将录音环境标为就绪。新续装脚本也会在写入 `READY_FOR_FIRST_START` 前完成这两项检查。若旧会话已经因 300 秒连接超时结束、成功连接次数为 0，补装后应在飞书重新发起录音，不能等待旧会话自行恢复。
+
 ## 10. 部署后验证
 
 确认发布清单：
@@ -851,6 +881,8 @@ Get-Content C:\OOPZ\shared\logs\feishu_runtime.err.log -Tail 100
 2. 飞书控制群收到启动/重启消息；
 3. `@机器人 状态` 能正常回复；
 4. 做一次短录音，确认输出和转写进入共享目录；
+
+   首次录音前必须完成第 9.4 节的 Chromium 启动验证；飞书长连接就绪不代表 OOPZ 录音浏览器就绪。
 5. 验证一次分析和候选报告投递；
 6. 首次部署时额外验证批准发布、公开文档和 Base 索引；
 7. 检查 CPU、内存、磁盘和错误日志。

@@ -16,7 +16,8 @@
 | Python | 3.12.14 | 用户终端确认 3.12.10 x64，路径为 `C:\OOPZ\tools\Python312\python.exe` | 基础环境已准备，应用安装待完成 |
 | Node.js | 本地已安装，版本待确认 | 用户终端确认 24.21.0，npm/npx 11.19.0，Edge 已存在 | PDF 与应用运行待验收 |
 | 基础环境引导 | `main` 的引导脚本仅安装运行依赖，不再检测或安装 Git / GitHub CLI；已完成检查与模拟分支测试 | 等待用户在服务器执行；不假定工具已安装 | 此后续脚本未加入现有 v0.11.9 ZIP，首次部署使用在线文档代码 |
-| 应用依赖 | `pip install -e ".[speech,feishu]"`、`npx pnpm@10.15.0 install --frozen-lockfile` | 用户日志确认 Python 依赖已安装；获取 pnpm 时 npm registry 连接被重置（ECONNRESET），尚未激活 | 只续装 Node 阶段；pip check / 导入 / 真实启动仍待验证 |
+| 应用依赖 | Python / Node 依赖已安装 | 用户日志确认续装、pip check、关键模块导入与模型校验通过 | 不代表录音端到端验收通过 |
+| 录音浏览器 | 默认 Playwright Chromium 通道 | 用户日志确认缺少匹配的 Chromium，可执行文件缺失导致连接重试超时；用户正在补装 | 补装后须启动验证并发起新录音；系统 Edge 不能代替此检查 |
 | ASR 模型 | 本地 `models/SenseVoiceSmall`（不进 Git） | 用户日志确认固定修订版模型已 downloaded-and-verified | 保留现有模型，不重复下载 |
 | 生产配置 | 本地 `.env`（不进 Git）；全部 `ANALYZER_*` 项显式配置 | 用户已准备，安装脚本通过文件存在性检查；未读取或验证值 | 启动时仍需通过配置校验 |
 | 输出/状态/日志 | `output`、`feishu_state`、`logs`；分析检查点与中断恢复状态保存在会话目录 | 尚未创建 | 否：属于各环境持久数据，禁止互相覆盖；重启后仅回收已退出进程留下的分析锁 |

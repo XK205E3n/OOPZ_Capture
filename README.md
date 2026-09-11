@@ -55,7 +55,7 @@
 1. 创建虚拟环境：`py -3.12 -m venv .venv`。复制 `.env.example` 为 `.env`，填写 OOPZ 登录配置和下文全部 `ANALYZER_*` 项；飞书 App ID/Secret 由第 3 步自动写入，不需要先去开放平台手动创建应用。不要提交 `.env`。
 2. 安装 Python 依赖：`.\.venv\Scripts\python.exe -m pip install -e ".[speech,feishu]"`。安装报告工具依赖：`npx pnpm@10.15.0 install --frozen-lockfile`。PDF 使用固定路径 `tools/node/node.exe`，需将已安装 Node.js 的 `node.exe` 放到该目录。
 3. **一键创建/更新飞书机器人（主流程）**：运行 `.\.venv\Scripts\oopz-feishu.exe setup`，用飞书 App 扫码并确认。程序创建或更新应用、申请 11 项应用身份权限、配置长连接事件和卡片回调，自动将 App ID/Secret 写入 `.env`。无法显示二维码时加 `--url-only`；默认更新已有应用，切换应用需明确使用 `--force`。完成后检查是否需要发布应用版本、再邀请进群；公开报告资源授权仍须单独完成。完整步骤见 [一键配置主流程](README_FEISHU_BOT_SETUP.md#首选一键创建或更新机器人)。只有一键流程失败、租户不支持或受管理员策略限制时，才展开手册中的手动保底步骤。
-4. 下载并校验固定修订版模型：`.\.venv\Scripts\python.exe scripts/download_sensevoice_model.py --target models/SenseVoiceSmall`。确保已安装 Chrome 或 Edge，供 OOPZ 浏览器音频和 PDF 渲染使用。
+4. 下载并校验固定修订版模型：`.\.venv\Scripts\python.exe scripts/download_sensevoice_model.py --target models/SenseVoiceSmall`。**录音还需要**运行 `.\.venv\Scripts\python.exe -m playwright install --no-shell chromium`，并按[录音浏览器验收](README_CLOUD_SERVER_DEPLOYMENT.md#94-录音浏览器缺失或connecting持续失败)验证启动。系统 Chrome/Edge 用于 PDF，不自动代替 SDK 默认的 Playwright Chromium；浏览器应安装在实际运行网关的同一 Windows 账户下。
 5. 运行 [启动OOPZ全流程.bat](启动OOPZ全流程.bat)。
 
 启动后会打开两个可见窗口：飞书收发记录，以及录音/转写/分析进度。首次启动会在群内发送启动提示与帮助；重启只发送生命周期状态，不重复帮助。关闭和重启分别使用 [一键关闭OOPZ全流程.bat](一键关闭OOPZ全流程.bat)、[一键重启OOPZ全流程.bat](一键重启OOPZ全流程.bat)。

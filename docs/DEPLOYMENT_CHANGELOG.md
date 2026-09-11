@@ -4,6 +4,13 @@
 
 ## 待发布
 
+### 2026-09-11 — 录音浏览器成为安装与就绪门槛
+
+- 新安装/续装流程使用目标 Python 执行 `playwright install --no-shell chromium` 并验证 `channel='chromium'` 无头启动，失败时不激活或标记就绪。
+- 不把系统 Edge/Chrome 当作录音浏览器已安装；旧 v0.11.9 包不变，需按在线指南第 9.4 节补装。缓存归属运行账户，切换账户或 Playwright 版本后重新验证。
+- 无 `.env` 契约或数据迁移；回滚脚本不会删除已下载浏览器、共享数据或缓存。
+- 验证：191 passed、1 skipped；本机按 SDK 的 Chromium 通道实际启动成功，文档命令与脚本已检查。旧包未覆盖或重发，服务器仍按第 9.4 节补装后验收。
+
 ### 2026-09-11 — 保留已完成 Python / 模型阶段，续装 Node
 
 - 用户日志确认 Python 依赖与模型已完成，失败点是 npm registry 获取 pnpm 时 ECONNRESET。新增限定 v0.11.9 首次安装的 Node 续装入口，校验版本源文件后在现有目录继续，保留 Python、模型和下载缓存。

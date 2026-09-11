@@ -66,6 +66,11 @@ try {
     try {
         & $releasePython -m pip install -e '.[speech,feishu]'
         if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed.' }
+        # System Edge/Chrome used for PDF does not satisfy the SDK's chromium channel.
+        & $releasePython -m playwright install --no-shell chromium
+        if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium installation failed; current was not switched.' }
+        & $releasePython -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(channel='chromium',headless=True,timeout=30000); print('Voice Chromium launch OK'); b.close(); p.stop()"
+        if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium launch check failed; current was not switched.' }
         & $releasePython (Join-Path $releasePath 'scripts\download_sensevoice_model.py') --target $modelPath
         if ($LASTEXITCODE -ne 0) { throw 'SenseVoiceSmall download or checksum verification failed.' }
         if (-not (Test-Path -LiteralPath (Join-Path $modelPath 'model.pt') -PathType Leaf)) {

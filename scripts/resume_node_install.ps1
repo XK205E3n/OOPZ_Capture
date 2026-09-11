@@ -44,6 +44,10 @@ function Invoke-OopzNodePackages {
 function Test-OopzInstalledDependencies {
     param([string]$Release, [string]$Root)
     $python = Join-Path $Release '.venv\Scripts\python.exe'
+    & $python -m playwright install --no-shell chromium
+    if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium installation failed; first-start readiness was not granted.' }
+    & $python -c "from playwright.sync_api import sync_playwright; p=sync_playwright().start(); b=p.chromium.launch(channel='chromium',headless=True,timeout=30000); print('Voice Chromium launch OK'); b.close(); p.stop()"
+    if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium launch check failed; first-start readiness was not granted.' }
     & $python -m pip check
     if ($LASTEXITCODE -ne 0) { throw 'Python dependency consistency check failed; do not activate or force version changes.' }
     & $python -c "import numpy,torch,torchaudio,funasr,oopz_capture,lark_oapi; print('Python imports OK'); print('numpy',numpy.__version__,'torch',torch.__version__,'torchaudio',torchaudio.__version__)"
