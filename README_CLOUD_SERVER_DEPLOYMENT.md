@@ -2,7 +2,7 @@
 
 本文说明如何通过 PowerShell 从公开 GitHub Release 匿名获取经过测试的 OOPZ Capture 发布包，准备配置并部署到 Windows 云服务器，再安全更新或回滚。下载不需要 GitHub 登录，业务账户授权仍须由使用者完成。
 
-## 部署前必读（v0.11.13）
+## 部署前必读（v0.11.14）
 
 **v0.11.10 已知安装器问题：** Windows PowerShell 5.1 可能将无 BOM 的 UTF-8 脚本按系统 ANSI 编码读取，误读中文就绪标记，造成网关已连通却被安装器停止并撤回 current。修复纳入 v0.11.11，旧 v0.11.10 ZIP 不变；第九节遇到此情况按第 9.5 节检查，已正常运行的实例不需重装。
 
@@ -921,7 +921,7 @@ v0.11.13 起，短窗口遭遇服务端 `data_inspection_failed` 时按时间中
 
 ### 9.8 更换供应商与并行配置
 
-**本节描述 main 已修复、尚未发布的行为；现有 v0.11.13 正式包仍有非 OpenCode Go 强制串行限制。待新版发布并升级后，**所有支持的接入模式（deepseek、opencode-go、openai-compatible）均读取 `OOPZ_ANALYSIS_MAX_PARALLELISM`，范围 1–8，默认 4。这个值是短窗口/长窗口任务的最大并行数；任务不足、读取缓存、请求间隔限制或仅剩最终综合时，实际同时请求数可以更小。半段拆分在其所属任务内顺序执行，不另开超出并行上限的线程。
+**本节行为已纳入 v0.11.14；旧 v0.11.13 仍有非 OpenCode Go 强制串行限制。升级后，**所有支持的接入模式（deepseek、opencode-go、openai-compatible）均读取 `OOPZ_ANALYSIS_MAX_PARALLELISM`，范围 1–8，默认 4。这个值是短窗口/长窗口任务的最大并行数；任务不足、读取缓存、请求间隔限制或仅剩最终综合时，实际同时请求数可以更小。半段拆分在其所属任务内顺序执行，不另开超出并行上限的线程。
 
 - `ANALYZER_BASE_URL`、`ANALYZER_API_KEY`、`ANALYZER_MODEL`：后续 API 请求使用当前配置；供应商品牌不同但接口为 Chat Completions 时选 openai-compatible，不能直接填写任意品牌作为 provider。
 - `ANALYZER_TIMEOUT_SECONDS`、`ANALYZER_MAX_RETRIES`、`ANALYZER_MIN_INTERVAL_SECONDS`：分别控制单次网络等待、可重试错误的重试次数、共享请求调度器的最小启动间隔。内容审核、认证等不可重试错误不因 MAX_RETRIES 反复调用。
@@ -934,7 +934,7 @@ v0.11.13 起，短窗口遭遇服务端 `data_inspection_failed` 时按时间中
 
 生成相关设置（供应商、URL、模型、思考协议/模式、JSON 模式、Token 预算）区分缓存；key、超时、重试、间隔和并行度变化只影响后续请求，仍可复用已有成功摘要。首次升级到包含本次修复的版本 因缓存字段和初始预算修正可能重新分析旧窗口，原始转写不变。
 
-### 9.9 PDF 失败与飞书正文范围（main 待发布）
+### 9.9 PDF 失败与飞书正文范围（v0.11.14）
 
 main 的飞书正文只包含整体性总结和必要的缺失时段声明；按时间进展、小时摘要等明细保留在完整 Markdown/PDF 中，不回退为整份报告文本发送。旧报告重用时也提取总体章节。
 
@@ -942,7 +942,7 @@ main 的飞书正文只包含整体性总结和必要的缺失时段声明；按
 
 旧库在部分错误后会遗留 HTTP 服务，导致真实错误被外层 180 秒超时掩盖；main 改为直接加载报告内容、限制渲染阶段等待、关闭浏览器并禁止加载外部资源（本项目报告为文本内容）。PDF 失败会在分析状态窗口显示原因及阶段，Markdown 和成功分析缓存保留。诊断时使用 UTF-8 读取结果 JSON 的 errors 字段；Windows PowerShell 建议用 `Get-Content -Encoding UTF8`，避免默认编码误读并在 ConvertFrom-Json 报错时展开大量正文。不要复制整份转写或配置。
 
-这些修复尚未发布，已安装的 v0.11.13 不会随 main 文档更新而自动改变。云配置开启思考后，须使用支持该阶段策略的新版并重启网关；真实服务端用量及响应时间需要重新观察。
+这些修复已纳入 v0.11.14；已安装的 v0.11.13 仍须升级，不会随文档更新而改变。云配置开启思考后，须使用支持该阶段策略的新版并重启网关；真实服务端用量及响应时间需要重新观察。
 
 ## 10. 部署后验证
 
@@ -1013,6 +1013,8 @@ if (Get-ScheduledTask -TaskName $oopzTaskName -ErrorAction SilentlyContinue) {
 如果配置契约发生变化，先按新版本 `.env.example` 人工合并到生产 `.env`，禁止用模板直接覆盖生产文件。
 
 ### 12.1 已有服务器一键更新到最新正式版
+
+v0.11.14 更新提醒：已有 `.env` 不自动覆盖。要开启各阶段推理，请确认服务器 `shared/config/.env` 中 `ANALYZER_THINKING_MODE=enabled`；使用默认强度无需增加 reasoning_effort。并行 4 需保留 `OOPZ_ANALYSIS_MAX_PARALLELISM=4`。生成策略/Token 预算修正可能导致首次升级重新生成旧摘要，原转写保留。
 
 适用于已有 `C:\OOPZ\current` 且正常运行的服务器。**先结束录音、转写和分析任务；更新期间不要在飞书启动新任务。** 使用原安装/运行账户打开管理员 Windows PowerShell，将下面整段一次性复制执行。无需 Git、gh，也无需手改版本号、提交或下载哈希。
 
