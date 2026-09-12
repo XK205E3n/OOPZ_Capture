@@ -115,7 +115,7 @@ ANALYZER_JSON_MODE=
 
 ## 云服务器与发布
 
-长期运行的保守起点是 Windows Server 2022/2025 Desktop Experience、4 vCPU / 8 GiB、80 GiB SSD，并启用系统管理页面文件。低密度交流可以从 2 vCPU / 4–8 GiB **试运行**，但本机限额实验不等于云端整机验收；4 GiB 更依赖页面文件，共享型 CPU 还会受资源争抢影响。按实际频道验证每片耗时、内存、磁盘与队列，再决定是否升配。测试边界见 [运维说明](docs/OPERATIONS.md#云服务器容量与试运行)。
+最低部署要求为 Windows Server 2022/2025 Desktop Experience、4 vCPU / 8 GiB、80 GiB SSD，并启用系统管理页面文件。低于 4 vCPU 或 8 GiB 的服务器不属于支持的部署配置。最低配置不代表所有负载都能满足处理时限，仍需按实际频道验证每片耗时、内存、磁盘与队列；高负载应进一步升配。测试边界见 [运维说明](docs/OPERATIONS.md#云服务器容量与试运行)。
 
 本项目通过出站连接访问 OOPZ、飞书与分析 API，**不要求开放业务入站端口**。RDP 管理端口应只允许可信来源。服务器尚未完成应用部署验收；实际状态以 [部署状态基线](docs/DEPLOYMENT_STATE.md) 为准。
 

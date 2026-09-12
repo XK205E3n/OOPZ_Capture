@@ -34,7 +34,7 @@ GitHub 仓库只保存代码、脚本和文档；GitHub Release 保存可部署 
 ## 2. 服务器要求
 
 - Windows Server 2022/2025 x64 Desktop Experience；
-- 长期运行保守起点为 4 vCPU、8 GiB 内存、80 GiB SSD；需要更多余量时选 8 vCPU、16 GiB 内存、120 GiB SSD。低密度交流可用 2 vCPU/4–8 GiB 试运行，但必须验证整机内存、页面文件、磁盘与分片耗时，见 [容量与试运行](docs/OPERATIONS.md#云服务器容量与试运行)；
+- 最低部署要求为 4 vCPU、8 GiB 内存、80 GiB SSD；低于 4 vCPU 或 8 GiB 的服务器不属于支持的部署配置。需要更多余量时选 8 vCPU、16 GiB 内存、120 GiB SSD；仍须验证整机内存、页面文件、磁盘与分片耗时，见 [容量与试运行](docs/OPERATIONS.md#云服务器容量与试运行)；
 - 系统管理页面文件，系统盘长期至少保留 20 GiB；
 - 稳定出站网络，可访问 GitHub、PyPI、npm、魔搭社区、OOPZ、飞书和分析 API；
 - 不需要 GPU，也不需要开放应用业务入站端口；
