@@ -60,6 +60,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare_release.ps
 
 ## 服务器更新
 
+已有正常运行实例可直接复制[部署指南第 12.1 节](../README_CLOUD_SERVER_DEPLOYMENT.md#121-已有服务器一键更新到最新正式版)的完整代码，自动查询并安装最新正式 Release，无需手改版本号。更新期间保持无录音/分析任务；配置契约有变化时先按发布说明处理。已是最新版时不重启。本脚本随在线文档提供，v0.11.13 ZIP 不包含它。
+
 以管理员 PowerShell 执行发布包内或运维目录中的脚本：
 
 ```powershell
