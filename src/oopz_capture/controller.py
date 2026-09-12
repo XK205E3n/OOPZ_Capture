@@ -249,10 +249,12 @@ def _default_analysis_runner(handoff_path: Path, client: Any) -> dict[str, Any]:
                 f"[分析进度] 已启动：Session={event.get('session_id')}；"
                 f"分析接口={_configured_analysis_label()}；"
                 f"300秒窗口={event.get('short_total', 0)}，60分钟窗口={event.get('long_total', 0)}；"
-                f"300秒API请求={event.get('short_request_total', 0)}（每个窗口单独请求）；"
+                f"300秒API请求={event.get('short_request_total', 0)}（初始请求；审核拦截时另分两半请求，缓存不重复调用）；"
                 f"并行任务={event.get('parallelism', 1)}。",
                 flush=True,
             )
+        elif stage == "content_filter_fallback":
+            print(f"[分析进度] 窗口 {event.get('window_index')} 已拆分处理；跳过半段={event.get('skipped', 0)}，缺失时段将写入报告。", flush=True)
         elif stage == "long_started":
             print(
                 f"[分析进度] 开始60分钟摘要：0/{event.get('total', 0)}；"

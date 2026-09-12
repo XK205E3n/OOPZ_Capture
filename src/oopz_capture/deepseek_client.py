@@ -24,6 +24,13 @@ class RetryableAnalysisAPIError(AnalysisAPIError):
     pass
 
 
+class ContentInspectionError(AnalysisAPIError):
+    """Provider rejected content; raw error bodies must not enter logs."""
+
+    def __init__(self) -> None:
+        super().__init__("analysis API HTTP 400: data_inspection_failed")
+
+
 # Backwards-compatible import aliases.  This module originally supported only
 # DeepSeek, but it now also drives OpenCode Go and generic OpenAI-compatible
 # APIs.  New user-visible errors must use the provider-neutral class name.
@@ -157,6 +164,17 @@ def urllib_transport(endpoint: str, headers: dict[str, str], payload: dict[str, 
         with urllib.request.urlopen(request, timeout=timeout) as response:
             return json.loads(response.read().decode("utf-8"))
     except urllib.error.HTTPError as error:
+        if error.code == 400:
+            try:
+                body = json.loads(error.read(65536))
+                detail = body.get("error", body) if isinstance(body, dict) else {}
+                if isinstance(detail, dict) and (
+                    detail.get("code") in {"data_inspection_failed", "DataInspectionFailed"}
+                    or "[data_inspection_failed]" in str(detail.get("message", ""))
+                ):
+                    raise ContentInspectionError() from None
+            except (ValueError, TypeError, OSError):
+                pass
         if error.code == 429 or 500 <= error.code < 600:
             raise RetryableAnalysisAPIError(f"analysis API HTTP {error.code}") from error
         raise AnalysisAPIError(f"analysis API HTTP {error.code}") from error

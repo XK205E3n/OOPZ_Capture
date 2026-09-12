@@ -323,7 +323,7 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "推理 Token 已包含在输出 Token 中，不重复计费" in report
     assert "官方价格文档：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/" in report
     assert report.rstrip().endswith("https://api-docs.deepseek.com/zh-cn/quick_start/pricing/")
-    assert result["report_format_version"] == "3.7.0"
+    assert result["report_format_version"] == "3.8.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 整体性总结" in public_report
     assert "### 按时间顺序的进展" in public_report
@@ -376,7 +376,7 @@ def test_existing_analysis_is_rerendered_without_model_calls(tmp_path: Path) -> 
     assert "### 2026-08-13 13:10:03–13:15:03" in report
     assert "## Token 使用与费用估算" in report
     assert refreshed["result"]["model"]["cost_estimate"]["status"] == "estimated"
-    assert refreshed["result"]["report_format_version"] == "3.7.0"
+    assert refreshed["result"]["report_format_version"] == "3.8.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 不确定内容" not in public_report
     assert "测试-uncertainties" not in public_report

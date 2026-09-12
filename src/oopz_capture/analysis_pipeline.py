@@ -12,6 +12,7 @@ from typing import Any, Callable, Protocol
 from uuid import NAMESPACE_URL, uuid5
 
 from .analysis_windows import determine_session_duration_ms
+from .deepseek_client import ContentInspectionError
 from .analyzer_job import AnalyzerInput, _acquire_run_lock, _release_lock, load_analyzer_input, prepare_analysis
 from .jsonio import (
     atomic_json as _atomic_json,
@@ -79,7 +80,7 @@ FINAL_REQUIRED = {
     "uncertainties": list,
 }
 ANALYSIS_PIPELINE_VERSION = "2.7.0"
-REPORT_FORMAT_VERSION = "3.7.0"
+REPORT_FORMAT_VERSION = "3.8.0"
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 LOGGER = logging.getLogger(__name__)
 FINAL_THINKING_MAX_TOKENS = 4096
@@ -282,7 +283,8 @@ def _short_prompt(value: AnalyzerInput, window: dict[str, Any]) -> tuple[str, st
         "后四项都是字符串数组。"
         'JSON格式示例：{"summary":"...","decisions":[],"action_items":[],"open_questions":[],"uncertainties":[]}。'
     )
-    user = "请总结以下300秒时间窗口。JSON证据：\n" + json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
+    seconds = (int(window["end_ms"]) - int(window["start_ms"])) / 1000
+    user = f"请总结以下{seconds:g}秒时间窗口。JSON证据：\n" + json.dumps(evidence, ensure_ascii=False, separators=(",", ":"))
     return system, user
 
 
@@ -417,6 +419,72 @@ def _make_short(
         "input_fingerprint": value.fingerprint,
         "analysis_fingerprint": analysis_fingerprint,
     }
+
+
+def _short_with_content_fallback(value, window, client, analysis_fingerprint):
+    def request(part):
+        system, user = _short_prompt(value, part)
+        return client.complete_json(
+            system_prompt=system, user_prompt=user, required_keys=SHORT_REQUIRED,
+            thinking="disabled", reasoning_effort=None, max_tokens=SHORT_MAX_TOKENS,
+        )
+
+    try:
+        return _make_short(value, window, request(window), analysis_fingerprint)
+    except ContentInspectionError:
+        pass
+
+    # Exactly one temporal split. Never recursively split rejected halves.
+    start, end = int(window["start_ms"]), int(window["end_ms"])
+    midpoint = start + (end - start) // 2
+    content = {"summary": "", "decisions": [], "action_items": [],
+               "open_questions": [], "uncertainties": []}
+    parts, skipped, models, summaries = [], [], [], []
+    rejected_model = {
+        "provider": getattr(getattr(client, "config", None), "provider", "unknown"),
+        "model_requested": getattr(getattr(client, "config", None), "model", "unknown"),
+        "thinking": "disabled", "api_called": True, "usage_unavailable": True,
+        "error_code": "data_inspection_failed", "usage": {},
+    }
+    models.append(dict(rejected_model))
+    for left, right in ((start, midpoint), (midpoint, end)):
+        if left == right:
+            continue
+        members = [dict(s, start_ms=max(left, int(s["start_ms"])),
+                        end_ms=min(right, int(s["end_ms"])))
+                   for s in window["segments"]
+                   if int(s["start_ms"]) < right and int(s["end_ms"]) > left]
+        part = {**window, "start_ms": left, "end_ms": right, "segments": members}
+        record = {"start_ms": left, "end_ms": right}
+        label = _beijing_time_range(value, left, right)
+        if not members:
+            record["status"] = "silent"
+            summaries.append(f"{label}：无可转写语音。")
+        else:
+            try:
+                response = request(part)
+                normalized = _normalized_content(response["content"], SHORT_REQUIRED)
+                models.append(response["metadata"])
+                record["status"] = "analyzed"
+                summaries.append(f"{label}：{normalized['summary']}")
+                for key in content:
+                    if key != "summary":
+                        content[key].extend(normalized[key])
+            except ContentInspectionError:
+                record.update(status="skipped", reason="data_inspection_failed")
+                models.append(dict(rejected_model))
+                skipped.append(dict(record))
+                notice = f"{label}：内容审核未通过，已跳过分析；原始转写保留，不对该时段作推断。"
+                summaries.append(notice)
+                content["uncertainties"].append(notice)
+        parts.append(record)
+    content["summary"] = "\n".join(summaries)
+    summary = _make_short(value, window, {"content": content, "metadata": {
+        "provider": "content-fallback", "subrequests": models,
+    }}, analysis_fingerprint)
+    summary.update(content_filter_fallback="split_once", analysis_parts=parts,
+                   skipped_intervals=skipped)
+    return summary
 
 
 def _make_long(
@@ -614,13 +682,22 @@ def render_final_markdown(
             f"### {_beijing_time_range(value, item['start_ms'], item['end_ms'])}", "",
             item["summary"], "",
         ])
+    skipped = [part for item in short_values for part in item.get("skipped_intervals", [])]
+    coverage_notice = ""
+    if skipped:
+        coverage_notice = "## 分析缺失时段\n\n以下时段因内容审核未通过而跳过，报告不覆盖其内容；原始转写保留。\n\n" + "\n".join(
+            "- " + _beijing_time_range(value, part["start_ms"], part["end_ms"])
+            for part in skipped
+        ) + "\n"
+        lines[2:2] = [coverage_notice, ""]
+        public_lines[2:2] = [coverage_notice, ""]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     public_path = path.with_name("summary.public.md")
     public_path.write_text("\n".join(public_lines).rstrip() + "\n", encoding="utf-8")
     text_path = path.with_name("summary.text.md")
     text_path.write_text(
-        "## 整体性总结\n\n" + overview["overall_summary"].strip()
+        coverage_notice + ("\n" if coverage_notice else "") + "## 整体性总结\n\n" + overview["overall_summary"].strip()
         + "\n\n## 按时间顺序的进展\n\n" + chronological + "\n",
         encoding="utf-8",
     )
@@ -699,6 +776,11 @@ def _write_report_messages(path: Path, value: AnalyzerInput, report_id: str, rep
     return messages
 
 
+def _summary_models(item):
+    model = item.get("model") or {}
+    return model.get("subrequests", [model])
+
+
 def _aggregate_usage(*groups: list[dict[str, Any]]) -> dict[str, Any]:
     totals = {
         "prompt_tokens": 0,
@@ -711,8 +793,7 @@ def _aggregate_usage(*groups: list[dict[str, Any]]) -> dict[str, Any]:
     }
     modes = {"disabled": 0, "enabled": 0, "deterministic": 0}
     for group in groups:
-        for item in group:
-            model = item.get("model") or {}
+        for model in [model for item in group for model in _summary_models(item)]:
             if model.get("usage_counted") is False:
                 continue
             provider = model.get("provider")
@@ -782,7 +863,7 @@ def _models_by_stage(
     long_values: list[dict[str, Any]],
     final_model: dict[str, Any],
 ) -> dict[str, list[dict[str, Any]]]:
-    short_models = [item.get("model") or {} for item in short_values]
+    short_models = [model for item in short_values for model in _summary_models(item)]
     long_models = [item.get("model") or {} for item in long_values]
     final_models = [final_model]
     return {
@@ -1297,16 +1378,10 @@ def run_analysis(
             if window["silent"]:
                 summary = _silent_short(value, window, analysis_fingerprint)
             else:
-                system, user = _short_prompt(value, window)
-                response = client.complete_json(
-                    system_prompt=system,
-                    user_prompt=user,
-                    required_keys=SHORT_REQUIRED,
-                    thinking="disabled",
-                    reasoning_effort=None,
-                    max_tokens=SHORT_MAX_TOKENS,
-                )
-                summary = _make_short(value, window, response, analysis_fingerprint)
+                summary = _short_with_content_fallback(value, window, client, analysis_fingerprint)
+            if summary.get("content_filter_fallback"):
+                _report_progress(progress_reporter, stage="content_filter_fallback",
+                                 window_index=window["index"], skipped=len(summary["skipped_intervals"]))
             _atomic_json(output, summary)
             return summary
 
@@ -1435,6 +1510,8 @@ def run_analysis(
         cost_estimate = _estimate_costs(
             analysis_profile["model"], usage_by_stage, stage_models, fallback_at=_iso()
         )
+        if any(model.get("usage_unavailable") for model in stage_models["total"]):
+            cost_estimate.update(status="unavailable", reason="content-rejected request usage is unavailable")
         render_final_markdown(
             report_path,
             value,
@@ -1471,6 +1548,8 @@ def run_analysis(
             "reports": long_values,
             "summary": overview,
             "short_summaries": short_values,
+            "analysis_coverage": "partial" if any(item.get("skipped_intervals") for item in short_values) else "complete",
+            "skipped_intervals": [part for item in short_values for part in item.get("skipped_intervals", [])],
             "long_summaries": long_values,
             "model": {
                 "final": final_model,
