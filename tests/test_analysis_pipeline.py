@@ -247,7 +247,7 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     output = run_analysis(handoff, client)
 
     assert [(item["thinking"], item["reasoning_effort"]) for item in client.calls] == [
-        ("disabled", None), ("disabled", None), ("disabled", None), ("enabled", "high"),
+        ("disabled", None), ("disabled", None), ("disabled", None), ("enabled", None),
     ]
     assert client.calls[-1]["max_tokens"] == 4096
     assert [item["max_tokens"] for item in client.calls[:-1]] == [1024, 1024, 2048]
@@ -277,8 +277,8 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
             "thinking": "disabled", "reasoning_effort": None, "initial_max_tokens": 2048,
         },
         "final_overview": {
-            "thinking": "enabled", "reasoning_effort": "high",
-                "reasoning_effort_note": "lowest level supported by the OpenAI-compatible analysis adapter",
+            "thinking": "enabled", "reasoning_effort": None,
+                "reasoning_effort_note": "provider default; reasoning_effort omitted",
             "initial_max_tokens": 4096,
         },
     }
@@ -323,7 +323,7 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "推理 Token 已包含在输出 Token 中，不重复计费" in report
     assert "官方价格文档：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/" in report
     assert report.rstrip().endswith("https://api-docs.deepseek.com/zh-cn/quick_start/pricing/")
-    assert result["report_format_version"] == "3.8.0"
+    assert result["report_format_version"] == "3.9.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 整体性总结" in public_report
     assert "### 按时间顺序的进展" in public_report
@@ -336,7 +336,7 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "## 每300秒短期总结" not in public_report
     assert "## Token 使用与费用估算" not in public_report
     text_report = output["report_path"].with_name("summary.text.md").read_text(encoding="utf-8")
-    assert "## 整体性总结" in text_report and "## 按时间顺序的进展" in text_report
+    assert "## 整体性总结" in text_report and "## 按时间顺序的进展" not in text_report
     messages = [json.loads(line) for line in output["report_messages_path"].read_text(encoding="utf-8").splitlines()]
     assert all(item["target"] == {"type": "group", "id": "123456"} for item in messages)
     assert all(item["delivery_status"] == "pending" for item in messages)
@@ -376,7 +376,7 @@ def test_existing_analysis_is_rerendered_without_model_calls(tmp_path: Path) -> 
     assert "### 2026-08-13 13:10:03–13:15:03" in report
     assert "## Token 使用与费用估算" in report
     assert refreshed["result"]["model"]["cost_estimate"]["status"] == "estimated"
-    assert refreshed["result"]["report_format_version"] == "3.8.0"
+    assert refreshed["result"]["report_format_version"] == "3.9.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 不确定内容" not in public_report
     assert "测试-uncertainties" not in public_report

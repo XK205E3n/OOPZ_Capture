@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -85,6 +86,30 @@ def find_recent_reports(output_root: Path, limit: int = 7) -> list[dict[str, Any
 
 def report_text(summary_path: Path) -> str:
     return summary_path.read_text(encoding="utf-8")
+
+
+def overall_summary_text(text: str) -> str:
+    """Never turn a missing text-only report into hourly detail delivery."""
+    def section(title):
+        match = re.search(r"(?m)^#{1,6}[ \t]+" + re.escape(title) + r"[ \t]*\r?$", text)
+        if not match:
+            return ""
+        rest = text[match.end():]
+        end = re.search(r"(?m)^#{1,6}[ \t]+", rest)
+        return rest[:end.start() if end else len(rest)].strip()
+
+    summary = section("整体性总结")
+    if summary:
+        notice = section("分析缺失时段")
+        prefix = "## 分析缺失时段\n\n" + notice + "\n\n" if notice else ""
+        return prefix + "## 整体性总结\n\n" + summary
+    if re.search(r"(?m)^#{1,6}\s+.*(?:每60分钟|每300秒|小时总结|长期摘要)", text):
+        raise ValueError("报告缺少整体性总结，不能将小时明细作为飞书正文")
+    return text.strip()
+
+
+def overall_report_text(path: Path) -> str:
+    return overall_summary_text(report_text(path))
 
 
 def split_text(text: str, max_chars: int = 3000) -> list[str]:

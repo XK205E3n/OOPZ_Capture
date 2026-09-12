@@ -268,6 +268,7 @@ class DeepSeekClient:
             "json_mode": self.config.json_mode,
             "max_tokens": self.config.max_tokens,
             "thinking_max_tokens": self.config.thinking_max_tokens,
+            "generation_policy": "all-stages-provider-effort-default-v1",
         }
 
     def set_analysis_session(self, session_id: str) -> None:
@@ -278,7 +279,7 @@ class DeepSeekClient:
             self.config.thinking_mode == "auto" and self.config.provider == "deepseek"
         )
         return {"final_overview": {"thinking": "enabled" if enabled else "disabled",
-                "reasoning_effort": "high" if enabled else None}}
+                "reasoning_effort": None}}
 
     def complete_json(
         self,
@@ -287,15 +288,15 @@ class DeepSeekClient:
         user_prompt: str,
         required_keys: dict[str, type | tuple[type, ...]],
         thinking: str = "enabled",
-        reasoning_effort: str | None = "high",
+        reasoning_effort: str | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         if "json" not in (system_prompt + user_prompt).lower():
             raise ValueError("analysis API JSON mode requires the prompt to explicitly mention JSON")
         if thinking not in {"enabled", "disabled"}:
             raise ValueError("thinking must be enabled or disabled")
-        if thinking == "enabled" and reasoning_effort not in {"high", "max"}:
-            raise ValueError("thinking mode requires reasoning_effort high or max")
+        if thinking == "enabled" and reasoning_effort not in {None, "high", "max"}:
+            raise ValueError("reasoning_effort must be omitted, high, or max")
         if max_tokens is not None and not 128 <= max_tokens <= 384000:
             raise ValueError("max_tokens must be 128 to 384000")
         host = urlsplit(self.config.base_url).hostname or ""
@@ -334,7 +335,7 @@ class DeepSeekClient:
             payload["thinking"] = {"type": effective_thinking}
         if effective_thinking == "disabled":
             payload["temperature"] = 0.1
-        elif not qwen_thinking:
+        elif not qwen_thinking and reasoning_effort is not None:
             payload["reasoning_effort"] = reasoning_effort
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
@@ -424,7 +425,7 @@ class MockDeepSeekClient:
         user_prompt: str,
         required_keys: dict[str, type | tuple[type, ...]],
         thinking: str = "enabled",
-        reasoning_effort: str | None = "high",
+        reasoning_effort: str | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]:
         del system_prompt, user_prompt, max_tokens

@@ -926,13 +926,23 @@ v0.11.13 起，短窗口遭遇服务端 `data_inspection_failed` 时按时间中
 - `ANALYZER_BASE_URL`、`ANALYZER_API_KEY`、`ANALYZER_MODEL`：后续 API 请求使用当前配置；供应商品牌不同但接口为 Chat Completions 时选 openai-compatible，不能直接填写任意品牌作为 provider。
 - `ANALYZER_TIMEOUT_SECONDS`、`ANALYZER_MAX_RETRIES`、`ANALYZER_MIN_INTERVAL_SECONDS`：分别控制单次网络等待、可重试错误的重试次数、共享请求调度器的最小启动间隔。内容审核、认证等不可重试错误不因 MAX_RETRIES 反复调用。
 - `ANALYZER_MAX_TOKENS`：非思考阶段的初始输出预算；`ANALYZER_THINKING_MAX_TOKENS`：实际开启思考的最终综合初始预算。截断时保留现有有界预算递增重试行为，不是保证输出字数，也不是硬性总用量上限。
-- `ANALYZER_THINKING_MODE`：disabled 关闭支持的思考开关；enabled 允许最终综合按阶段启用思考，短/长摘要仍不思考；auto 保留接入模式的默认选择。
+- `ANALYZER_THINKING_MODE`：disabled 关闭支持的思考开关；enabled 对短摘要、长摘要和最终综合均启用思考，强度使用服务端默认值（不发送 reasoning_effort）；auto 保留接入模式的默认选择。
 - 新的可选 `ANALYZER_THINKING_FORMAT=auto`：auto 保留现有识别规则；更换兼容代理/模型后可显式选 qwen（enable_thinking）或 deepseek（thinking.type）。standard 不发送厂商思考字段，不能保证服务端默认关闭思考，也不能与 enabled 组合使用。显式格式必须由所选服务支持，否则会收到服务端参数错误。
 - `ANALYZER_JSON_MODE`：是否发送 response_format=json_object；false 不表示应用可以接受非 JSON 摘要，模型返回仍必须符合报告字段要求。
 
 修改 `.env` 后重启网关，系统进程环境变量优先于同名 `.env` 值。不要为了让并行生效而冒用 provider 或更换凭据。任意供应商的非兼容协议、模型限额及厂商不支持的扩展参数不属于自动兼容范围。
 
 生成相关设置（供应商、URL、模型、思考协议/模式、JSON 模式、Token 预算）区分缓存；key、超时、重试、间隔和并行度变化只影响后续请求，仍可复用已有成功摘要。首次升级到包含本次修复的版本 因缓存字段和初始预算修正可能重新分析旧窗口，原始转写不变。
+
+### 9.9 PDF 失败与飞书正文范围（main 待发布）
+
+main 的飞书正文只包含整体性总结和必要的缺失时段声明；按时间进展、小时摘要等明细保留在完整 Markdown/PDF 中，不回退为整份报告文本发送。旧报告重用时也提取总体章节。
+
+旧 PDF 渲染器没有检查候选浏览器路径是否存在，会在只有 Edge 的服务器上选中不存在的 Chrome。main 已改为查找实际存在的 Chrome/Edge；也可在 `.env` 中设置可选 `MD_TO_PDF_CHROME_PATH` 指向已安装浏览器的绝对路径。此项仅影响 PDF，不替代录音 Playwright Chromium 安装检查。
+
+旧库在部分错误后会遗留 HTTP 服务，导致真实错误被外层 180 秒超时掩盖；main 改为直接加载报告内容、限制渲染阶段等待、关闭浏览器并禁止加载外部资源（本项目报告为文本内容）。PDF 失败会在分析状态窗口显示原因及阶段，Markdown 和成功分析缓存保留。诊断时使用 UTF-8 读取结果 JSON 的 errors 字段；Windows PowerShell 建议用 `Get-Content -Encoding UTF8`，避免默认编码误读并在 ConvertFrom-Json 报错时展开大量正文。不要复制整份转写或配置。
+
+这些修复尚未发布，已安装的 v0.11.13 不会随 main 文档更新而自动改变。云配置开启思考后，须使用支持该阶段策略的新版并重启网关；真实服务端用量及响应时间需要重新观察。
 
 ## 10. 部署后验证
 

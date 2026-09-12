@@ -19,7 +19,7 @@ from .identifiers import new_session_id
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none
 from .pdf_reports import render_session_reports
 from .controller_protocol import SenderPolicy, ControllerInboundMessage, make_reply, parse_command
-from .reports import recover_interrupted_analysis_sessions, report_text, split_text
+from .reports import recover_interrupted_analysis_sessions, overall_report_text as report_text, overall_summary_text, split_text
 from .send_request import enqueue_send_request
 from .settings import SETTABLE_KEYS, apply_setting, canonical_setting_key, setting_status
 from .workflow import _delete_archived_reports, _is_reparse_point, _validate_tree_no_links
@@ -263,6 +263,8 @@ def _default_analysis_runner(handoff_path: Path, client: Any) -> dict[str, Any]:
             )
         elif stage == "final_started":
             print("[分析进度] 开始最终综合。", flush=True)
+        elif stage == "pdf_failed":
+            print(f"[分析进度] PDF 生成失败：{event.get('message', '未知原因')}；Markdown 已保留。", flush=True)
         elif stage == "report_rendered":
             print("[分析进度] 已生成报告，正在准备飞书投递。", flush=True)
         elif stage == "completed":
@@ -1434,7 +1436,7 @@ class ControllerService:
                 if text:
                     pieces.append(text)
             if pieces:
-                return pieces
+                return split_text(overall_summary_text("\n\n".join(pieces)))
         candidates: list[Path] = []
         variants = session_dir / "analysis_variants"
         if variants.is_dir():

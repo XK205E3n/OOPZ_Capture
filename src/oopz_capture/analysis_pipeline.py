@@ -34,7 +34,7 @@ class JSONModelClient(Protocol):
         user_prompt: str,
         required_keys: dict[str, type | tuple[type, ...]],
         thinking: str = "enabled",
-        reasoning_effort: str | None = "high",
+        reasoning_effort: str | None = None,
         max_tokens: int | None = None,
     ) -> dict[str, Any]: ...
 
@@ -80,7 +80,7 @@ FINAL_REQUIRED = {
     "uncertainties": list,
 }
 ANALYSIS_PIPELINE_VERSION = "2.7.0"
-REPORT_FORMAT_VERSION = "3.8.0"
+REPORT_FORMAT_VERSION = "3.9.0"
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 LOGGER = logging.getLogger(__name__)
 FINAL_THINKING_MAX_TOKENS = 4096
@@ -148,6 +148,11 @@ def _window_parallelism(client: JSONModelClient) -> int:
     if not 1 <= workers <= 8:
         raise ValueError("OOPZ_ANALYSIS_MAX_PARALLELISM must be an integer from 1 to 8")
     return workers
+
+
+def _stage_thinking(client, fallback):
+    mode = getattr(getattr(client, "config", None), "thinking_mode", "auto")
+    return mode if mode in {"enabled", "disabled"} else fallback
 
 
 def _stage_tokens(client, thinking, fallback):
@@ -431,7 +436,7 @@ def _short_with_content_fallback(value, window, client, analysis_fingerprint):
         system, user = _short_prompt(value, part)
         return client.complete_json(
             system_prompt=system, user_prompt=user, required_keys=SHORT_REQUIRED,
-            thinking="disabled", reasoning_effort=None, max_tokens=_stage_tokens(client, "disabled", SHORT_MAX_TOKENS),
+            thinking=_stage_thinking(client, "disabled"), reasoning_effort=None, max_tokens=_stage_tokens(client, _stage_thinking(client, "disabled"), SHORT_MAX_TOKENS),
         )
 
     try:
@@ -448,7 +453,7 @@ def _short_with_content_fallback(value, window, client, analysis_fingerprint):
     rejected_model = {
         "provider": getattr(getattr(client, "config", None), "provider", "unknown"),
         "model_requested": getattr(getattr(client, "config", None), "model", "unknown"),
-        "thinking": "disabled", "api_called": True, "usage_unavailable": True,
+        "thinking": _stage_thinking(client, "disabled"), "api_called": True, "usage_unavailable": True,
         "error_code": "data_inspection_failed", "usage": {},
     }
     models.append(dict(rejected_model))
@@ -703,7 +708,7 @@ def render_final_markdown(
     text_path = path.with_name("summary.text.md")
     text_path.write_text(
         coverage_notice + ("\n" if coverage_notice else "") + "## 整体性总结\n\n" + overview["overall_summary"].strip()
-        + "\n\n## 按时间顺序的进展\n\n" + chronological + "\n",
+        + "\n",
         encoding="utf-8",
     )
     return path
@@ -824,17 +829,17 @@ def _aggregate_usage(*groups: list[dict[str, Any]]) -> dict[str, Any]:
 def _analysis_policy(client: JSONModelClient) -> dict[str, Any]:
     policy: dict[str, Any] = {
         "short_summaries": {
-            "thinking": "disabled", "reasoning_effort": None,
-            "initial_max_tokens": _stage_tokens(client, "disabled", SHORT_MAX_TOKENS),
+            "thinking": _stage_thinking(client, "disabled"), "reasoning_effort": None,
+            "initial_max_tokens": _stage_tokens(client, _stage_thinking(client, "disabled"), SHORT_MAX_TOKENS),
         },
         "long_summaries": {
-            "thinking": "disabled", "reasoning_effort": None,
-            "initial_max_tokens": _stage_tokens(client, "disabled", LONG_MAX_TOKENS),
+            "thinking": _stage_thinking(client, "disabled"), "reasoning_effort": None,
+            "initial_max_tokens": _stage_tokens(client, _stage_thinking(client, "disabled"), LONG_MAX_TOKENS),
         },
         "final_overview": {
-            "thinking": "enabled",
-            "reasoning_effort": "high",
-            "reasoning_effort_note": "lowest level supported by the OpenAI-compatible analysis adapter",
+            "thinking": _stage_thinking(client, "enabled"),
+            "reasoning_effort": None,
+            "reasoning_effort_note": "provider default; reasoning_effort omitted",
             "initial_max_tokens": _stage_tokens(client, "enabled", FINAL_THINKING_MAX_TOKENS),
         },
     }
@@ -1350,6 +1355,7 @@ def run_analysis(
                         value, _public_report_path(report_path), f"{variant or 'default'}-report",
                     )
                     if pdf_error:
+                        _report_progress(progress_reporter, stage="pdf_failed", message=pdf_error["message"])
                         errors = [item for item in existing.get("errors", []) if isinstance(item, dict)]
                         if not any(
                             item.get("type") == pdf_error.get("type") and item.get("message") == pdf_error.get("message")
@@ -1453,9 +1459,9 @@ def run_analysis(
                     system_prompt=system,
                     user_prompt=user,
                     required_keys=LONG_REQUIRED,
-                    thinking="disabled",
+                    thinking=_stage_thinking(client, "disabled"),
                     reasoning_effort=None,
-                    max_tokens=_stage_tokens(client, "disabled", LONG_MAX_TOKENS),
+                    max_tokens=_stage_tokens(client, _stage_thinking(client, "disabled"), LONG_MAX_TOKENS),
                 )
                 summary = _make_long(value, window, response, children, analysis_fingerprint)
                 _atomic_json(output, summary)
@@ -1506,8 +1512,8 @@ def run_analysis(
                 system_prompt=system,
                 user_prompt=user,
                 required_keys=FINAL_REQUIRED,
-                thinking="enabled",
-                reasoning_effort="high",
+                thinking=_stage_thinking(client, "enabled"),
+                reasoning_effort=None,
                 max_tokens=_stage_tokens(client, "enabled", FINAL_THINKING_MAX_TOKENS),
             )
             overview = _normalized_content(response["content"], FINAL_REQUIRED)
@@ -1536,6 +1542,8 @@ def run_analysis(
             pdf_path, pdf_error = _render_pdf_best_effort(
                 value, _public_report_path(report_path), f"{variant or 'default'}-report",
             )
+        if pdf_error:
+            _report_progress(progress_reporter, stage="pdf_failed", message=pdf_error["message"])
         _report_progress(progress_reporter, stage="report_rendered", pdf_path=str(pdf_path or ""))
         report_text = _text_report_text(report_path)
         messages = _write_report_messages(report_messages_path, value, report_id, report_text)

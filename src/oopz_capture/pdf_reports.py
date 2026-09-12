@@ -93,7 +93,13 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
             timeout=180,
         )
     except subprocess.TimeoutExpired as error:
-        raise RuntimeError(f"PDF renderer timed out after 180s: {markdown_path}") from error
+        detail = error.stderr or b""
+        if isinstance(detail, bytes):
+            detail = detail.decode("utf-8", errors="replace")
+        raise RuntimeError(f"PDF renderer timed out after 180s: {str(detail)[-800:]}") from error
+    except subprocess.CalledProcessError as error:
+        detail = str(error.stderr or error.stdout or "no renderer diagnostics").strip()
+        raise RuntimeError(f"PDF renderer exited {error.returncode}: {detail[:1200]}") from error
     if not output_path.is_file() or output_path.stat().st_size == 0:
         raise RuntimeError(f"PDF renderer returned without creating {output_path}: {result.stdout}")
     return output_path
