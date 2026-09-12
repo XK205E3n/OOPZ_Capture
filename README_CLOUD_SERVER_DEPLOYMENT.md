@@ -2,9 +2,9 @@
 
 本文说明如何通过 PowerShell 从公开 GitHub Release 匿名获取经过测试的 OOPZ Capture 发布包，准备配置并部署到 Windows 云服务器，再安全更新或回滚。下载不需要 GitHub 登录，业务账户授权仍须由使用者完成。
 
-## 部署前必读（v0.11.10）
+## 部署前必读（v0.11.11）
 
-**v0.11.10 已知安装器问题：** Windows PowerShell 5.1 可能将无 BOM 的 UTF-8 脚本按系统 ANSI 编码读取，误读中文就绪标记，造成网关已连通却被安装器停止并撤回 current。修复已在 main，既有 ZIP 不变；第九节遇到此情况按第 9.5 节检查，已正常运行的实例不需重装。
+**v0.11.10 已知安装器问题：** Windows PowerShell 5.1 可能将无 BOM 的 UTF-8 脚本按系统 ANSI 编码读取，误读中文就绪标记，造成网关已连通却被安装器停止并撤回 current。修复纳入 v0.11.11，旧 v0.11.10 ZIP 不变；第九节遇到此情况按第 9.5 节检查，已正常运行的实例不需重装。
 
 新版包含录音 Chromium 安装与启动检查、百炼 qwen3.8-flash 思考开关修复、pip/npm 下载重试及依赖检查。部署以 GitHub main 在线文档为准；包内文档及 prepare_release.ps1 是构建时快照，下载固定值可能指向上一版，不作为新版下载入口。首次安装按第 2–9 节主流程，再完成第 10 节端到端验收；第 9.1–9.3 节仅为旧 v0.11.9 故障恢复，**新版本正常安装不执行这些恢复代码**。网络中断仍可能导致安装失败，保留错误及版本目录，不能直接删除 shared 或套用旧版恢复脚本。
 
@@ -877,7 +877,7 @@ if ($LASTEXITCODE -ne 0) { throw '录音 Chromium 启动验证失败，请保留
 
 已确认的安装器 Bug：发布包 `v0.11.10-351fee9b773b` 中 `install_release.ps1` 是无 BOM 的 UTF-8 文件，健康检查直接使用中文字符串。Windows PowerShell 5.1 在代码页 936 下会误读该字符串，即使 UTF-8 日志已出现“飞书长连接已就绪”仍匹配失败。安装器随后停止网关、移除 current；首次安装没有旧版本可恢复，留下完整版本目录。再次执行安装因目录已存在而报 `Release is already installed`，这是覆盖保护，不能据此判断依赖未安装。
 
-main 已改为用 ASCII 源码中的 Unicode 码点构造就绪标记，并增加实际 Windows PowerShell 5.1 回归测试。**此修复尚未进入已发布的 v0.11.10 ZIP，不要修改服务器 releases/current 内的程序，也不要删除版本目录重装。**
+main 已改为用 ASCII 源码中的 Unicode 码点构造就绪标记，并增加实际 Windows PowerShell 5.1 回归测试。**此修复已纳入 v0.11.11；旧 v0.11.10 ZIP 不变，不要修改服务器 releases/current 内的程序，也不要删除版本目录重装。**
 
 仅当以下条件全部成立时，才恢复首次启动入口：
 

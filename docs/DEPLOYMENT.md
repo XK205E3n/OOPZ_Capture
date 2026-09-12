@@ -17,7 +17,7 @@
 
 ## 分析配置验收
 
-v0.11.10 修复百炼 qwen3.8-flash 思考开关；云端建议单次超时 180 秒。配置保留原值，不会因升级自动更改，API 密钥与入口必须匹配。完整参数、401/超时区别和账户使用范围见[部署指南](../README_CLOUD_SERVER_DEPLOYMENT.md#部署前必读v01110)。
+v0.11.10 修复百炼 qwen3.8-flash 思考开关；云端建议单次超时 180 秒。配置保留原值，不会因升级自动更改，API 密钥与入口必须匹配。完整参数、401/超时区别和账户使用范围见[部署指南](../README_CLOUD_SERVER_DEPLOYMENT.md#部署前必读v01111)。
 
 ## 录音浏览器前置
 
@@ -48,7 +48,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare_release.ps
 
 ## v0.11.10 首次启动误判
 
-已确认 Windows PowerShell 5.1 对无 BOM UTF-8 安装器的中文就绪标记解码错误，可能在网关已连通后误回滚。main 已改为 ASCII 源码构造 Unicode 标记；现有 ZIP 不变。符合前提的首次安装按[指南第 9.5 节](../README_CLOUD_SERVER_DEPLOYMENT.md#95-v01110-已连通却回滚重试提示版本已存在)恢复 current 并启动，已正常运行无需重装。
+已确认 Windows PowerShell 5.1 对无 BOM UTF-8 安装器的中文就绪标记解码错误，可能在网关已连通后误回滚。v0.11.11 已改为 ASCII 源码构造 Unicode 标记；旧 v0.11.10 ZIP 不变。符合前提的首次安装按[指南第 9.5 节](../README_CLOUD_SERVER_DEPLOYMENT.md#95-v01110-已连通却回滚重试提示版本已存在)恢复 current 并启动，已正常运行无需重装。
 
 ## 服务器更新
 
