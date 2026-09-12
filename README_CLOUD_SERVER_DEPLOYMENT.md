@@ -4,6 +4,8 @@
 
 ## 部署前必读（v0.11.10）
 
+**v0.11.10 已知安装器问题：** Windows PowerShell 5.1 可能将无 BOM 的 UTF-8 脚本按系统 ANSI 编码读取，误读中文就绪标记，造成网关已连通却被安装器停止并撤回 current。修复已在 main，既有 ZIP 不变；第九节遇到此情况按第 9.5 节检查，已正常运行的实例不需重装。
+
 新版包含录音 Chromium 安装与启动检查、百炼 qwen3.8-flash 思考开关修复、pip/npm 下载重试及依赖检查。部署以 GitHub main 在线文档为准；包内文档及 prepare_release.ps1 是构建时快照，下载固定值可能指向上一版，不作为新版下载入口。首次安装按第 2–9 节主流程，再完成第 10 节端到端验收；第 9.1–9.3 节仅为旧 v0.11.9 故障恢复，**新版本正常安装不执行这些恢复代码**。网络中断仍可能导致安装失败，保留错误及版本目录，不能直接删除 shared 或套用旧版恢复脚本。
 
 ### 百炼分析配置与已知故障
@@ -870,6 +872,36 @@ if ($LASTEXITCODE -ne 0) { throw '录音 Chromium 启动验证失败，请保留
 `--no-shell` 安装完整 Chromium，省略此通道不使用的独立 headless shell。[Playwright 浏览器说明](https://playwright.dev/python/docs/browsers)。下载通常位于当前账户的 `%LOCALAPPDATA%\ms-playwright`；更换运行账户、清理浏览器缓存或升级 Playwright 后，需要再次安装对应版本并验证。不要只凭下载到 100% 判定成功，必须看到 `Voice Chromium launch OK`。
 
 只有此检查成功才能将录音环境标为就绪。新续装脚本也会在写入 `READY_FOR_FIRST_START` 前完成这两项检查。若旧会话已经因 300 秒连接超时结束、成功连接次数为 0，补装后应在飞书重新发起录音，不能等待旧会话自行恢复。
+
+### 9.5 v0.11.10 已连通却回滚，重试提示版本已存在
+
+已确认的安装器 Bug：发布包 `v0.11.10-351fee9b773b` 中 `install_release.ps1` 是无 BOM 的 UTF-8 文件，健康检查直接使用中文字符串。Windows PowerShell 5.1 在代码页 936 下会误读该字符串，即使 UTF-8 日志已出现“飞书长连接已就绪”仍匹配失败。安装器随后停止网关、移除 current；首次安装没有旧版本可恢复，留下完整版本目录。再次执行安装因目录已存在而报 `Release is already installed`，这是覆盖保护，不能据此判断依赖未安装。
+
+main 已改为用 ASCII 源码中的 Unicode 码点构造就绪标记，并增加实际 Windows PowerShell 5.1 回归测试。**此修复尚未进入已发布的 v0.11.10 ZIP，不要修改服务器 releases/current 内的程序，也不要删除版本目录重装。**
+
+仅当以下条件全部成立时，才恢复首次启动入口：
+
+- 确认使用上述正式发布包，Python/Node/模型及 Chromium 检查已通过，依赖清单存在；
+- 本次安装日志出现“飞书长连接已就绪”，错误日志无异常；旧日志本身不能证明本次启动成功；
+- 当前没有 current，也没有相关网关进程；没有旧版本需要回滚。
+
+在原安装/运行账户的管理员 PowerShell 执行：
+
+```powershell
+$release = 'C:\OOPZ\releases\v0.11.10-351fee9b773b'
+$current = 'C:\OOPZ\current'
+$manifest = Get-Content -LiteralPath (Join-Path $release 'RELEASE_MANIFEST.json') -Raw | ConvertFrom-Json
+if ($manifest.git_commit -ne '351fee9b773bef557ef7c1326c74f5db4edc28de') { throw 'Unexpected release; stop.' }
+if (-not (Test-Path -LiteralPath (Join-Path $release 'DEPLOYED_PYTHON_PACKAGES.txt'))) { throw 'Dependency record missing; stop.' }
+if (Get-Item -LiteralPath $current -Force -ErrorAction SilentlyContinue) { throw 'current already exists; do not overwrite.' }
+$running = @(Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -like '*oopz_capture*' })
+if ($running.Count) { throw 'OOPZ process exists; stop to avoid duplicate startup.' }
+New-Item -ItemType Junction -Path $current -Target $release | Out-Null
+& (Join-Path $current 'scripts\start_feishu_windows.ps1') -Lifecycle restarted
+if ($LASTEXITCODE -ne 0) { throw 'Startup failed; preserve logs for diagnosis.' }
+```
+
+随后确认飞书收到重启消息、状态指令正常，再按第 10 节验证录音、转写和分析。已经恢复正常的实例无需重复执行；依赖中途失败、当前版本仍在运行或日志报其他错误时，不适用此恢复步骤。此操作只恢复版本入口，不修改代码、依赖或 shared 数据。
 
 ## 10. 部署后验证
 

@@ -7,6 +7,14 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Test-OopzGatewayReady {
+    param([string]$LogText)
+    # ASCII source avoids ANSI decoding of UTF-8 without BOM in PowerShell 5.1.
+    $marker = -join ([char[]]@(0x98DE,0x4E66,0x957F,0x8FDE,0x63A5,0x5DF2,0x5C31,0x7EEA))
+    return $LogText.Contains($marker)
+}
+
 $artifactPath = [System.IO.Path]::GetFullPath($Artifact)
 $installRootPath = [System.IO.Path]::GetFullPath($InstallRoot)
 if (-not (Test-Path -LiteralPath $artifactPath -PathType Leaf)) { throw "Artifact not found: $artifactPath" }
@@ -145,7 +153,7 @@ try {
                     $stream.Seek($oldLogLength, 'Begin') | Out-Null
                     $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8, $true, 4096, $true)
                     try { $newLog = $reader.ReadToEnd() } finally { $reader.Dispose() }
-                    if ($newLog -match '飞书长连接已就绪') { $healthy = $true; break }
+                    if (Test-OopzGatewayReady $newLog) { $healthy = $true; break }
                 }
             }
             finally { $stream.Dispose() }

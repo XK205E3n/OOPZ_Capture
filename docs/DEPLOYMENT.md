@@ -46,6 +46,10 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare_release.ps
 
 已经下载的正式 ZIP 和校验文件可放入服务器 `C:\OOPZ\artifacts`，脚本会跳过下载但仍进行校验。若未来仓库改回私有，匿名访问失败时需要取得合法授权或安全传入已下载的包，不能绕过认证。完整流程见根目录部署指南。
 
+## v0.11.10 首次启动误判
+
+已确认 Windows PowerShell 5.1 对无 BOM UTF-8 安装器的中文就绪标记解码错误，可能在网关已连通后误回滚。main 已改为 ASCII 源码构造 Unicode 标记；现有 ZIP 不变。符合前提的首次安装按[指南第 9.5 节](../README_CLOUD_SERVER_DEPLOYMENT.md#95-v01110-已连通却回滚重试提示版本已存在)恢复 current 并启动，已正常运行无需重装。
+
 ## 服务器更新
 
 以管理员 PowerShell 执行发布包内或运维目录中的脚本：
