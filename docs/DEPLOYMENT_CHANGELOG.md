@@ -6,6 +6,8 @@
 
 ## 0.11.11 — 2026-09-12
 
+- 发布包提交 `3f077e0ddc4d`；在线部署指南与准备脚本固定到新版 ZIP 和 SHA-256，构建复测 202 passed、1 skipped。无服务器自动部署。
+
 Release：[v0.11.11](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.11)。包含安装器编码修复与最低 4 vCPU / 8 GiB 部署要求；无配置或数据迁移。
 
 ### 2026-09-12 — 修复：PowerShell 5.1 安装健康检查误判
