@@ -8,7 +8,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID, NAMESPACE_URL, uuid4, uuid5
 
 from .browser_probe import AgoraBrowserProbe, PROBE_VERSION
 from .identity import build_identity_mappings
@@ -45,7 +45,10 @@ def no_text_marker(session_dir: Path) -> dict[str, Any]:
         session.get("capture_clock_started_at") or session.get("started_at")
     ).replace("Z", "+00:00"))
     return {
-        "segment_id": "no-speech",
+        "segment_id": str(uuid5(NAMESPACE_URL, json.dumps([
+            "oopz:no-speech:v1", session_dir.name, session.get("session_id"),
+            started.isoformat(), duration_ms,
+        ], ensure_ascii=True))),
         "session_id": str(session.get("session_id") or session_dir.name),
         "start_ms": 0,
         "end_ms": duration_ms,

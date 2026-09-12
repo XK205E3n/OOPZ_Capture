@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from uuid import UUID
+from uuid import UUID, NAMESPACE_URL, uuid5
 
 from .analysis_windows import (
     LONG_WINDOW_MS,
@@ -135,6 +135,20 @@ def _load_transcript(path: Path, session_id: str) -> list[dict[str, Any]]:
             missing = required.difference(value)
             if missing:
                 raise ValueError(f"transcript line {line_number} is missing {sorted(missing)}")
+            # Compatibility for the exact silent-chunk sentinel written by old
+            # releases. Normalize only in memory; retain source files/hashes.
+            if (
+                value["segment_id"] == "no-speech"
+                and value.get("transcript_source") == "no-speech-marker"
+                and value.get("language") == "none"
+                and value.get("agora_uid") == 0
+                and value.get("oopz_uid") == ""
+                and value.get("text") == "[该时间段未检测到有效语音文本]"
+            ):
+                value["segment_id"] = str(uuid5(NAMESPACE_URL, json.dumps([
+                    "oopz:legacy-no-speech:v1", session_id, value.get("chunk_id"),
+                    int(value["start_ms"]), int(value["end_ms"]),
+                ], ensure_ascii=True)))
             segment_id = _uuid(value["segment_id"], f"transcript line {line_number} segment_id")
             if segment_id in segment_ids:
                 raise ValueError(f"duplicate transcript segment_id: {segment_id}")
