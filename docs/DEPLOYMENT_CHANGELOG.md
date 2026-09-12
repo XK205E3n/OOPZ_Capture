@@ -6,6 +6,8 @@
 
 ## 0.11.13 — 2026-09-12
 
+- 正式包提交 `9bf093db9a6e`；在线部署指南及准备脚本同步固定版本与 SHA-256，构建复测 218 passed、1 skipped。
+
 Release：[v0.11.13](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.13)。
 
 ### 2026-09-12 — 分析：内容审核拦截时拆分一次并标明缺失
