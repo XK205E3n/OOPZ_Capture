@@ -283,7 +283,7 @@ npm.cmd --version
 
 截至 2026-09-10，仓库为 Public，已实际验证匿名访问正式附件成功。服务器不需要执行 `gh auth login`，不需要 Token，也不需要克隆仓库。若未来访问返回 401/403/404，请核对网络和仓库可见性；私有资源不能靠换命令绕过授权。
 
-在管理员 PowerShell 中复制执行以下代码。它匿名下载当前 **v0.11.13** 正式 ZIP 和校验文件到 `C:\OOPZ\artifacts`，同时与这里固定的 SHA-256 比对，再验证清单和提取内容。已下载的同名文件放入该目录后会自动跳过下载；文件不符则停止，不覆盖。
+在管理员 PowerShell 中复制执行以下代码。它匿名下载当前 **v0.11.14** 正式 ZIP 和校验文件到 `C:\OOPZ\artifacts`，同时与这里固定的 SHA-256 比对，再验证清单和提取内容。已下载的同名文件放入该目录后会自动跳过下载；文件不符则停止，不覆盖。
 
 此步骤还会建立持久目录、从已校验的包提取管理脚本，并生成后续命令使用的 `deployment-inputs.json`。不执行软件安装或启动网关。将来升级版本时应同步修改审核过的标签、文件名、提交和 SHA-256，不能只换标签或使用滚动的 latest 文件冒充固定版本。
 
@@ -295,11 +295,11 @@ $ErrorActionPreference = 'Stop'
 
 function Get-OopzPinnedRelease {
     return @{
-        Tag = 'v0.11.13'
-        File = 'oopz-capture-v0.11.13-9bf093db9a6e.zip'
-        Sha256 = '129a60d1943328bead4a6a39b67b977ca7bf789d60dab94eae695aa6e24a0e65'
-        Commit = '9bf093db9a6eba4c4ae25dd7a730c388df8e2cf5'
-        ReleaseId = 'v0.11.13-9bf093db9a6e'
+        Tag = 'v0.11.14'
+        File = 'oopz-capture-v0.11.14-934f916eeda8.zip'
+        Sha256 = 'c8e1aab0ba1ba2aef48264931cc87e3f6fe36faf0b4c85a086f929d9edff0c2e'
+        Commit = '934f916eeda869011c9c57fddde9f96f138d281a'
+        ReleaseId = 'v0.11.14-934f916eeda8'
     }
 }
 
@@ -367,8 +367,8 @@ if ($MyInvocation.InvocationName -ne '.') { Initialize-OopzRelease $InstallRoot 
 <!-- prepare-release-copy:end -->
 
 以上代码与 [scripts/prepare_release.ps1](scripts/prepare_release.ps1) 一致。官方下载为：
-- [正式 ZIP](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.13/oopz-capture-v0.11.13-9bf093db9a6e.zip)
-- [SHA-256](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.13/oopz-capture-v0.11.13-9bf093db9a6e.zip.sha256)
+- [正式 ZIP](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.14/oopz-capture-v0.11.14-934f916eeda8.zip)
+- [SHA-256](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.14/oopz-capture-v0.11.14-934f916eeda8.zip.sha256)
 
 ## 4. 持久目录已自动建立
 
