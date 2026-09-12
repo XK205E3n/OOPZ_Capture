@@ -919,6 +919,21 @@ v0.11.13 起，短窗口遭遇服务端 `data_inspection_failed` 时按时间中
 
 升级方式仍是第 3 节获取新版、第 9 节主安装流程安装新版；先结束运行中的录音/分析任务，保留 shared。重启后从飞书“待分析”重试原会话。无需修改 .env、重录或重转写。服务端未返回被拒绝请求的用量时，报告不提供完整费用估算。
 
+### 9.8 更换供应商与并行配置
+
+**本节描述 main 已修复、尚未发布的行为；现有 v0.11.13 正式包仍有非 OpenCode Go 强制串行限制。待新版发布并升级后，**所有支持的接入模式（deepseek、opencode-go、openai-compatible）均读取 `OOPZ_ANALYSIS_MAX_PARALLELISM`，范围 1–8，默认 4。这个值是短窗口/长窗口任务的最大并行数；任务不足、读取缓存、请求间隔限制或仅剩最终综合时，实际同时请求数可以更小。半段拆分在其所属任务内顺序执行，不另开超出并行上限的线程。
+
+- `ANALYZER_BASE_URL`、`ANALYZER_API_KEY`、`ANALYZER_MODEL`：后续 API 请求使用当前配置；供应商品牌不同但接口为 Chat Completions 时选 openai-compatible，不能直接填写任意品牌作为 provider。
+- `ANALYZER_TIMEOUT_SECONDS`、`ANALYZER_MAX_RETRIES`、`ANALYZER_MIN_INTERVAL_SECONDS`：分别控制单次网络等待、可重试错误的重试次数、共享请求调度器的最小启动间隔。内容审核、认证等不可重试错误不因 MAX_RETRIES 反复调用。
+- `ANALYZER_MAX_TOKENS`：非思考阶段的初始输出预算；`ANALYZER_THINKING_MAX_TOKENS`：实际开启思考的最终综合初始预算。截断时保留现有有界预算递增重试行为，不是保证输出字数，也不是硬性总用量上限。
+- `ANALYZER_THINKING_MODE`：disabled 关闭支持的思考开关；enabled 允许最终综合按阶段启用思考，短/长摘要仍不思考；auto 保留接入模式的默认选择。
+- 新的可选 `ANALYZER_THINKING_FORMAT=auto`：auto 保留现有识别规则；更换兼容代理/模型后可显式选 qwen（enable_thinking）或 deepseek（thinking.type）。standard 不发送厂商思考字段，不能保证服务端默认关闭思考，也不能与 enabled 组合使用。显式格式必须由所选服务支持，否则会收到服务端参数错误。
+- `ANALYZER_JSON_MODE`：是否发送 response_format=json_object；false 不表示应用可以接受非 JSON 摘要，模型返回仍必须符合报告字段要求。
+
+修改 `.env` 后重启网关，系统进程环境变量优先于同名 `.env` 值。不要为了让并行生效而冒用 provider 或更换凭据。任意供应商的非兼容协议、模型限额及厂商不支持的扩展参数不属于自动兼容范围。
+
+生成相关设置（供应商、URL、模型、思考协议/模式、JSON 模式、Token 预算）区分缓存；key、超时、重试、间隔和并行度变化只影响后续请求，仍可复用已有成功摘要。首次升级到包含本次修复的版本 因缓存字段和初始预算修正可能重新分析旧窗口，原始转写不变。
+
 ## 10. 部署后验证
 
 确认发布清单：

@@ -25,6 +25,7 @@
   ],
   "large_file_threshold_bytes": 5242880,
   "known_findings": [
+    {"path":"tests/test_provider_settings.py","signature":"nonempty-secret-assignment","fingerprint":"c83a762975d2abb6","reason":"逐项复核：config().api_key 来自运行时随机 UUID 测试凭据，不读取真实配置或包含硬编码密钥。"},
     {"path":"src/oopz_capture/feishu_setup.py","signature":"nonempty-secret-assignment","fingerprint":"90b66fde7e6c58f2","reason":"已逐项复核并获用户确认：注册响应字段引用，不含硬编码凭据。"},
     {"path":"tests/test_deepseek_client.py","signature":"nonempty-secret-assignment","fingerprint":"e3ccdc5abd1b2c90","reason":"已逐项复核并获用户确认：UUID 生成的测试虚构值。"},
     {"path":"tests/test_deepseek_client.py","signature":"nonempty-secret-assignment","fingerprint":"a671b3a1c6a64563","reason":"已逐项复核并获用户确认：测试变量引用。"},

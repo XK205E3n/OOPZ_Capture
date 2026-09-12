@@ -139,10 +139,7 @@ def _client_profile(client: JSONModelClient) -> dict[str, Any]:
 
 
 def _window_parallelism(client: JSONModelClient) -> int:
-    """Return a bounded worker count only for independent OpenCode Go calls."""
-    config = getattr(client, "config", None)
-    if str(getattr(config, "provider", "")) != OPENCODE_GO_PROVIDER:
-        return 1
+    """All providers share the same explicit concurrency setting."""
     raw = os.environ.get("OOPZ_ANALYSIS_MAX_PARALLELISM", "4").strip()
     try:
         workers = int(raw)
@@ -151,6 +148,14 @@ def _window_parallelism(client: JSONModelClient) -> int:
     if not 1 <= workers <= 8:
         raise ValueError("OOPZ_ANALYSIS_MAX_PARALLELISM must be an integer from 1 to 8")
     return workers
+
+
+def _stage_tokens(client, thinking, fallback):
+    config = getattr(client, "config", None)
+    mode = getattr(config, "thinking_mode", "auto")
+    enabled = mode == "enabled" or (mode == "auto" and getattr(config, "provider", "") == "deepseek")
+    name = "thinking_max_tokens" if thinking == "enabled" and enabled else "max_tokens"
+    return getattr(config, name, fallback)
 
 
 def _analysis_fingerprint(value: AnalyzerInput, profile: dict[str, Any]) -> str:
@@ -426,7 +431,7 @@ def _short_with_content_fallback(value, window, client, analysis_fingerprint):
         system, user = _short_prompt(value, part)
         return client.complete_json(
             system_prompt=system, user_prompt=user, required_keys=SHORT_REQUIRED,
-            thinking="disabled", reasoning_effort=None, max_tokens=SHORT_MAX_TOKENS,
+            thinking="disabled", reasoning_effort=None, max_tokens=_stage_tokens(client, "disabled", SHORT_MAX_TOKENS),
         )
 
     try:
@@ -820,17 +825,17 @@ def _analysis_policy(client: JSONModelClient) -> dict[str, Any]:
     policy: dict[str, Any] = {
         "short_summaries": {
             "thinking": "disabled", "reasoning_effort": None,
-            "initial_max_tokens": SHORT_MAX_TOKENS,
+            "initial_max_tokens": _stage_tokens(client, "disabled", SHORT_MAX_TOKENS),
         },
         "long_summaries": {
             "thinking": "disabled", "reasoning_effort": None,
-            "initial_max_tokens": LONG_MAX_TOKENS,
+            "initial_max_tokens": _stage_tokens(client, "disabled", LONG_MAX_TOKENS),
         },
         "final_overview": {
             "thinking": "enabled",
             "reasoning_effort": "high",
             "reasoning_effort_note": "lowest level supported by the OpenAI-compatible analysis adapter",
-            "initial_max_tokens": FINAL_THINKING_MAX_TOKENS,
+            "initial_max_tokens": _stage_tokens(client, "enabled", FINAL_THINKING_MAX_TOKENS),
         },
     }
     custom = getattr(client, "stage_policy", None)
@@ -1244,6 +1249,9 @@ def run_analysis(
 ) -> dict[str, Any]:
     prepared = prepare_analysis(handoff_path)
     value = load_analyzer_input(handoff_path)
+    session_setter = getattr(client, "set_analysis_session", None)
+    if callable(session_setter):
+        session_setter(value.session_id)
     analysis_dir, report_messages_path, output_prefix = _variant_paths(value, variant)
     lock_path = analysis_dir / ".run.lock"
     lifecycle_path = analysis_dir / "lifecycle.json"
@@ -1447,7 +1455,7 @@ def run_analysis(
                     required_keys=LONG_REQUIRED,
                     thinking="disabled",
                     reasoning_effort=None,
-                    max_tokens=LONG_MAX_TOKENS,
+                    max_tokens=_stage_tokens(client, "disabled", LONG_MAX_TOKENS),
                 )
                 summary = _make_long(value, window, response, children, analysis_fingerprint)
                 _atomic_json(output, summary)
@@ -1500,7 +1508,7 @@ def run_analysis(
                 required_keys=FINAL_REQUIRED,
                 thinking="enabled",
                 reasoning_effort="high",
-                max_tokens=FINAL_THINKING_MAX_TOKENS,
+                max_tokens=_stage_tokens(client, "enabled", FINAL_THINKING_MAX_TOKENS),
             )
             overview = _normalized_content(response["content"], FINAL_REQUIRED)
             final_model = response["metadata"]

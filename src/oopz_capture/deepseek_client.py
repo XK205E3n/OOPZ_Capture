@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 
 class AnalysisAPIError(RuntimeError):
@@ -58,6 +59,7 @@ class DeepSeekConfig:
     # therefore use normal chat-completions fields unless explicitly enabled.
     thinking_mode: str = "auto"
     json_mode: bool = True
+    thinking_format: str = "auto"
 
     @classmethod
     def from_env(cls) -> "DeepSeekConfig":
@@ -109,11 +111,17 @@ class DeepSeekConfig:
             raise ValueError("ANALYZER_MAX_TOKENS must be 128 to 384000")
         if not 128 <= thinking_max_tokens <= 384000:
             raise ValueError("ANALYZER_THINKING_MAX_TOKENS must be 128 to 384000")
+        thinking_format = os.environ.get("ANALYZER_THINKING_FORMAT", "auto").strip().lower()
+        if thinking_format not in {"auto", "standard", "deepseek", "qwen"}:
+            raise ValueError("ANALYZER_THINKING_FORMAT must be auto, standard, deepseek, or qwen")
+        if thinking_format == "standard" and thinking_mode == "enabled":
+            raise ValueError("standard thinking format cannot explicitly enable thinking; select the provider's format")
         return cls(
             api_key=api_key, base_url=base_url, model=model,
             timeout_seconds=timeout, max_retries=retries, min_interval_seconds=interval,
             max_tokens=max_tokens, thinking_max_tokens=thinking_max_tokens,
             provider=provider, thinking_mode=thinking_mode, json_mode=json_mode_raw == "true",
+            thinking_format=thinking_format,
         )
 
     @property
@@ -243,6 +251,7 @@ class DeepSeekClient:
         limiter: RateLimiter | None = None,
     ):
         self.config = config
+        self.session_id = str(uuid4())
         self.transport = transport
         self.sleeper = sleeper
         self.random_source = random_source
@@ -254,7 +263,22 @@ class DeepSeekClient:
             "provider": self.config.provider,
             "model": self.config.model,
             "base_url": self.config.base_url,
+            "thinking_mode": self.config.thinking_mode,
+            "thinking_format": self.config.thinking_format,
+            "json_mode": self.config.json_mode,
+            "max_tokens": self.config.max_tokens,
+            "thinking_max_tokens": self.config.thinking_max_tokens,
         }
+
+    def set_analysis_session(self, session_id: str) -> None:
+        self.session_id = str(uuid5(NAMESPACE_URL, "oopz-analysis:" + session_id))
+
+    def stage_policy(self) -> dict[str, Any]:
+        enabled = self.config.thinking_mode == "enabled" or (
+            self.config.thinking_mode == "auto" and self.config.provider == "deepseek"
+        )
+        return {"final_overview": {"thinking": "enabled" if enabled else "disabled",
+                "reasoning_effort": "high" if enabled else None}}
 
     def complete_json(
         self,
@@ -280,6 +304,8 @@ class DeepSeekClient:
             and self.config.model.lower() == "qwen3.8-flash"
             and (host == "dashscope.aliyuncs.com" or host.endswith(".maas.aliyuncs.com"))
         )
+        if self.config.thinking_format != "auto":
+            qwen_thinking = self.config.thinking_format == "qwen"
         supports_thinking = self.config.thinking_mode == "enabled" or (
             self.config.thinking_mode == "auto" and self.config.provider == "deepseek"
         )
@@ -302,8 +328,10 @@ class DeepSeekClient:
             # Qwen defaults to reasoning even when vendor fields are omitted.
             # Keep auto's existing non-thinking behavior explicit on the wire.
             payload["enable_thinking"] = effective_thinking == "enabled"
-        elif supports_thinking:
-            payload["thinking"] = {"type": thinking}
+        elif self.config.thinking_format == "deepseek" or (
+            self.config.thinking_format == "auto" and (supports_thinking or self.config.provider == "deepseek")
+        ):
+            payload["thinking"] = {"type": effective_thinking}
         if effective_thinking == "disabled":
             payload["temperature"] = 0.1
         elif not qwen_thinking:
@@ -314,6 +342,8 @@ class DeepSeekClient:
             "Accept": "application/json",
             "User-Agent": "oopz-analyzer/0.1",
         }
+        if host == "opencode.ai":
+            headers["x-opencode-session"] = self.session_id
         last_error: Exception | None = None
         accumulated_usage: dict[str, Any] = {}
         usage_by_request: list[dict[str, Any]] = []
