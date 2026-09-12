@@ -3,11 +3,11 @@ $ErrorActionPreference = 'Stop'
 
 function Get-OopzPinnedRelease {
     return @{
-        Tag = 'v0.11.9'
-        File = 'oopz-capture-v0.11.9-5769293b3236.zip'
-        Sha256 = '31f349ebd021af2d416d99157c7cfca96f324c9cc8cd5c6f53d4f6777b27e4de'
-        Commit = '5769293b3236460d24bc0553561fa3ac68ae79be'
-        ReleaseId = 'v0.11.9-5769293b3236'
+        Tag = 'v0.11.10'
+        File = 'oopz-capture-v0.11.10-351fee9b773b.zip'
+        Sha256 = '585b9e141bdef2f5439c3da5426aa61b8f3031566160902f81de0af83cfc1081'
+        Commit = '351fee9b773bef557ef7c1326c74f5db4edc28de'
+        ReleaseId = 'v0.11.10-351fee9b773b'
     }
 }
 

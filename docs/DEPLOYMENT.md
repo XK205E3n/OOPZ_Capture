@@ -38,7 +38,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build_release.ps1
 
 脚本会拒绝脏工作区，重新运行测试，从 `HEAD` 生成 `artifacts\oopz-capture-v<version>-<commit>.zip` 和同名 `.sha256`。只上传这两个文件；模型不进入发布包，由服务器从指定开源仓库获取。
 
-ZIP 和 SHA-256 作为同一标签的 GitHub Release 附件。服务器主流程为 PowerShell 匿名下载和固定哈希校验，完整可复制代码见从零部署第 3 节；已经取得新版脚本时也可以运行：
+ZIP 和 SHA-256 作为同一标签的 GitHub Release 附件。服务器主流程为 PowerShell 匿名下载和固定哈希校验，完整可复制代码见从零部署第 3 节；只有从 GitHub main 取得最新版准备脚本时才可以运行（不要使用旧 ZIP 内的 prepare_release.ps1，包内固定值是构建时快照）：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\prepare_release.ps1
