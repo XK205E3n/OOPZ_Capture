@@ -60,12 +60,14 @@ try {
     & $PythonExe -m venv (Join-Path $releasePath '.venv')
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the release virtual environment.' }
     $releasePython = Join-Path $releasePath '.venv\Scripts\python.exe'
-    & $releasePython -m pip install --upgrade pip
+    & $releasePython -m pip --isolated install --index-url https://pypi.org/simple --timeout 120 --retries 5 --upgrade pip
     if ($LASTEXITCODE -ne 0) { throw 'Could not upgrade pip.' }
     Push-Location $releasePath
     try {
-        & $releasePython -m pip install -e '.[speech,feishu]'
+        & $releasePython -m pip --isolated install --index-url https://pypi.org/simple --timeout 120 --retries 5 -e '.[speech,feishu]'
         if ($LASTEXITCODE -ne 0) { throw 'Python dependency installation failed.' }
+        & $releasePython -m pip check
+        if ($LASTEXITCODE -ne 0) { throw 'Python dependency consistency check failed.' }
         # System Edge/Chrome used for PDF does not satisfy the SDK's chromium channel.
         & $releasePython -m playwright install --no-shell chromium
         if ($LASTEXITCODE -ne 0) { throw 'Voice Chromium installation failed; current was not switched.' }
@@ -76,8 +78,33 @@ try {
         if (-not (Test-Path -LiteralPath (Join-Path $modelPath 'model.pt') -PathType Leaf)) {
             throw "SenseVoiceSmall setup did not create the expected model: $modelPath"
         }
-        & npx.cmd --yes pnpm@10.15.0 install --frozen-lockfile --ignore-scripts
-        if ($LASTEXITCODE -ne 0) { throw 'Node dependency installation failed.' }
+        # npx's pnpm bootstrap and pnpm's package fetches both need retry settings.
+        $npmSettings = @{
+            npm_config_registry = 'https://registry.npmjs.org'
+            npm_config_fetch_retries = '5'
+            npm_config_fetch_retry_mintimeout = '10000'
+            npm_config_fetch_retry_maxtimeout = '60000'
+            npm_config_fetch_timeout = '600000'
+            npm_config_strict_ssl = 'true'
+        }
+        $savedNpm = @{}
+        foreach ($name in $npmSettings.Keys) {
+            $savedNpm[$name] = [Environment]::GetEnvironmentVariable($name, 'Process')
+        }
+        try {
+            foreach ($name in $npmSettings.Keys) {
+                [Environment]::SetEnvironmentVariable($name, $npmSettings[$name], 'Process')
+            }
+            & npx.cmd --yes pnpm@10.15.0 install --frozen-lockfile --ignore-scripts --registry=https://registry.npmjs.org --fetch-retries=5 --fetch-timeout=600000 --network-concurrency=4
+            if ($LASTEXITCODE -ne 0) { throw 'Node dependency installation failed; preserve this release and shared data for diagnosis.' }
+        }
+        finally {
+            foreach ($name in $savedNpm.Keys) {
+                [Environment]::SetEnvironmentVariable($name, $savedNpm[$name], 'Process')
+            }
+        }
+        & (Join-Path $releasePath 'tools\node\node.exe') --input-type=module -e "await import('md-to-pdf'); console.log('Node report dependency OK')"
+        if ($LASTEXITCODE -ne 0) { throw 'Node report dependency import failed.' }
         & $releasePython -m pip freeze | Set-Content -LiteralPath (Join-Path $releasePath 'DEPLOYED_PYTHON_PACKAGES.txt') -Encoding utf8
         & $releasePython -c "import oopz_capture; import lark_oapi; import funasr; print('imports ok')"
         if ($LASTEXITCODE -ne 0) { throw 'Release import smoke test failed.' }

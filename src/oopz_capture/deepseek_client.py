@@ -8,6 +8,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from dataclasses import dataclass, field, replace
 from datetime import datetime, timezone
 from typing import Any, Callable, Protocol
@@ -255,6 +256,12 @@ class DeepSeekClient:
             raise ValueError("thinking mode requires reasoning_effort high or max")
         if max_tokens is not None and not 128 <= max_tokens <= 384000:
             raise ValueError("max_tokens must be 128 to 384000")
+        host = urlsplit(self.config.base_url).hostname or ""
+        qwen_thinking = (
+            self.config.provider == "openai-compatible"
+            and self.config.model.lower() == "qwen3.8-flash"
+            and (host == "dashscope.aliyuncs.com" or host.endswith(".maas.aliyuncs.com"))
+        )
         supports_thinking = self.config.thinking_mode == "enabled" or (
             self.config.thinking_mode == "auto" and self.config.provider == "deepseek"
         )
@@ -273,11 +280,15 @@ class DeepSeekClient:
         }
         if self.config.json_mode:
             payload["response_format"] = {"type": "json_object"}
-        if supports_thinking:
+        if qwen_thinking:
+            # Qwen defaults to reasoning even when vendor fields are omitted.
+            # Keep auto's existing non-thinking behavior explicit on the wire.
+            payload["enable_thinking"] = effective_thinking == "enabled"
+        elif supports_thinking:
             payload["thinking"] = {"type": thinking}
         if effective_thinking == "disabled":
             payload["temperature"] = 0.1
-        else:
+        elif not qwen_thinking:
             payload["reasoning_effort"] = reasoning_effort
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
@@ -335,7 +346,7 @@ class DeepSeekClient:
                         "requested_at": last_requested_at,
                         "usage_by_request": usage_by_request,
                         "thinking": effective_thinking,
-                        "reasoning_effort": reasoning_effort if effective_thinking == "enabled" else None,
+                        "reasoning_effort": reasoning_effort if effective_thinking == "enabled" and not qwen_thinking else None,
                         "max_tokens": payload["max_tokens"],
                         "attempts": attempt + 1,
                     },

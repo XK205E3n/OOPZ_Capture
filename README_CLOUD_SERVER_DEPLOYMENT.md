@@ -2,6 +2,19 @@
 
 本文说明如何通过 PowerShell 从公开 GitHub Release 匿名获取经过测试的 OOPZ Capture 发布包，准备配置并部署到 Windows 云服务器，再安全更新或回滚。下载不需要 GitHub 登录，业务账户授权仍须由使用者完成。
 
+## 部署前必读（v0.11.10）
+
+新版包含录音 Chromium 安装与启动检查、百炼 qwen3.8-flash 思考开关修复、pip/npm 下载重试及依赖检查。首次安装按第 2–9 节主流程，再完成第 10 节端到端验收；第 9.1–9.3 节仅为旧 v0.11.9 故障恢复，**新版本正常安装不执行这些恢复代码**。网络中断仍可能导致安装失败，保留错误及版本目录，不能直接删除 shared 或套用旧版恢复脚本。
+
+### 百炼分析配置与已知故障
+
+- `ANALYZER_PROVIDER=openai-compatible`、`ANALYZER_MODEL=qwen3.8-flash`、`ANALYZER_THINKING_MODE=disabled`、`ANALYZER_TIMEOUT_SECONDS=180`、`ANALYZER_MAX_RETRIES=3`。其余必填项按账户配置保留。180 秒为单次网络等待参数，3 次重试加首次请求最多 4 次；不是整个分析任务的总时限。
+- v0.11.10 对百炼官方兼容端点的该模型发送 `enable_thinking=false`，避免“配置关闭但实际仍思考”；旧版仅改 `.env` 不能修复此问题。`auto` 同样显式关闭，`enabled` 按阶段发送开关；其他模型或代理地址不承诺支持这个厂商参数。[官方思考模式说明](https://help.aliyun.com/zh/model-studio/deep-thinking)
+- **401 是账户/地址匹配问题**：常规百炼 API 与 Token Plan 的密钥、入口不能混用，应从当前账户控制台复制对应地域的兼容 Base URL，勿手动追加两遍 `/chat/completions`。本次交互诊断使用的 Token Plan 北京入口为 `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`；常规 API 请使用其控制台提供的地址。
+- Token Plan 个人版有交互式编程工具使用范围限制，自动录音后的后台批量分析应使用允许该用途的常规 API 服务，不能把诊断连通成功等同于后台使用获准。[服务说明](https://help.aliyun.com/zh/model-studio/token-plan-personal-overview)
+- 修改配置后重启网关；已有非空配置不会被配置向导自动覆盖，升级程序也不会自动把 60 秒改成 180 秒。在本机准备的云部署 `.env` 中已单独调整该超时，复制到服务器时保留实际业务配置。
+- 单次客户端模拟材料测试不代替新服务器真实会话验收。若仍超时，保留分析进度和检查点，区分网络、窗口长度与服务端耗时；增加 CPU 不能保证远端 API 更快。
+
 ## 1. 部署模型
 
 ```text

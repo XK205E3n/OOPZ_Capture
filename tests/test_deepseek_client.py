@@ -180,6 +180,52 @@ def test_short_summary_disables_thinking_and_uses_temperature() -> None:
     assert result["metadata"]["reasoning_effort"] is None
 
 
+@pytest.mark.parametrize("mode,stage,expected", [
+    ("disabled", "enabled", False), ("auto", "enabled", False),
+    ("enabled", "enabled", True), ("enabled", "disabled", False),
+])
+@pytest.mark.parametrize("base_url", [
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1",
+])
+def test_qwen_thinking_switch_reaches_bailian(mode, stage, expected, base_url):
+    observed = {}
+
+    def transport(endpoint, headers, payload, timeout):
+        observed.update(payload)
+        assert timeout == 180
+        return success({"summary": "ok"})
+
+    result = DeepSeekClient(config(
+        provider="openai-compatible", model="qwen3.8-flash", base_url=base_url,
+        thinking_mode=mode, timeout_seconds=180,
+    ), transport=transport).complete_json(
+        system_prompt="Return JSON.", user_prompt="Produce JSON.",
+        required_keys={"summary": str}, thinking=stage,
+    )
+    assert observed["enable_thinking"] is expected
+    assert "thinking" not in observed
+    assert "reasoning_effort" not in observed
+    assert result["metadata"]["thinking"] == ("enabled" if expected else "disabled")
+
+
+@pytest.mark.parametrize("host", ["api.example.test", "dashscope.aliyuncs.com.example.test"])
+def test_qwen_vendor_fields_do_not_leak_to_unrecognized_endpoint(host):
+    observed = {}
+
+    def transport(endpoint, headers, payload, timeout):
+        observed.update(payload)
+        return success({"summary": "ok"})
+
+    DeepSeekClient(config(
+        provider="openai-compatible", model="qwen3.8-flash",
+        base_url=f"https://{host}/v1", thinking_mode="disabled",
+    ), transport=transport).complete_json(
+        system_prompt="Return JSON.", user_prompt="Produce JSON.", required_keys={},
+    )
+    assert "enable_thinking" not in observed
+
+
 def test_long_summary_enables_high_reasoning_without_temperature() -> None:
     observed = {}
 
