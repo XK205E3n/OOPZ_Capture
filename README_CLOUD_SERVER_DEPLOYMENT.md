@@ -17,6 +17,8 @@
 - 修改配置后重启网关；已有非空配置不会被配置向导自动覆盖，升级程序也不会自动把 60 秒改成 180 秒。在本机准备的云部署 `.env` 中已单独调整该超时，复制到服务器时保留实际业务配置。
 - 单次客户端模拟材料测试不代替新服务器真实会话验收。若仍超时，保留分析进度和检查点，区分网络、窗口长度与服务端耗时；增加 CPU 不能保证远端 API 更快。
 
+当前生产分析接入（2026-09-21）：`ANALYZER_PROVIDER=deepseek`、`ANALYZER_BASE_URL=https://api.deepseek.com`、`ANALYZER_MODEL=deepseek-flash`，仅使用 Flash，不使用 Pro。最新费用与峰谷规则见[运维说明](docs/OPERATIONS.md#deepseek-官方-flash-费用参考2026-09-21-核验)；价格修正代码仍待新包发布。
+
 ## 1. 部署模型
 
 ```text

@@ -137,7 +137,7 @@ def _analysis_usage_notice(analysis_output: Any) -> str | None:
         total = stages.get("total") if isinstance(stages, dict) else None
         value = total.get("estimated_cost_rmb") if isinstance(total, dict) else None
         try:
-            return text + f"参考等价值：¥{float(value):.6f}（按报告内标注的参考单价估算）。"
+            return text + f"参考等价值：¥{float(value):.6f}（按报告标注的 DeepSeek Flash 当前峰谷参考单价估算，非实际账单）。"
         except (TypeError, ValueError):
             return text + "参考等价值：暂不可估算。"
     return text + "参考等价值：当前模型没有已核验参考单价，未估算。"

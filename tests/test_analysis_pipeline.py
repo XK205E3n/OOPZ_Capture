@@ -296,10 +296,10 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert usage["total"] == result["model"]["usage"]
     costs = result["model"]["cost_estimate"]
     assert costs["status"] == "estimated"
-    assert costs["pricing_effective_at_beijing"] == "2026-08-17T00:00:00+08:00"
-    assert costs["contains_pre_effective_requests"] is True
-    assert costs["stages"]["short_summaries"]["estimated_cost_rmb"] == 0.0000573
-    assert costs["total_estimated_cost_rmb"] == 0.0001146
+    assert costs["pricing_verified_on"] == "2026-09-21"
+    assert costs["holiday_calendar_complete"] is True
+    assert costs["stages"]["short_summaries"]["estimated_cost_rmb"] == 0.00004612
+    assert costs["total_estimated_cost_rmb"] == 0.00009224
     assert costs["stages"]["total"]["pricing_periods"]["off_peak"]["billing_records"] == 4
     assert costs["stages"]["total"]["pricing_periods"]["peak"]["billing_records"] == 0
     assert all(item["topics"] == [] for item in result["short_summaries"])
@@ -315,7 +315,7 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "# 2026-08-13 13:10:03至2026-08-13 13:20:03OOPZ频道聊天整理与总结" in report
     assert "### 2026-08-13 13:10:03–13:15:03" in report
     assert "## Token 使用与费用估算" in report
-    assert "计划于北京时间 2026-08-17 00:00 生效的新峰谷价格" in report
+    assert "2026-09-21" in report
     assert "不代表当前实际账单" in report
     assert "时段依据是每次 API 请求发生的北京时间，不是录音时间" in report
     assert "非高峰" in report and "峰谷计价明细" not in report
@@ -323,7 +323,7 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert "推理 Token 已包含在输出 Token 中，不重复计费" in report
     assert "官方价格文档：https://api-docs.deepseek.com/zh-cn/quick_start/pricing/" in report
     assert report.rstrip().endswith("https://api-docs.deepseek.com/zh-cn/quick_start/pricing/")
-    assert result["report_format_version"] == "3.9.0"
+    assert result["report_format_version"] == "3.10.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 整体性总结" in public_report
     assert "### 按时间顺序的进展" in public_report
@@ -376,7 +376,7 @@ def test_existing_analysis_is_rerendered_without_model_calls(tmp_path: Path) -> 
     assert "### 2026-08-13 13:10:03–13:15:03" in report
     assert "## Token 使用与费用估算" in report
     assert refreshed["result"]["model"]["cost_estimate"]["status"] == "estimated"
-    assert refreshed["result"]["report_format_version"] == "3.9.0"
+    assert refreshed["result"]["report_format_version"] == "3.10.0"
     public_report = output["report_path"].with_name("summary.public.md").read_text(encoding="utf-8")
     assert "### 不确定内容" not in public_report
     assert "测试-uncertainties" not in public_report
@@ -393,12 +393,12 @@ def test_cost_estimate_splits_api_requests_across_peak_and_off_peak(tmp_path: Pa
     output = run_analysis(handoff, client)
     costs = output["result"]["model"]["cost_estimate"]
 
-    assert costs["contains_pre_effective_requests"] is False
+    assert costs["holiday_calendar_complete"] is True
     assert costs["stages"]["short_summaries"]["pricing_periods"]["off_peak"]["billing_records"] == 1
     assert costs["stages"]["short_summaries"]["pricing_periods"]["peak"]["billing_records"] == 1
     assert costs["stages"]["long_summaries"]["pricing_periods"]["off_peak"]["billing_records"] == 1
     assert costs["stages"]["final_overview"]["pricing_periods"]["peak"]["billing_records"] == 1
-    assert costs["total_estimated_cost_rmb"] == 0.0001719
+    assert costs["total_estimated_cost_rmb"] == 0.00013836
     report = output["report_path"].read_text(encoding="utf-8")
     assert "300秒总结：非高峰 1次" in report
     assert "300秒总结：" in report and "高峰 1次" in report

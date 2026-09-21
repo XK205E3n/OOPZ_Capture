@@ -80,20 +80,22 @@ FINAL_REQUIRED = {
     "uncertainties": list,
 }
 ANALYSIS_PIPELINE_VERSION = "2.7.0"
-REPORT_FORMAT_VERSION = "3.9.0"
+REPORT_FORMAT_VERSION = "3.10.0"
 BEIJING_TIMEZONE = timezone(timedelta(hours=8))
 LOGGER = logging.getLogger(__name__)
 FINAL_THINKING_MAX_TOKENS = 4096
 SHORT_MAX_TOKENS = 1024
 LONG_MAX_TOKENS = 2048
-DEEPSEEK_V4_FLASH_MODEL = "deepseek-v4-flash"
+DEEPSEEK_FLASH_MODEL = "deepseek-flash"
+DEEPSEEK_FLASH_ALIASES = {"deepseek-flash", "deepseek-v4-flash", "deepseek-v4-flash-vision-exp"}
 DEEPSEEK_PRICING_SOURCE = "https://api-docs.deepseek.com/zh-cn/quick_start/pricing/"
-DEEPSEEK_PRICING_VERIFIED_ON = "2026-08-13"
-DEEPSEEK_NEW_PRICING_EFFECTIVE_AT = "2026-08-17T00:00:00+08:00"
+DEEPSEEK_PRICING_VERIFIED_ON = "2026-09-21"
+# Published 2026 holiday ranges; weekends remain off-peak even on make-up workdays.
+DEEPSEEK_HOLIDAY_RANGES_2026 = ((101, 103), (215, 223), (404, 406), (501, 505), (619, 621), (925, 927), (1001, 1007))
 DEEPSEEK_PEAK_PERIODS = ((9, 12), (14, 18))
 DEEPSEEK_PRICING_RATES = {
-    "off_peak": {"prompt_cache_hit": 0.05, "prompt_cache_miss": 1.5, "completion": 4.5},
-    "peak": {"prompt_cache_hit": 0.10, "prompt_cache_miss": 3.0, "completion": 9.0},
+    "off_peak": {"prompt_cache_hit": 0.02, "prompt_cache_miss": 1.0, "completion": 4.0},
+    "peak": {"prompt_cache_hit": 0.04, "prompt_cache_miss": 2.0, "completion": 8.0},
 }
 CHANNEL_CONTEXT_PROMPT = (
     "频道语境：这是朋友之间的现实日常生活交流和多人游戏游玩交流。"
@@ -915,6 +917,9 @@ def _parse_datetime(value: Any) -> datetime | None:
 
 def _pricing_period(value: datetime) -> str:
     local = value.astimezone(BEIJING_TIMEZONE)
+    day = local.month * 100 + local.day
+    if local.weekday() >= 5 or (local.year == 2026 and any(a <= day <= b for a, b in DEEPSEEK_HOLIDAY_RANGES_2026)):
+        return "off_peak"
     for start_hour, end_hour in DEEPSEEK_PEAK_PERIODS:
         if start_hour <= local.hour < end_hour:
             return "peak"
@@ -963,10 +968,12 @@ def _model_usage_records(model: dict[str, Any], fallback_at: datetime) -> list[d
 
 
 def _is_deepseek_billing_record(model: dict[str, Any]) -> bool:
-    return DEEPSEEK_V4_FLASH_MODEL in {
-        str(model.get("model_requested") or ""),
-        str(model.get("model_returned") or ""),
-    }
+    requested = str(model.get("model_requested") or "")
+    returned = str(model.get("model_returned") or "")
+    # Never apply Flash rates to a response identifying itself as Pro/another model.
+    return (requested in DEEPSEEK_FLASH_ALIASES or returned in DEEPSEEK_FLASH_ALIASES) and (
+        not returned or returned in DEEPSEEK_FLASH_ALIASES
+    )
 
 
 def _stage_cost_by_period(models: list[dict[str, Any]], fallback_at: datetime) -> dict[str, Any]:
@@ -991,7 +998,6 @@ def _stage_cost_by_period(models: list[dict[str, Any]], fallback_at: datetime) -
     sources: dict[str, int] = {}
     for record in records:
         sources[record["time_source"]] = sources.get(record["time_source"], 0) + 1
-    effective_at = datetime.fromisoformat(DEEPSEEK_NEW_PRICING_EFFECTIVE_AT)
     return {
         "prompt_cache_unclassified_tokens": sum(
             item["prompt_cache_unclassified_tokens"] for item in period_values.values()
@@ -1002,7 +1008,7 @@ def _stage_cost_by_period(models: list[dict[str, Any]], fallback_at: datetime) -
         "billing_records": len(records),
         "request_time_sources": sources,
         "request_time_range_beijing": {"first": min(times), "last": max(times)} if times else None,
-        "contains_pre_effective_requests": any(record["requested_at"] < effective_at for record in records),
+        "holiday_calendar_complete": all(record["requested_at"].astimezone(BEIJING_TIMEZONE).year == 2026 for record in records),
         "pricing_periods": period_values,
     }
 
@@ -1022,10 +1028,10 @@ def _estimate_costs(
     }
     if OPENCODE_GO_PROVIDER in providers:
         return _estimate_opencode_go_costs(model, usage_by_stage, stage_models)
-    supported = model == DEEPSEEK_V4_FLASH_MODEL or any(
-        _is_deepseek_billing_record(item)
-        for values in stage_models.values()
-        for item in values
+    billable = [item for item in stage_models["total"]
+                if item.get("provider") != "deterministic" and item.get("usage_counted") is not False]
+    supported = all(_is_deepseek_billing_record(item) for item in billable) and (
+        bool(billable) or model in DEEPSEEK_FLASH_ALIASES
     )
     if isinstance(fallback_at, datetime):
         fallback = fallback_at
@@ -1038,20 +1044,20 @@ def _estimate_costs(
     return {
         "status": "estimated" if supported else "unavailable",
         "requested_model": model,
-        "pricing_model": DEEPSEEK_V4_FLASH_MODEL,
+        "pricing_model": DEEPSEEK_FLASH_MODEL,
         "currency": "CNY",
         "pricing_verified_on": DEEPSEEK_PRICING_VERIFIED_ON,
         "pricing_source": DEEPSEEK_PRICING_SOURCE,
-        "pricing_policy": "scheduled_peak_off_peak_used_before_effective_date_by_user_request",
-        "pricing_effective_at_beijing": DEEPSEEK_NEW_PRICING_EFFECTIVE_AT,
+        "pricing_policy": "current_flash_reference_snapshot_not_historical_invoice",
+        "holiday_calendar_years": [2026],
         "timezone": "Asia/Shanghai",
         "request_time_basis": "API request time, not recording time",
-        "peak_periods_beijing": ["09:00–12:00", "14:00–18:00"],
+        "peak_periods_beijing": ["周一至周五且非法定节假日 09:00–12:00", "周一至周五且非法定节假日 14:00–18:00"],
         "off_peak_periods_beijing": ["00:00–09:00", "12:00–14:00", "18:00–24:00"],
         "rates_rmb_per_million_tokens": DEEPSEEK_PRICING_RATES,
         "unclassified_prompt_pricing": "cache_miss",
         "stages": stages,
-        "contains_pre_effective_requests": stages["total"]["contains_pre_effective_requests"],
+        "holiday_calendar_complete": stages["total"]["holiday_calendar_complete"],
         "total_estimated_cost_rmb": stages["total"]["estimated_cost_rmb"] if supported else None,
     }
 
@@ -1158,19 +1164,20 @@ def _render_usage_summary(
         lines.append("")
         return
     lines.append(
-        f"计价基准：`{cost_estimate['pricing_model']}`。本报告按 DeepSeek 公布、计划于北京时间 "
-        f"2026-08-17 00:00 生效的新峰谷价格估算；即使请求发生在生效前也按新价格计算，"
-        f"因此不代表当前实际账单。价格核验日期：{cost_estimate['pricing_verified_on']}。"
+        f"计价基准：`{cost_estimate['pricing_model']}`（DeepSeek 官方 Flash）。"
+        f"按 {cost_estimate['pricing_verified_on']} 核验的当前参考单价估算，不代表当前实际账单，也不用于还原历史账单。"
     )
     lines.append(
         "时段依据是每次 API 请求发生的北京时间，不是录音时间："
-        "高峰时段 09:00–12:00、14:00–18:00；其余为非高峰时段。"
+        "周一至周五且非中国法定节假日的 09:00–12:00、14:00–18:00 为高峰；其余时间、周末及节假日为空闲时段。"
     )
-    lines.append(
-        "非高峰单价：缓存命中输入 ¥0.05/百万 tokens、缓存未命中输入 ¥1.5/百万 tokens、"
-        "输出 ¥4.5/百万 tokens；高峰单价：缓存命中输入 ¥0.10/百万 tokens、"
-        "缓存未命中输入 ¥3/百万 tokens、输出 ¥9/百万 tokens。"
-    )
+    rates = cost_estimate["rates_rmb_per_million_tokens"]
+    for period, label in (("off_peak", "空闲"), ("peak", "高峰")):
+        rate = rates[period]
+        lines.append(f"{label}单价：缓存命中输入 ¥{rate['prompt_cache_hit']:g}/百万 tokens、"
+                     f"缓存未命中输入 ¥{rate['prompt_cache_miss']:g}/百万 tokens、输出 ¥{rate['completion']:g}/百万 tokens。")
+    if not cost_estimate.get("holiday_calendar_complete", True):
+        lines.append("节假日日历仅核验到 2026 年；其他年份未扣除法定节假日，需按账单复核。")
     request_range = cost_estimate["stages"]["total"].get("request_time_range_beijing")
     if request_range:
         lines.append(
