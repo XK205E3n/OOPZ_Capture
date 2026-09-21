@@ -2,7 +2,7 @@
 
 本文说明如何通过 PowerShell 从公开 GitHub Release 匿名获取经过测试的 OOPZ Capture 发布包，准备配置并部署到 Windows 云服务器，再安全更新或回滚。下载不需要 GitHub 登录，业务账户授权仍须由使用者完成。
 
-## 部署前必读（v0.11.14）
+## 部署前必读（v0.11.15）
 
 **v0.11.10 已知安装器问题：** Windows PowerShell 5.1 可能将无 BOM 的 UTF-8 脚本按系统 ANSI 编码读取，误读中文就绪标记，造成网关已连通却被安装器停止并撤回 current。修复纳入 v0.11.11，旧 v0.11.10 ZIP 不变；第九节遇到此情况按第 9.5 节检查，已正常运行的实例不需重装。
 
@@ -17,7 +17,7 @@
 - 修改配置后重启网关；已有非空配置不会被配置向导自动覆盖，升级程序也不会自动把 60 秒改成 180 秒。在本机准备的云部署 `.env` 中已单独调整该超时，复制到服务器时保留实际业务配置。
 - 单次客户端模拟材料测试不代替新服务器真实会话验收。若仍超时，保留分析进度和检查点，区分网络、窗口长度与服务端耗时；增加 CPU 不能保证远端 API 更快。
 
-当前生产分析接入（2026-09-21）：`ANALYZER_PROVIDER=deepseek`、`ANALYZER_BASE_URL=https://api.deepseek.com`、`ANALYZER_MODEL=deepseek-flash`，仅使用 Flash，不使用 Pro。最新费用与峰谷规则见[运维说明](docs/OPERATIONS.md#deepseek-官方-flash-费用参考2026-09-21-核验)；价格修正代码仍待新包发布。
+当前生产分析接入（2026-09-21）：`ANALYZER_PROVIDER=deepseek`、`ANALYZER_BASE_URL=https://api.deepseek.com`、`ANALYZER_MODEL=deepseek-flash`，仅使用 Flash，不使用 Pro。最新费用与峰谷规则见[运维说明](docs/OPERATIONS.md#deepseek-官方-flash-费用参考2026-09-21-核验)；价格修正已纳入 v0.11.15。
 
 ## 1. 部署模型
 
@@ -285,7 +285,7 @@ npm.cmd --version
 
 截至 2026-09-10，仓库为 Public，已实际验证匿名访问正式附件成功。服务器不需要执行 `gh auth login`，不需要 Token，也不需要克隆仓库。若未来访问返回 401/403/404，请核对网络和仓库可见性；私有资源不能靠换命令绕过授权。
 
-在管理员 PowerShell 中复制执行以下代码。它匿名下载当前 **v0.11.14** 正式 ZIP 和校验文件到 `C:\OOPZ\artifacts`，同时与这里固定的 SHA-256 比对，再验证清单和提取内容。已下载的同名文件放入该目录后会自动跳过下载；文件不符则停止，不覆盖。
+在管理员 PowerShell 中复制执行以下代码。它匿名下载当前 **v0.11.15** 正式 ZIP 和校验文件到 `C:\OOPZ\artifacts`，同时与这里固定的 SHA-256 比对，再验证清单和提取内容。已下载的同名文件放入该目录后会自动跳过下载；文件不符则停止，不覆盖。
 
 此步骤还会建立持久目录、从已校验的包提取管理脚本，并生成后续命令使用的 `deployment-inputs.json`。不执行软件安装或启动网关。将来升级版本时应同步修改审核过的标签、文件名、提交和 SHA-256，不能只换标签或使用滚动的 latest 文件冒充固定版本。
 
@@ -297,11 +297,11 @@ $ErrorActionPreference = 'Stop'
 
 function Get-OopzPinnedRelease {
     return @{
-        Tag = 'v0.11.14'
-        File = 'oopz-capture-v0.11.14-934f916eeda8.zip'
-        Sha256 = 'c8e1aab0ba1ba2aef48264931cc87e3f6fe36faf0b4c85a086f929d9edff0c2e'
-        Commit = '934f916eeda869011c9c57fddde9f96f138d281a'
-        ReleaseId = 'v0.11.14-934f916eeda8'
+        Tag = 'v0.11.15'
+        File = 'oopz-capture-v0.11.15-3be0c95a5a5a.zip'
+        Sha256 = '68c983d4880753323aae4268b6be5d180fcf2ed55b4298d327ffd6723db701e9'
+        Commit = '3be0c95a5a5a200048e25e5139236dac00d27baf'
+        ReleaseId = 'v0.11.15-3be0c95a5a5a'
     }
 }
 
@@ -369,8 +369,8 @@ if ($MyInvocation.InvocationName -ne '.') { Initialize-OopzRelease $InstallRoot 
 <!-- prepare-release-copy:end -->
 
 以上代码与 [scripts/prepare_release.ps1](scripts/prepare_release.ps1) 一致。官方下载为：
-- [正式 ZIP](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.14/oopz-capture-v0.11.14-934f916eeda8.zip)
-- [SHA-256](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.14/oopz-capture-v0.11.14-934f916eeda8.zip.sha256)
+- [正式 ZIP](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.15/oopz-capture-v0.11.15-3be0c95a5a5a.zip)
+- [SHA-256](https://github.com/XK205E3n/OOPZ_Capture/releases/download/v0.11.15/oopz-capture-v0.11.15-3be0c95a5a5a.zip.sha256)
 
 ## 4. 持久目录已自动建立
 
