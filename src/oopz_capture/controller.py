@@ -137,10 +137,14 @@ def _analysis_usage_notice(analysis_output: Any) -> str | None:
         total = stages.get("total") if isinstance(stages, dict) else None
         value = total.get("estimated_cost_rmb") if isinstance(total, dict) else None
         try:
-            return text + f"参考等价值：¥{float(value):.6f}（按报告标注的 DeepSeek Flash 当前峰谷参考单价估算，非实际账单）。"
+            verified = str(estimate.get("pricing_verified_on") or "")
+            date_note = f"；价格核验 {verified}" if verified else ""
+            return text + f"预估费用：¥{float(value):.6f}（DeepSeek Flash，按请求发生时的北京时间峰谷价计算{date_note}；以官方账单为准）。"
         except (TypeError, ValueError):
-            return text + "参考等价值：暂不可估算。"
-    return text + "参考等价值：当前模型没有已核验参考单价，未估算。"
+            return text + "预估费用：用量或金额数据不完整，暂不可估算。"
+    if estimate.get("reason") == "content-rejected request usage is unavailable":
+        return text + "预估费用：部分被审核拒绝的请求未返回用量，无法给出完整费用。"
+    return text + "预估费用：当前模型或接入渠道没有匹配的已核验价格，未估算。"
 
 
 def _configured_analysis_label() -> str:

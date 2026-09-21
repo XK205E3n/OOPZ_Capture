@@ -28,3 +28,29 @@ def test_pro_never_uses_flash_price():
     assert not _is_deepseek_billing_record({'model_requested':'deepseek-flash','model_returned':'deepseek-v4-pro'})
     assert not _is_deepseek_billing_record({'model_requested':'deepseek-v4-pro'})
     assert _is_deepseek_billing_record({'model_requested':'deepseek-flash','model_returned':'deepseek-flash'})
+
+
+def test_feishu_notice_displays_flash_amount_and_price_date():
+    from oopz_capture.controller import _analysis_usage_notice
+    usage = {'prompt_tokens': 2000000, 'prompt_cache_hit_tokens': 1000000,
+             'prompt_cache_miss_tokens': 1000000, 'completion_tokens': 1000000,
+             'total_tokens': 3000000}
+    cost = _stage_cost(usage, DEEPSEEK_PRICING_RATES['off_peak'])
+    output = {'result': {'model': {'usage': usage, 'cost_estimate': {
+        'status': 'estimated', 'pricing_verified_on': '2026-09-21',
+        'stages': {'total': cost},
+    }}}}
+    text = _analysis_usage_notice(output)
+    assert '预估费用：¥5.020000' in text
+    assert 'DeepSeek Flash' in text and '2026-09-21' in text
+    assert '没有已核验' not in text and '参考等价值' not in text
+
+
+def test_missing_usage_does_not_claim_price_is_unknown():
+    from oopz_capture.controller import _analysis_usage_notice
+    text = _analysis_usage_notice({'result': {'model': {
+        'usage': {}, 'cost_estimate': {'status': 'unavailable',
+        'reason': 'content-rejected request usage is unavailable'},
+    }}})
+    assert '未返回用量' in text
+    assert '没有匹配' not in text
