@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
-import { statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -38,14 +39,39 @@ const CHROME_CANDIDATES_BY_PLATFORM = {
   darwin: DARWIN_CHROME_CANDIDATES,
 };
 
+// On a clean Ubuntu install the only Chromium on the box is the one the
+// Playwright voice backend already installed under the service user's cache,
+// so it is the first automatic candidate; distro browsers follow.
+function playwrightChromiumCandidates(env, listDir = (dir) => {
+  try { return readdirSync(dir); } catch { return []; }
+}) {
+  const home = env.HOME || os.homedir();
+  if (!home) return [];
+  // POSIX-only candidates: build with "/" so behavior does not depend on the
+  // host running the lookup (tests exercise this branch from Windows).
+  const cacheRoot = `${home.replace(/\\/g, "/")}/.cache/ms-playwright`;
+  return listDir(cacheRoot)
+    .filter((name) => name.startsWith("chromium"))
+    .sort()
+    .reverse()
+    .flatMap((name) => [
+      `${cacheRoot}/${name}/chrome-linux/chrome`,
+      `${cacheRoot}/${name}/chrome-headless-shell`,
+    ]);
+}
+
 export function findChrome(env = process.env, isFile = (file) => {
   try { return statSync(file).isFile(); } catch { return false; }
-}, platform = process.platform) {
+}, platform = process.platform, listDir) {
   if (env.MD_TO_PDF_CHROME_PATH) {
     if (!isFile(env.MD_TO_PDF_CHROME_PATH)) throw new Error("MD_TO_PDF_CHROME_PATH is not an existing browser executable");
     return env.MD_TO_PDF_CHROME_PATH;
   }
-  const candidates = CHROME_CANDIDATES_BY_PLATFORM[platform] ?? LINUX_CHROME_CANDIDATES;
+  const distroCandidates = CHROME_CANDIDATES_BY_PLATFORM[platform] ?? LINUX_CHROME_CANDIDATES;
+  const candidates = [
+    ...(platform === "linux" || platform === "darwin" ? playwrightChromiumCandidates(env, listDir) : []),
+    ...distroCandidates,
+  ];
   const browser = candidates.find(isFile);
   if (!browser) throw new Error("PDF browser missing: install Chrome/Edge/Chromium or set MD_TO_PDF_CHROME_PATH");
   return browser;

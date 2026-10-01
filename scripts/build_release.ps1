@@ -90,6 +90,9 @@ try {
                 'scripts/linux/install_release.sh',
                 'scripts/linux/update_release.sh',
                 'scripts/linux/rollback_release.sh',
+                'scripts/linux/check_active_tasks.py',
+                'scripts/linux/verify_artifact.py',
+                'scripts/linux/check_node.py',
                 'scripts/linux/oopz-capture.service',
                 'scripts/linux/oopz-capture.logrotate'
             )) {

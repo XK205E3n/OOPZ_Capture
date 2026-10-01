@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import shutil
 import subprocess
@@ -26,6 +27,37 @@ LINUX_SCRIPT_MODES = {
     "scripts/linux/update_release.sh": "100755",
     "scripts/linux/rollback_release.sh": "100755",
 }
+
+
+def _find_bash() -> str | None:
+    bash = shutil.which("bash")
+    if bash is None and sys.platform == "win32":
+        candidate = Path(os.environ.get("ProgramFiles", "C:/Program Files")) / "Git/bin/bash.exe"
+        if candidate.is_file():
+            bash = str(candidate)
+    return bash
+
+
+def test_linux_installer_checks_node_dependencies_in_release_directory(tmp_path: Path) -> None:
+    """The caller's cwd must not decide which release's dependencies are checked."""
+    bash = _find_bash()
+    if bash is None:
+        pytest.skip("bash is not installed")
+    node = pdf_reports.resolve_node_path()
+    release = tmp_path / "release with spaces"
+    package = release / "node_modules/md-to-pdf"
+    package.mkdir(parents=True)
+    (package / "package.json").write_text(json.dumps({"name": "md-to-pdf", "main": "index.js"}), encoding="utf-8")
+    (package / "index.js").write_text("console.log('REVIEW_FIXTURE_SELECTED'); module.exports = {};\n", encoding="utf-8")
+    caller = tmp_path / "outside-release"
+    caller.mkdir()
+    installer = (PROJECT_ROOT / "scripts/linux/install_release.sh").read_text(encoding="utf-8")
+    command = next(line for line in installer.splitlines() if "--input-type=module" in line).rstrip().removesuffix("\\").rstrip()
+    env = {**os.environ, "RELEASE_PATH": release.as_posix(), "NODE_BIN": node.as_posix()}
+    result = subprocess.run([bash, "-c", command], cwd=caller, env=env, capture_output=True, text=True, timeout=30)
+    assert result.returncode == 0, result.stderr
+    assert "REVIEW_FIXTURE_SELECTED" in result.stdout
+    assert "Node report dependency OK" in result.stdout
 
 
 # --- L03: PDF Node runtime resolution ---------------------------------------
@@ -181,6 +213,31 @@ def test_serve_gateway_skips_loop_when_stop_already_requested() -> None:
     assert gateway.drain_calls == 0
 
 
+def test_find_chrome_prefers_playwright_cache_before_distro_paths() -> None:
+    node = pdf_reports.resolve_node_path()
+    if not node.is_file():
+        pytest.skip("Node runtime is not installed in tools/node or on PATH")
+    program = r'''import {findChrome} from './tools/md_to_pdf.mjs';
+import assert from 'node:assert/strict';
+const dirs = {'/home/oopz/.cache/ms-playwright': ['chromium-1234', 'chromium-9999']};
+const files = new Set([
+  '/home/oopz/.cache/ms-playwright/chromium-9999/chrome-linux/chrome',
+  '/usr/bin/chromium',
+]);
+const listed = (dir) => dirs[dir] || [];
+// newest playwright build wins over the distro chromium
+assert.equal(
+  findChrome({HOME: '/home/oopz'}, (f) => files.has(f), 'linux', listed),
+  '/home/oopz/.cache/ms-playwright/chromium-9999/chrome-linux/chrome');
+// empty cache falls back to distro candidates
+assert.equal(
+  findChrome({HOME: '/home/oopz'}, (f) => f === '/usr/bin/chromium', 'linux', () => []),
+  '/usr/bin/chromium');
+'''
+    result = _run_node_program(program)
+    assert result.returncode == 0, result.stderr
+
+
 def test_sigterm_handler_installation_degrades_on_windows() -> None:
     from oopz_capture.feishu_cli import _install_sigterm_stop
 
@@ -221,13 +278,13 @@ def test_linux_scripts_are_staged_executable() -> None:
         modes[path] = _mode
     for relative, mode in LINUX_SCRIPT_MODES.items():
         assert modes.get(relative) == mode, (
-            f"{relative} must be committed with mode {mode} so the release ZIP "
-            "extracts it as executable on Linux (git update-index --chmod=+x)"
+            f"{relative} must be committed with mode {mode} so a Linux Git "
+            "checkout can execute it (git update-index --chmod=+x)"
         )
 
 
 def test_linux_scripts_pass_bash_syntax_check() -> None:
-    bash = shutil.which("bash")
+    bash = _find_bash()
     if not bash:
         pytest.skip("bash is not available on this machine")
     for relative in LINUX_SCRIPTS:

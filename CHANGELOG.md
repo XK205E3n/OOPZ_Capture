@@ -6,6 +6,18 @@
 
 ## 未发布
 
+### 2026-10-01 — 修复：Ubuntu 适配审查问题 R1–R6
+
+- R1 Node ≥22.12.0 契约：前置脚本改用系统达标链接或固定 Node 22 LTS tarball（官方校验和验证），安装器加 `check_node.py` 门槛；R2 更新器先由受信任代码校验再执行新包并按文件名配对校验附件；R3 安装/回滚分阶段事务，准备失败不动旧服务，切换后失败全量恢复链接/单元/服务状态；R4 新增 `check_active_tasks.py` 覆盖后台分析、分析锁、损坏状态与迁移 PID 巧合，安装器双重检查时机；R5 `findChrome` 增加 Playwright 缓存候选并在安装时以服务用户真实渲染中文 PDF；R6 新增 `--prepare-only`/`--activate` 与 `.prepare-complete` 标记，绑定等待不再被健康超时回滚。
+- 新增 41 项测试：`tests/test_linux_guard_tools.py`（guard/verify/node 单元行为）、`tests/test_linux_deployment_flow.py`（bash 隔离注入失败并断言副作用）、findChrome Playwright 优先级；重写 `docs/DEPLOYMENT_UBUNTU.md`（分阶段 bootstrap、迁移绝对路径与锁处理、停止语义验收边界）。
+- 验证：Linux 相关测试全绿 + Windows 全量回归；Ubuntu 实机仍未验收（详见部署变更记录与 Ubuntu 指南状态声明）。
+
+### 2026-10-01 — 修复：Linux 安装器依赖检查目录与适配复核
+
+- `scripts/linux/install_release.sh` 的 Node 模块导入检查切换到新版本目录，避免从调用者目录加载其他版本依赖或误报缺失；新增实际执行 shell 检查命令的回归测试，修复前选错依赖、修复后选择新版依赖。
+- `tests/test_linux_portability.py` 支持查找 Windows Git Bash 运行语法检查，并纠正 Git checkout 可执行位与 ZIP 权限的说明；部署状态和 Ubuntu 指南标明仍存在的安装/更新阻塞，移除 Node 18 满足当前锁定依赖的错误结论。
+- 验证：全量 282 passed、1 skipped（当前 Windows 用户无符号链接创建权限）；四个 shell 脚本语法通过，隔离复现后台分析漏检、准备失败重启旧服务及更新校验前执行。仅修复上述小问题，其余阻塞尚待修复；影响 Linux 安装检查，不新增配置或数据迁移，未发布、未部署，Ubuntu 未实机验收。
+
 ### 2026-09-30 — 平行适配 Linux（Ubuntu 24.04 LTS）部署目标
 
 - 跨平台改造：`pdf_reports.py` 支持 `OOPZ_NODE_PATH` 并按平台查找/回退 Node 运行时；`tools/md_to_pdf.mjs` 浏览器查找增加 Linux/macOS 候选；飞书网关在 POSIX 将 SIGTERM 转为优雅停止，Windows 行为不变。

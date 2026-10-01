@@ -4,6 +4,24 @@
 
 ## 待发布
 
+### 2026-10-01 — 部署：Ubuntu 适配审查修复（R1–R6）
+
+- R1 Node 契约：前置脚本不再安装发行版 nodejs（18.x 违反 pnpm-lock 中 puppeteer 25.7.0 的 >=22.12.0）；系统 Node 达标则链接，否则下载固定 Node 22 LTS tarball（官方 SHASUMS256 校验）装入 `shared/tools/node-runtime`；安装器在准备阶段用 `check_node.py` 门槛拦截不兼容运行时。版本策略：改 `NODE_PIN`（保持 ≥22.12.0）并重跑前置。
+- R2 更新器信任模型：ZIP 与同名 `.zip.sha256` 按文件名精确配对下载后，由当前已安装代码先行校验，通过才提取/执行新包安装器；错误哈希、缺配对、截断包在执行前失败；保留 CRLF 兼容并对 helper 输出剥离 CR。
+- R3 事务：安装分为 PREPARE（不动服务/current/单元；失败保留目录、同包可重试，当前目标永不清除）与 ACTIVATE（guard→停服→单元→切换→启动→健康；任一失败恢复上一链接、按旧版本模板重写单元并仅当原服务在运行时重启；首次失败移除 current 与单元并 disable）。回滚脚本同样记录原状态并全量恢复。
+- R4 活动任务保护：新增 `check_active_tasks.py`——损坏 controller.json 拒绝切换；服务运行中 `active` 或 `last_job=analyzing` 拒绝；扫描 `analysis/.prepare.lock`、`.run.lock` 与 `analysis_variants/*/.run.lock`，活进程（Linux 校验 /proc 命令行属 python/oopz，排除迁移 PID 巧合）拒绝、死锁不阻塞；`--force` 仅显式传参。安装器在进入与停服前各检查一次。
+- R5 PDF 闭环：`findChrome` 增加 `$HOME/.cache/ms-playwright/chromium-*` 候选（新版本优先，POSIX 路径拼接）；安装器以服务用户真实渲染中文 PDF 作为准备门槛（HOME 与单元一致、透传 `MD_TO_PDF_CHROME_PATH`）。录音验收仍独立，不以 PDF 代替。
+- R6 bootstrap：新增 `--prepare-only`/`--activate` 分阶段模式与 `.prepare-complete` 标记；准备无需 `.env`；setup 指引改用 `releases/<id>/.venv`；未绑定控制群时健康检查接受首启绑定提示，不再误判回滚。
+- 测试：新增 `tests/test_linux_guard_tools.py`（23 项：guard 矩阵/锁/迁移巧合、verify CRLF/配对、Node 门槛与锁文件契约联动）与 `tests/test_linux_deployment_flow.py`（17 项 bash 隔离行为测试：真实脚本 + systemctl/runuser/node/npx/curl 等垫片，注入 pip/模型/Node/单元写入/启动/健康/校验失败并断言 systemctl 调用顺序、current 指向、单元内容）；findChrome 增加 Playwright 缓存优先级测试。
+- 文档：`docs/DEPLOYMENT_UBUNTU.md` 重写为分阶段 bootstrap 流程、Node 策略、PDF 闭环、迁移绝对路径（report_delivery/outbox）与机器 PID 锁处理、SIGTERM 实机验收边界；`build_release.ps1` 必需条目纳入三个新 helper。
+- 无配置契约变化（无新增必填项）；无数据迁移；Windows 行为不变。**Ubuntu 实机验收仍未进行**，bash 隔离测试不等于 systemd 验收。
+
+### 2026-10-01 — 修复：Linux 安装器 Node 检查目录与阻塞复核
+
+- 安装器在新版本目录执行 Node 依赖导入检查；增加行为回归测试，Windows Git Bash 可执行语法检查。部署状态和 Ubuntu 指南明确当前 Node 运行时契约及尚未修复的事务、活动任务保护、校验顺序、PDF 浏览器和首次配置问题。
+- 迁移与回滚：无配置契约、依赖或业务数据格式变化；无需数据迁移，回滚只恢复原安装检查行为。此改动不构成完整 Linux 安装流程已可用的证据。
+- 验证：全量 282 passed、1 skipped（Windows 符号链接权限限制）；隔离 shell 片段复现完成，四个脚本语法通过。未执行生产部署或真实 Ubuntu 验收，Linux 阻塞仍待修复。
+
 ### 2026-09-30 — 部署：平行适配 Linux（Ubuntu 24.04 LTS）运行目标
 
 - 跨平台核心改造：PDF Node 运行时解析支持 `OOPZ_NODE_PATH` 显式配置，按平台查找 `tools/node` 下运行时并回退系统 PATH（`src/oopz_capture/pdf_reports.py`）；`tools/md_to_pdf.mjs` 的 PDF 浏览器查找增加 Linux 与 macOS 候选，保留 `MD_TO_PDF_CHROME_PATH`；飞书网关在 POSIX 上将 SIGTERM 转为优雅停止（完成当前维护步骤后断开长连接、取消任务，未完成录音按既有中断可恢复语义持久化），Windows 行为不变。
