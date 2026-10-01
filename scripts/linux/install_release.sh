@@ -50,7 +50,9 @@ command -v npx >/dev/null 2>&1 || die "npx is missing; run scripts/linux/install
 command -v runuser >/dev/null 2>&1 || die "runuser is missing; install util-linux"
 
 log "Verifying SHA-256 of $(basename "$ARTIFACT")"
-(cd "$(dirname "$ARTIFACT")" && sha256sum -c "$(basename "$CHECKSUM")") \
+# Strip CR so checksum files produced with CRLF line endings still verify;
+# current builders write LF, older artifacts may not.
+(cd "$(dirname "$ARTIFACT")" && sed 's/\r$//' "$(basename "$CHECKSUM")" | sha256sum -c --strict -) \
   || die "SHA-256 mismatch; refusing to install the artifact."
 
 SHARED_ROOT="$INSTALL_ROOT/shared"
@@ -95,6 +97,9 @@ if [[ -e "$RELEASE_PATH" ]]; then
 fi
 mv "$INSPECT_ROOT" "$RELEASE_PATH"
 trap - EXIT
+# git archive ZIPs carry no Unix permission bits; make the shipped scripts
+# directly executable regardless of how the artifact was extracted.
+chmod +x "$RELEASE_PATH/scripts/linux/"*.sh 2>/dev/null || true
 log "Release extracted to $RELEASE_PATH"
 
 PREVIOUS_TARGET=""

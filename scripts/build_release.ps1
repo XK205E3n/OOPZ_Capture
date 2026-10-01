@@ -109,7 +109,8 @@ try {
     }
 
     $hash = (Get-FileHash -LiteralPath $artifact -Algorithm SHA256).Hash.ToLowerInvariant()
-    "$hash  $([System.IO.Path]::GetFileName($artifact))" | Set-Content -LiteralPath $checksumFile -Encoding ascii
+    # LF-terminated checksum line: sha256sum -c on Linux fails on CRLF files.
+    [System.IO.File]::WriteAllText($checksumFile, "$hash  $([System.IO.Path]::GetFileName($artifact))`n")
     [pscustomobject]@{ release_id = $releaseId; artifact = $artifact; sha256 = $hash; checksum_file = $checksumFile } | ConvertTo-Json
 }
 finally {

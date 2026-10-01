@@ -14,7 +14,7 @@
 ## 2. 与 Windows 部署的关系
 
 - 两种平台共用同一 Git 仓库、同一正式 Release ZIP 和同一套核心 Python/Node 代码；平台差异只存在于启动器（`.bat`/PowerShell ↔ systemd/bash）、路径与浏览器查找。
-- 正式发布包仍由 Windows 端 `scripts/build_release.ps1` 从干净 HEAD 构建，ZIP 内同时包含 Windows 与 Linux 部署文件（`.gitattributes` 保证 bash 脚本为 LF、git 索引保证脚本可执行位）。
+- 正式发布包仍由 Windows 端 `scripts/build_release.ps1` 从干净 HEAD 构建，ZIP 内同时包含 Windows 与 Linux 部署文件（`.gitattributes` 保证 bash 脚本为 LF；git 索引保留可执行位，在 Linux 上 `git clone` 可直接执行）。注意：`git archive` 生成的 ZIP 条目不携带 Unix 权限位，解压后的脚本统一以 `bash <script>` 方式调用（本指南全部命令均如此）；`install_release.sh` 解压后也会补 `chmod +x`。发布包附带的 `.sha256` 校验文件使用 LF 行尾，Linux `sha256sum -c` 可直接校验。
 - 服务器目录布局对齐 Windows 生产约定：`/opt/oopz/{releases,current,shared,artifacts}`，`shared` 保存 `.env`、模型、会话、飞书状态和日志；`current` 为指向 `releases/<release-id>` 的符号链接（Windows 上是 junction）。
 - 发布目录内的 `.env`、`models`、`output`、`feishu_state`、`logs`、`tools/node` 均为指向 `shared` 的符号链接；回滚不回滚数据。
 
