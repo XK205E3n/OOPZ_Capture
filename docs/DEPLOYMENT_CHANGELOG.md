@@ -4,6 +4,15 @@
 
 ## 待发布
 
+### 2026-10-01 — 实现：Ubuntu适配开发候选（未发布）
+
+- 增加Linux分阶段安装、共享配置、完整校验后helper提取、更新/回滚事务和systemd/logrotate模板；失败恢复实际文件/current及active/enabled状态，损坏锁与不可读任务树保守拒绝切换。
+- 跨平台Node/PDF浏览器/字体查找，Node最低22.12；新增OOPZ_ENV_FILE/OOPZ_NODE_PATH，保持Windows配置硬链接写回；SIGTERM停止接收新工作并排空自有任务。供应商、思考及分析提示词语义不变。
+- Debian13/Python3.12集成测试364 passed、9 skipped、2条既有SDK清理警告；CPU依赖、VAD和固定SenseVoice公开音频样本实测成功。Chromium被沙箱socket权限阻止，实际Ubuntu/systemd/Windows/飞书/API与数小时负载仍未验收。
+- 影响部署/配置/构建；正式包仍须干净已提交HEAD经build_release.ps1生成。release-audit技能不可用，仅补充基线扫描无命中，未提交/推送/发布或操作生产。迁移和回滚见docs/UBUNTU_DEPLOYMENT.md，验证边界见docs/UBUNTU_VALIDATION.md；共享数据不清理。
+
+
+
 ### 2026-10-01 — 文档：Ubuntu适配交接
 
 - 新增独立方案及接手任务，记录需求、已知草稿失败场景及Ubuntu实测边界；本次只交付文档，不包含本机未推送的Linux实现。

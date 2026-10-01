@@ -13,6 +13,8 @@ import re
 from pathlib import Path
 from urllib.parse import urlparse
 
+from .env_loader import project_env_path
+
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_ENV_PATH = _PROJECT_ROOT / ".env"
 
@@ -359,7 +361,7 @@ def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:
     value = _normalize_value(key, str(value or "").strip())
     if not SETTABLE_KEYS[key]["validator"](value):
         raise ValueError(f"变量 {key} 的值无效；要求：{SETTABLE_KEYS[key]['description']}")
-    path = env_path or _DEFAULT_ENV_PATH
+    path = project_env_path(env_path)
     loaded = _env_file_values(path)
     if key in {"OOPZ_RECONNECT_INITIAL_DELAY_SECONDS", "OOPZ_RECONNECT_MAX_DELAY_SECONDS"}:
         initial = float(value) if key == "OOPZ_RECONNECT_INITIAL_DELAY_SECONDS" else float(
@@ -377,7 +379,7 @@ def apply_setting(key: str, value: str, *, env_path: Path | None = None) -> str:
 
 def setting_status(env_path: Path | None = None) -> dict[str, str]:
     """Report configured values, substituting effective runtime defaults."""
-    path = env_path or _DEFAULT_ENV_PATH
+    path = project_env_path(env_path)
     loaded = _env_file_values(path)
     result: dict[str, str] = {}
     for key in KEY_ORDER:
@@ -402,11 +404,11 @@ def setting_is_configured(key: str, *, env_path: Path | None = None) -> bool:
     """Return whether a key has a non-empty process or .env value."""
     if str(os.environ.get(key) or "").strip():
         return True
-    return bool(_env_file_values(env_path or _DEFAULT_ENV_PATH).get(key))
+    return bool(_env_file_values(project_env_path(env_path)).get(key))
 
 def upsert_env(key: str, value: str, *, env_path: Path | None = None) -> None:
     """Write or update one KEY=VALUE line in the project .env (no whitelist)."""
     key = str(key or "").strip().upper()
     value = str(value or "").strip()
     os.environ[key] = value
-    _write_env_line(env_path or _DEFAULT_ENV_PATH, key, value)
+    _write_env_line(project_env_path(env_path), key, value)

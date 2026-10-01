@@ -78,11 +78,32 @@ try {
         try {
             foreach ($requiredEntry in @(
                 'RELEASE_MANIFEST.json',
+                'pyproject.toml',
+                '.env.example',
                 'scripts/install_release.ps1',
-                'scripts/download_sensevoice_model.py'
+                'scripts/download_sensevoice_model.py',
+                'scripts/linux/install_release.sh',
+                'scripts/linux/update_release.sh',
+                'scripts/linux/rollback_release.sh',
+                'scripts/linux/manage_release.py',
+                'scripts/linux/release_archive.py',
+                'scripts/linux/release_locks.py',
+                'scripts/linux/release_transaction.py',
+                'scripts/linux/prepare_dependencies.sh',
+                'scripts/linux/oopz-capture.service',
+                'scripts/linux/oopz-capture.logrotate'
             )) {
                 if ($null -eq $verification.GetEntry($requiredEntry)) {
                     throw "Release entry is missing: $requiredEntry"
+                }
+            }
+            foreach ($entry in $verification.Entries) {
+                if ($entry.FullName -match '^scripts/linux/.*\.sh$') {
+                    $reader = [System.IO.StreamReader]::new($entry.Open())
+                    try { $scriptText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+                    if ($scriptText.Contains("`r")) {
+                        throw "Linux shell script must use LF line endings: $($entry.FullName)"
+                    }
                 }
             }
             $blockedEntries = @($verification.Entries | Where-Object {

@@ -16,6 +16,18 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _DEFAULT_ENV_PATH = _PROJECT_ROOT / ".env"
 
 
+def project_env_path(env_path: Path | None = None) -> Path:
+    """Explicit argument > OOPZ_ENV_FILE > project .env; shell values win.
+
+    Relative paths are anchored to the release root, never the caller's cwd.
+    Do not resolve the final link: in-place writers preserve Windows hardlinks
+    and Linux shared-config symlinks alike.
+    """
+    selected = env_path if env_path is not None else os.environ.get("OOPZ_ENV_FILE") or _DEFAULT_ENV_PATH
+    path = Path(selected).expanduser()
+    return path if path.is_absolute() else _PROJECT_ROOT / path
+
+
 def load_project_env(env_path: Path | None = None) -> Path | None:
     """Load KEY=VALUE pairs from env_path (default: <project root>/.env).
 
@@ -23,7 +35,7 @@ def load_project_env(env_path: Path | None = None) -> Path | None:
     Blank lines and ``#`` comments are ignored; values may be wrapped in
     matching single or double quotes.
     """
-    path = Path(env_path) if env_path is not None else _DEFAULT_ENV_PATH
+    path = project_env_path(env_path)
     if not path.is_file():
         return None
     for raw in path.read_text(encoding="utf-8-sig").splitlines():
@@ -33,7 +45,7 @@ def load_project_env(env_path: Path | None = None) -> Path | None:
         key, _, value = line.partition("=")
         key = key.strip()
         value = value.strip()
-        if not key or key in os.environ:
+        if not key or key == "OOPZ_ENV_FILE" or key in os.environ:
             continue
         if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
             value = value[1:-1]

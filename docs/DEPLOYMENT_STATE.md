@@ -2,9 +2,11 @@
 
 > 这是本地代码与生产服务器差异的唯一事实来源。任何部署相关修改和每次生产发布都必须同步更新本文件。禁止记录密钥、密码、完整服务器地址或个人信息。
 
-更新时间：2026-09-21
+更新时间：2026-10-01
 
 ## 当前状态
+
+Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux安装事务和中断恢复，开发验证环境为Debian 13，非Ubuntu 24.04。CPU VAD及固定模型公开音频转写成功；Chromium被沙箱socket权限阻止。实际systemd、Windows回归、飞书/API及数小时负载未验收。未提交或发布正式包，生产仍保持原状。详见 [验证记录](UBUNTU_VALIDATION.md)。
 
 Ubuntu交接：2026-10-01新增 [适配方案](UBUNTU_ADAPTATION_PLAN.md) 与 [任务提示词](UBUNTU_ADAPTATION_TASK.md)。该文档分支仅包含需求交接，运行代码仍是Windows基线；本机Ubuntu草稿未随本次推送交付，Ubuntu实机验收未完成。下表的生产部署记录不因本次文档提交改变。
 
