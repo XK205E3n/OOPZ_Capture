@@ -141,6 +141,11 @@ sudo bash scripts/linux/rollback_release.sh \
 
 Before stopping anything, guards reject active tasks, corrupt/illegal PID locks,
 symlink locks and unreadable state. Only a valid demonstrably dead PID is stale.
+The guard also checks controller `last_job` and the analysis lifecycle's
+`analyzing_*`, `preparing_windows` and `building_final_report` stages. A registered
+background analysis is busy even before its lock exists. Completed/failed work
+and a standalone `prepared` window plan do not alone block a switch. An invalid
+controller/status shape is refused instead of being assumed idle.
 Do not use `--force` as a routine fix; it explicitly permits interrupting work and
 requires operator review of the job and data-recovery consequences.
 

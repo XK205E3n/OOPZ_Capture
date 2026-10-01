@@ -310,6 +310,31 @@ def test_active_recording_lifecycle_refuses_switch(host):
     assert result.returncode!=0 and 'active' in result.stderr
 
 
+@pytest.mark.parametrize('kind,status', [
+    ('controller', 'analyzing'),
+    ('lifecycle', 'analyzing_short_windows'),
+    ('lifecycle', 'analyzing_long_windows'),
+    ('lifecycle', 'building_final_report'),
+    ('lifecycle', 'preparing_windows'),
+])
+def test_registered_analysis_without_lock_never_stops_or_switches(host, kind, status):
+    old=old_install(host);prepare(host)
+    shared=host['root']/'shared'
+    if kind=='controller':
+        path=shared/'feishu_state/controller.json'
+        value={'active':None,'last_job':{'status':status}}
+    else:
+        path=shared/'output/session/analysis_variants/configured-api/lifecycle.json'
+        path.parent.mkdir(parents=True)
+        value={'status':status}
+    path.write_text(json.dumps(value))
+    before=host['trace'].read_bytes()
+    result=call(host,'activate','--release-id',NEW)
+    assert result.returncode!=0 and 'refusing switch' in result.stderr
+    assert host['trace'].read_bytes()==before
+    assert_restored(host,old)
+
+
 @pytest.mark.parametrize('failure',['unit','rotation','current','daemon-reload','enable','start','health'])
 def test_first_install_failure_restores_absent_files_and_stopped_disabled_state(host,failure):
     prepare(host)

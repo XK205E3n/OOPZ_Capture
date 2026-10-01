@@ -6,6 +6,12 @@
 
 ## 未发布
 
+### 2026-10-01 — 修复：Linux切换保护漏检无锁后台分析
+
+- `scripts/linux/release_locks.py` 增加控制器 `last_job` 检查，识别 `analyzing_*`、`preparing_windows` 和 `building_final_report`，防止后台任务登记后、锁创建前被误判空闲；完成/失败状态及仅准备好的窗口计划仍可通过，非法状态类型保守拒绝。
+- 新增跨平台保护和管理入口逻辑回归，以及Linux真实入口的五个无锁分析拒绝用例，检查拒绝时不调用服务/切换且保留原current。
+- 本机Windows全量309 passed、13 skipped；Linux账户/入口及POSIX测试在本机跳过，新增Unix子进程用例未执行。影响Linux升级/回滚保护，无新配置或数据迁移；本次仅Git分支交付，未发布正式包或部署，Ubuntu实机仍未验收。
+
 ### 2026-10-01 — 实现：Ubuntu适配开发候选（未发布）
 
 - 增加Linux分阶段安装、共享配置、完整校验后helper提取、更新/回滚事务和systemd/logrotate模板；失败恢复实际文件/current及active/enabled状态，损坏锁与不可读任务树保守拒绝切换。

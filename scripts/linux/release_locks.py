@@ -6,6 +6,23 @@ import stat
 from pathlib import Path
 
 
+ACTIVE_STATUSES = {
+    'starting', 'connecting', 'recording', 'reconnecting', 'stopping',
+    'transcribing', 'analyzing', 'running', 'preparing_windows',
+    'building_final_report',
+}
+
+
+def active_status(status: object) -> bool:
+    # Match the controller's analyzing_* lifecycle contract, including future
+    # window stages. "prepared" alone is an idle window-plan artifact.
+    if status is None:
+        return False
+    if not isinstance(status, str):
+        raise ValueError('Task status is not a string')
+    return status in ACTIVE_STATUSES or status.startswith('analyzing_')
+
+
 def check_idle(shared: Path) -> None:
     for directory in ('output', 'feishu_state'):
         root = shared / directory
@@ -31,7 +48,13 @@ def check_idle(shared: Path) -> None:
                             raise ValueError('not an object')
                         if name == 'controller.json' and value.get('active') is not None:
                             raise RuntimeError('Controller has an active job; refusing switch')
-                        if value.get('status') in {'starting', 'connecting', 'recording', 'reconnecting', 'stopping', 'transcribing', 'analyzing', 'running'}:
+                        if name == 'controller.json':
+                            last = value.get('last_job')
+                            if last is not None and not isinstance(last, dict):
+                                raise ValueError('Controller last_job is not an object')
+                            if last is not None and active_status(last.get('status')):
+                                raise RuntimeError('Controller has pending analysis/work; refusing switch')
+                        if active_status(value.get('status')):
                             raise RuntimeError('Session is still active; refusing switch')
                     except (ValueError, OSError, UnicodeError) as error:
                         raise RuntimeError('Cannot establish task state; refusing switch') from error
