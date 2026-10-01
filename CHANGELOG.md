@@ -6,6 +6,12 @@
 
 ## 未发布
 
+### 2026-10-01 — 文档：Ubuntu适配方案与交接任务
+
+- 新增 `docs/UBUNTU_ADAPTATION_PLAN.md` 和 `docs/UBUNTU_ADAPTATION_TASK.md`，包含目标、L01–L17需求、未推送草稿问题、验收、操作边界及可复制任务提示词。
+- 明确本次分支从Windows远端基线创建，仅提交文档；本机Ubuntu开发与修复不随本次上传，Ubuntu仍未实机验收。
+- 验证：核对远端基线、参考路径和文档差异；不修改运行代码、依赖、配置或数据，未发布或部署。
+
 ## 0.11.15 — 2026-09-21
 
 Release：[v0.11.15](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.15)。
