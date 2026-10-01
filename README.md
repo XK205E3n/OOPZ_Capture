@@ -2,7 +2,7 @@
 
 通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，以本地 CPU 模型分片转写，再通过可配置的分析 API 生成会话报告。报告经群内审查后，可发布为飞书文档并写入 Base 索引。
 
-当前应用版本 **0.11.9**。远程控制入口为飞书群，部署目标为 **Windows x64**；QQ、NapCat、OneBot 不属于当前运行链路。版本与发布包见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前应用版本 **0.11.9**。远程控制入口为飞书群，部署目标为 **Windows x64**；QQ、NapCat、OneBot 不属于当前运行链路。Linux（Ubuntu Server 24.04 LTS）作为平行部署目标已完成代码与脚本适配，但尚未完成实际环境验收，见 [Ubuntu 部署指南](docs/DEPLOYMENT_UBUNTU.md)。版本与发布包见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 核心能力
 
@@ -22,7 +22,7 @@
 | `pipeline.py`、`vad.py`、`asr.py`、`transcript.py` | 语音检测、重采样、模型推理、转写输出 |
 | `analyzer_job.py`、`analysis_windows.py`、`analysis_pipeline.py` | 分析输入校验、时间窗口、API 调用与检查点 |
 | `pdf_reports.py`、`tools/md_to_pdf.mjs` | Node.js 与 Chrome/Edge PDF 渲染 |
-| `scripts/` | 启停监视、固定版本模型下载、发布包构建、安装和回滚 |
+| `scripts/` | 启停监视、固定版本模型下载、发布包构建、安装和回滚；`scripts/linux/` 为 Ubuntu 的前置/安装/更新/回滚与 systemd 单元 |
 | `tests/`、`schemas/` | 行为测试与数据契约 |
 | `docs/` | 架构、运维、部署状态与发布迁移说明 |
 | `output/`、`feishu_state/`、`logs/`、`models/` | 本地会话、网关状态、日志和模型；均不进入 Git / 发布包 |
@@ -121,7 +121,7 @@ ANALYZER_JSON_MODE=
 
 服务器使用 [Release ZIP 和 SHA-256 文件](https://github.com/XK205E3n/OOPZ_Capture/releases)，由 `scripts/install_release.ps1` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared` 中。不要把包含 `.env`、模型或会话数据的整个开发目录上传，也不要直接修改服务器版本目录。
 
-当前公开 Release 可匿名获取。从零部署指南提供完整 PowerShell：自动下载校验、提取管理脚本、终端配置、一键飞书配置及正式安装，不需要服务器登录 GitHub 或克隆仓库。业务账号、飞书扫码和租户审批仍由使用者完成。
+当前公开 Release 可匿名获取。从零部署指南提供完整 PowerShell：自动下载校验、提取管理脚本、终端配置、一键飞书配置及正式安装，不需要服务器登录 GitHub 或克隆仓库。业务账号、飞书扫码和租户审批仍由使用者完成。同一 Release ZIP 也包含 Linux 部署文件；Ubuntu Server 24.04 的从零步骤见 [Ubuntu 部署指南](docs/DEPLOYMENT_UBUNTU.md)——该目标尚未通过实际验收，Linux 实测完成前生产部署仍走 Windows 路径。
 
 ## 开发验证
 

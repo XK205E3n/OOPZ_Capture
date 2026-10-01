@@ -293,24 +293,51 @@ def main(argv: Sequence[str] | None = None) -> int:
     return 0
 
 
-async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | None) -> None:
+def _install_sigterm_stop(loop: asyncio.AbstractEventLoop, stop_future: "asyncio.Future[None]") -> bool:
+    """Convert SIGTERM into a graceful stop request on POSIX.
+
+    systemd stops the unit with SIGTERM; without a handler the default
+    disposition would kill the process immediately and skip the channel
+    disconnect and task cleanup below. Windows has no add_signal_handler on
+    the proactor loop and keeps its existing Ctrl+C/taskkill behavior.
+    """
+    import signal
+
+    def request_stop() -> None:
+        if not stop_future.done():
+            stop_future.set_result(None)
+
+    try:
+        loop.add_signal_handler(signal.SIGTERM, request_stop)
+    except (NotImplementedError, AttributeError, RuntimeError):
+        return False
+    return True
+
+
+async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | None, stop_future: "asyncio.Future[None] | None" = None) -> None:
     """Keep the long connection alive: drain the outbox, reconcile hourly, clean retention minutely.
 
     A failure inside one housekeeping step must never kill the gateway process:
     this loop is the only remote control surface and it shares the process with
     an in-flight recording.  Each failure is printed (the launcher redirects
-    stderr to the error log) and the loop continues.
+    stderr to the error log) and the loop continues.  On POSIX a SIGTERM (or a
+    pre-resolved ``stop_future``) ends the loop after the current housekeeping
+    step, letting the finally block disconnect and asyncio cancel remaining
+    tasks; the controller then persists the interrupted state for recovery.
     """
     import traceback
 
     last_reconcile = 0.0
     last_retention_cleanup = 0.0
+    stop = stop_future or asyncio.get_running_loop().create_future()
+    if stop_future is None:
+        _install_sigterm_stop(asyncio.get_running_loop(), stop)
     try:
         await channel.connect_until_ready()
         print("飞书长连接已就绪；正在监听受控群的 @OOPZ 指令。", flush=True)
         for notice in lifecycle_notices(lifecycle):
             await gateway.send_lifecycle_notice(notice)
-        while True:
+        while not stop.done():
             now = asyncio.get_running_loop().time()
             do_reconcile = now - last_reconcile >= 3600
             do_retention_cleanup = now - last_retention_cleanup >= 60
@@ -328,7 +355,10 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
                 raise
             except Exception:
                 traceback.print_exc()
-            await asyncio.sleep(1)
+            sleeper = asyncio.ensure_future(asyncio.sleep(1))
+            await asyncio.wait({sleeper, stop}, return_when=asyncio.FIRST_COMPLETED)
+            if not sleeper.done():
+                sleeper.cancel()
     finally:
         await channel.disconnect()
 

@@ -1,0 +1,13 @@
+# OOPZ Capture log rotation (installed by scripts/linux/install_release.sh).
+# The gateway keeps its log files open, so copytruncate is required.
+__INSTALL_ROOT__/shared/logs/feishu_runtime.log __INSTALL_ROOT__/shared/logs/feishu_error.log {
+    weekly
+    rotate 8
+    size 50M
+    copytruncate
+    compress
+    delaycompress
+    missingok
+    notifempty
+    su oopz oopz
+}

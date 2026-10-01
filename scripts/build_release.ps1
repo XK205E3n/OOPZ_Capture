@@ -79,7 +79,13 @@ try {
             foreach ($requiredEntry in @(
                 'RELEASE_MANIFEST.json',
                 'scripts/install_release.ps1',
-                'scripts/download_sensevoice_model.py'
+                'scripts/download_sensevoice_model.py',
+                'scripts/linux/install_prerequisites.sh',
+                'scripts/linux/install_release.sh',
+                'scripts/linux/update_release.sh',
+                'scripts/linux/rollback_release.sh',
+                'scripts/linux/oopz-capture.service',
+                'scripts/linux/oopz-capture.logrotate'
             )) {
                 if ($null -eq $verification.GetEntry($requiredEntry)) {
                     throw "Release entry is missing: $requiredEntry"

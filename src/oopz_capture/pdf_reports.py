@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import os
 import re
+import shutil
 import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,6 +19,36 @@ RENDERER = PROJECT_ROOT / "tools" / "md_to_pdf.mjs"
 NODE_MODULES = PROJECT_ROOT / "node_modules"
 REPORT_ARCHIVE_SCHEMA = "oopz.report.archive.v1"
 PDF_SETUP_HINT = "run `pnpm install` in the project root to restore PDF reports"
+
+
+def resolve_node_path(*, posix: bool | None = None) -> Path:
+    """Locate the Node runtime used for PDF rendering on any platform.
+
+    Order: explicit ``OOPZ_NODE_PATH`` override, the project-pinned runtime
+    (``tools/node/node.exe``; on POSIX also ``tools/node/node``), then the
+    system ``node`` from PATH. The project-pinned entry stays first on every
+    platform so servers keep using the shared runtime junction/symlink.
+    ``posix`` lets tests exercise the non-Windows branch explicitly.
+    """
+    if posix is None:
+        posix = os.name != "nt"
+    override = os.environ.get("OOPZ_NODE_PATH", "").strip()
+    if override:
+        path = Path(override)
+        if not path.is_file():
+            raise FileNotFoundError(f"OOPZ_NODE_PATH is not an existing Node executable: {path}")
+        return path
+    candidates = [NODE_PATH]
+    if posix:
+        candidates.append(PROJECT_ROOT / "tools" / "node" / "node")
+        found = shutil.which("node")
+        if found:
+            candidates.append(Path(found))
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    tried = ", ".join(str(candidate) for candidate in candidates)
+    raise FileNotFoundError(f"Node runtime not found for PDF rendering; install Node.js or set OOPZ_NODE_PATH (tried: {tried})")
 
 
 def _safe_name(value: str) -> str:
@@ -73,8 +105,7 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     output_path = output_path.resolve()
     if not RENDERER.is_file():
         raise FileNotFoundError(f"md-to-pdf renderer is missing: {RENDERER}")
-    if not NODE_PATH.is_file():
-        raise FileNotFoundError(f"Project Node runtime is missing: {NODE_PATH}")
+    node_path = resolve_node_path()
     if not NODE_MODULES.is_dir():
         raise FileNotFoundError(f"md-to-pdf dependencies are not installed; {PDF_SETUP_HINT}")
     if markdown_path.suffix.lower() != ".md":
@@ -84,7 +115,7 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     output_path.unlink(missing_ok=True)
     try:
         result = subprocess.run(
-            [str(NODE_PATH), str(RENDERER), str(markdown_path), str(output_path)],
+            [str(node_path), str(RENDERER), str(markdown_path), str(output_path)],
             cwd=str(PROJECT_ROOT),
             check=True,
             capture_output=True,

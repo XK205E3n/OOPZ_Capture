@@ -13,21 +13,41 @@ const { defaultConfig } = mdRequire("./lib/config.js");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const stylesheet = path.join(projectRoot, "tools", "md_to_pdf.css");
 
+const WINDOWS_CHROME_CANDIDATES = [
+  "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+  "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+  "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+];
+const LINUX_CHROME_CANDIDATES = [
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/google-chrome",
+  "/usr/bin/microsoft-edge-stable",
+  "/usr/bin/microsoft-edge",
+  "/usr/bin/chromium-browser",
+  "/usr/bin/chromium",
+  "/snap/bin/chromium",
+];
+const DARWIN_CHROME_CANDIDATES = [
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+];
+const CHROME_CANDIDATES_BY_PLATFORM = {
+  win32: WINDOWS_CHROME_CANDIDATES,
+  linux: LINUX_CHROME_CANDIDATES,
+  darwin: DARWIN_CHROME_CANDIDATES,
+};
+
 export function findChrome(env = process.env, isFile = (file) => {
   try { return statSync(file).isFile(); } catch { return false; }
-}) {
+}, platform = process.platform) {
   if (env.MD_TO_PDF_CHROME_PATH) {
     if (!isFile(env.MD_TO_PDF_CHROME_PATH)) throw new Error("MD_TO_PDF_CHROME_PATH is not an existing browser executable");
     return env.MD_TO_PDF_CHROME_PATH;
   }
-  const candidates = [
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
-  ].filter(Boolean);
+  const candidates = CHROME_CANDIDATES_BY_PLATFORM[platform] ?? LINUX_CHROME_CANDIDATES;
   const browser = candidates.find(isFile);
-  if (!browser) throw new Error("PDF browser missing: install Chrome/Edge or set MD_TO_PDF_CHROME_PATH");
+  if (!browser) throw new Error("PDF browser missing: install Chrome/Edge/Chromium or set MD_TO_PDF_CHROME_PATH");
   return browser;
 }
 

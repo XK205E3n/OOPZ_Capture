@@ -1,0 +1,33 @@
+# OOPZ Capture Feishu gateway systemd unit (Ubuntu Server 24.04 LTS).
+# Installed by scripts/linux/install_release.sh, which replaces
+# __INSTALL_ROOT__ with the actual installation root (default /opt/oopz).
+# Do not edit the installed copy under /etc/systemd/system; it is replaced on
+# every release install.
+[Unit]
+Description=OOPZ Capture Feishu gateway (recording, transcription, analysis)
+Documentation=https://github.com/XK205E3n/OOPZ_Capture
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=oopz
+Group=oopz
+WorkingDirectory=__INSTALL_ROOT__/current
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=__INSTALL_ROOT__
+ExecStart=__INSTALL_ROOT__/current/.venv/bin/python -m oopz_capture.feishu_cli serve --lifecycle restarted --runtime-log __INSTALL_ROOT__/shared/logs/feishu_runtime.log --error-log __INSTALL_ROOT__/shared/logs/feishu_error.log
+# A SIGTERM finishes the current housekeeping step, disconnects the Feishu
+# channel and cancels remaining tasks; an unfinished recording is persisted as
+# an interruptible session by the controller. Anything left after this timeout
+# (including Chromium and transcription children) is killed as a group.
+KillMode=control-group
+TimeoutStopSec=90
+Restart=on-failure
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=full
+ProtectHome=read-only
+
+[Install]
+WantedBy=multi-user.target

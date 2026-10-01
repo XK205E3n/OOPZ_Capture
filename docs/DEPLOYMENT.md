@@ -6,6 +6,10 @@
 
 不建议把本地项目目录通过网盘、RDP 或 `scp -r` 整体覆盖到服务器。这会混入 `.venv`、缓存和未提交文件，也容易反向覆盖生产数据。Docker 暂不作为首选：当前启动、浏览器/PDF 和监视窗口明显依赖 Windows，容器化需要额外改造和验证。
 
+## Linux（Ubuntu 24.04）目标 — 未验收
+
+v0.11.15 之后，仓库并入一套平行的 Linux 部署资产：跨平台 Node/PDF 浏览器查找（`OOPZ_NODE_PATH`）、SIGTERM 优雅停止、`scripts/linux/` 下的前置/安装/更新/回滚脚本与 systemd 单元。正式 Release ZIP 同时包含 Windows 与 Linux 部署文件，两平台共用同一提交。Ubuntu Server 24.04 LTS 作为独立运行目标，截至 2026-09-30 未完成实际安装与负载验收，不得视为已支持的生产目标；从零步骤、停止语义、数据迁移和已知 Chromium 沙箱风险见 [Ubuntu 部署指南](DEPLOYMENT_UBUNTU.md)，验收完成前 Windows Server 路径仍是唯一已验收目标。
+
 ## 一次性准备
 
 新服务器按[从零部署第 2.1 节](../README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)复制执行 PowerShell，或运行 `scripts/install_prerequisites.ps1`，自动安装缺少的 Visual C++ 运行库、Python 3.12 x64、Node/npm/npx 及浏览器。服务器不需要安装 Git 或 GitHub CLI。已有可用组件跳过；该步骤同时准备 PDF 的共享 Node 运行时，但不创建应用配置、不部署程序。已有 v0.11.9 发布包不含此后续新增脚本，可直接使用在线文档中的代码。
