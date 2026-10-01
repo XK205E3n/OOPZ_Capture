@@ -9,7 +9,7 @@
 ### 2026-09-30 — 平行适配 Linux（Ubuntu 24.04 LTS）部署目标
 
 - 跨平台改造：`pdf_reports.py` 支持 `OOPZ_NODE_PATH` 并按平台查找/回退 Node 运行时；`tools/md_to_pdf.mjs` 浏览器查找增加 Linux/macOS 候选；飞书网关在 POSIX 将 SIGTERM 转为优雅停止，Windows 行为不变。
-- 新增 `scripts/linux/`（前置安装、事务式安装、更新、回滚、systemd 单元、logrotate）与 `.gitattributes`（bash/服务文件强制 LF）；`build_release.ps1` 必需条目纳入 Linux 文件，四个 shell 脚本以可执行位入库，校验文件输出改为 LF 行尾（Linux `sha256sum -c` 兼容）。
+- 新增 `scripts/linux/`（前置安装、事务式安装、更新、回滚、systemd 单元、logrotate）与 `.gitattributes`（bash/服务文件强制 LF）；`build_release.ps1` 必需条目纳入 Linux 文件，四个 shell 脚本以可执行位入库，校验文件输出改为 LF 行尾（Linux `sha256sum -c` 兼容），`RELEASE_MANIFEST.json` 改为无 BOM 输出并在 Linux 解析侧兼容 BOM。
 - 新增 `docs/DEPLOYMENT_UBUNTU.md`；同步 `DEPLOYMENT.md`、`DEPLOYMENT_STATE.md`、`.env.example`（新增可选 `OOPZ_NODE_PATH`）与部署变更记录。
 - 验证：新增 `tests/test_linux_portability.py` 16 项测试；全量 281 passed、1 skipped。Linux 实际环境未验收，详见 Ubuntu 指南状态声明。
 

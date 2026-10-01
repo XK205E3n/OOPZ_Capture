@@ -8,7 +8,7 @@
 
 - 跨平台核心改造：PDF Node 运行时解析支持 `OOPZ_NODE_PATH` 显式配置，按平台查找 `tools/node` 下运行时并回退系统 PATH（`src/oopz_capture/pdf_reports.py`）；`tools/md_to_pdf.mjs` 的 PDF 浏览器查找增加 Linux 与 macOS 候选，保留 `MD_TO_PDF_CHROME_PATH`；飞书网关在 POSIX 上将 SIGTERM 转为优雅停止（完成当前维护步骤后断开长连接、取消任务，未完成录音按既有中断可恢复语义持久化），Windows 行为不变。
 - 新增 `scripts/linux/`：前置安装（Python 3.12、Node、CJK 字体、目录与 `oopz` 用户）、事务式 `install_release.sh`（SHA-256 校验、独立 venv、Playwright Chromium 及系统库、固定模型、pnpm 锁定依赖、systemd/logrotate 写入、活动任务保护、原子切换 `current`、健康检查失败自动回退）、`update_release.sh`（GitHub 匿名更新）、`rollback_release.sh`、`oopz-capture.service` 模板与 logrotate 配置。`.gitattributes` 强制 bash/服务文件 LF；四个 shell 脚本以可执行位入库（git clone 生效；`git archive` ZIP 不携带权限位，统一以 `bash` 调用，安装器内补 `chmod +x`）。构建校验文件改为 LF 行尾，安装器同时兼容 CRLF 旧包校验。
-- `scripts/build_release.ps1` 的必需条目检查纳入全部 Linux 部署文件；`.env.example` 新增可选 `OOPZ_NODE_PATH`。目录约定 `/opt/oopz/{releases,current,shared,artifacts}`，共享数据经符号链接复用，回滚不覆盖。
+- `scripts/build_release.ps1` 的必需条目检查纳入全部 Linux 部署文件；清单 `RELEASE_MANIFEST.json` 改为无 BOM UTF-8 输出（PS5.1 的 BOM 会使 Linux 安装器 `json.load` 崩溃，Linux 侧解析同时改用 `utf-8-sig` 兼容旧包）；`.env.example` 新增可选 `OOPZ_NODE_PATH`。目录约定 `/opt/oopz/{releases,current,shared,artifacts}`，共享数据经符号链接复用，回滚不覆盖。
 - 新增 `docs/DEPLOYMENT_UBUNTU.md`（从零安装、服务管理、停止语义、迁移、Chromium 沙箱风险、平台差异、验收要求），并同步 `docs/DEPLOYMENT.md`、`docs/DEPLOYMENT_STATE.md`。
 - 配置影响：新增可选 `OOPZ_NODE_PATH`（留空时自动查找，现有配置无需修改）；无数据迁移，无回滚影响，现有 Windows 部署行为不变。
 - 验证：新增 16 项跨平台测试（Node 解析、Linux 浏览器候选、优雅停止、脚本 LF/可执行位/bash 语法、模板占位符）；全量 281 passed、1 skipped，Windows 无回归。**Linux 实际安装、录音、PDF、服务与负载均未实测**，Ubuntu 在完成验收前不作为已支持生产目标。

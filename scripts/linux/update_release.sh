@@ -32,7 +32,8 @@ command -v unzip >/dev/null 2>&1 || die "unzip is missing; run scripts/linux/ins
 CURRENT_MANIFEST="$INSTALL_ROOT/current/RELEASE_MANIFEST.json"
 CURRENT_ID=""
 if [[ -f "$CURRENT_MANIFEST" ]]; then
-  CURRENT_ID=$(python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$CURRENT_MANIFEST")
+  # utf-8-sig tolerates a BOM written by older builders.
+  CURRENT_ID=$(python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8-sig"))["release_id"])' "$CURRENT_MANIFEST")
 fi
 
 log "Querying the latest release of $REPO"

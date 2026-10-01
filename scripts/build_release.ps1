@@ -49,7 +49,13 @@ try {
             created_at_utc = [DateTime]::UtcNow.ToString('o')
             source = 'clean committed HEAD via git archive'
         }
-        $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $staging 'RELEASE_MANIFEST.json') -Encoding utf8
+        # UTF-8 without BOM: the Linux installers parse this manifest with
+        # Python json, and a BOM prefix breaks json.load(encoding="utf-8").
+        [System.IO.File]::WriteAllText(
+            (Join-Path $staging 'RELEASE_MANIFEST.json'),
+            ($manifest | ConvertTo-Json),
+            [System.Text.UTF8Encoding]::new($false)
+        )
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $archive = [System.IO.Compression.ZipFile]::Open(
             $artifact,

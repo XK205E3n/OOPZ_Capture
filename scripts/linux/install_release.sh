@@ -89,7 +89,8 @@ mkdir -p "$INSPECT_ROOT"
 trap 'rm -rf "$INSPECT_ROOT"' EXIT
 unzip -q "$ARTIFACT" -d "$INSPECT_ROOT"
 [[ -f "$INSPECT_ROOT/RELEASE_MANIFEST.json" ]] || die "Release manifest is missing."
-RELEASE_ID=$(python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["release_id"])' "$INSPECT_ROOT/RELEASE_MANIFEST.json")
+# utf-8-sig tolerates a BOM written by older builders.
+RELEASE_ID=$(python3.12 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8-sig"))["release_id"])' "$INSPECT_ROOT/RELEASE_MANIFEST.json")
 [[ "$RELEASE_ID" =~ ^v[0-9A-Za-z._-]+$ ]] || die "Release ID is invalid: $RELEASE_ID"
 RELEASE_PATH="$RELEASES_ROOT/$RELEASE_ID"
 if [[ -e "$RELEASE_PATH" ]]; then
