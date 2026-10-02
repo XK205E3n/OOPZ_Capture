@@ -6,6 +6,13 @@
 
 ## 未发布
 
+### 2026-10-02 — 新增：Linux WeasyPrint PDF后端
+
+- 新增显式 `OOPZ_PDF_BACKEND=weasyprint`，沿用现有Markdown解析、基础HTML/CSS与报告归档接口，用独立Python进程生成中文A4和连续页码；缺省仍为chromium，Windows路径保留，失败不会自动换引擎。分析模型、提示词、飞书正文和投递逻辑不变。
+- Linux安装加入 `pdf` extra（安全修复版WeasyPrint稳定70.x）及Pango/HarfBuzz前置说明。转换只允许限量且校验签名的内嵌光栅图，拒绝网络/本地资源、SVG、活动嵌入及两类PDF附件；日志不包含文档/资源URL正文。
+- 增加输入/HTML/Node堆/渲染内存限制，沿用180秒超时和进程组回收，失败/中断清理半成品。真实中文多页PDF及恶意资源/附件、显式后端、版本与安装/包完整性回归已执行；具体全量和视觉结果见Ubuntu验证记录。
+- 影响依赖、可选配置和PDF版式，无业务状态迁移；旧会话仅使用已有Markdown本地转换，不请求分析API或重发报告。回退需明确选chromium或回滚已准备版本，保留既有浏览器依赖。
+
 ### 2026-10-02 — 修复：Linux正式构建与隔离依赖准备
 
 - 修复 `build_release.ps1` 的Windows虚拟环境/路径分隔符假设，并保留Unix隐藏文件，正式包继续只从干净已提交HEAD生成；Windows构建路径保留。

@@ -4,6 +4,14 @@
 
 ## 待发布
 
+### 2026-10-02 — Linux可选WeasyPrint后端
+
+- 新增OOPZ_PDF_BACKEND（chromium/weasyprint），未设置时保留Chromium；本次Ubuntu目标经验证后明确选择weasyprint，Windows不自动改变。现有输出/归档数据格式不变，不自动重发或重算历史分析。
+- Linux独立环境安装WeasyPrint>=70,<71与原有speech/feishu依赖；本机需Pango、PangoFT2、HarfBuzz及subset库、Fontconfig和中文字体。准备检查这些Python依赖，正式包/校验器增加新PDF辅助文件完整性保护。
+- 仅替换可选HTML到PDF阶段，Node继续负责原有Markdown方言；OOPZ录音仍保留浏览器。禁用任何隐式失败回退，运行错误明确保留，半成品清理；不放宽Chromium或宿主安全策略。
+- 资源/隐私边界：10MiB输入、32MiB展开HTML、256MiB Node堆、1.5GiB Weasy地址空间、180秒外层超时；仅2MiB以内且签名一致的raster data资源；不读取文档引用的本地文件或网络，不输出其敏感URL，不嵌入附件或SVG。
+- 回退：同版明确设置chromium并验证受管理浏览器，或激活已准备旧版；旧版不识别新键并使用原Chromium流程。用旧包从零重装时采用该旧包经验证的管理脚本，新完整性规则有意拒绝缺少当前helper的包。共享数据与原Markdown保留，无格式迁移。
+
 ### 2026-10-02 — 修复：Linux构建和配置前准备
 
 - 正式PowerShell构建支持Unix虚拟环境、平台原生路径及隐藏文件，保留Windows路径；未绕过干净HEAD、测试、清单、受保护目录或SHA-256检查。

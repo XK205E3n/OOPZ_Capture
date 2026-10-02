@@ -1,5 +1,51 @@
 # Ubuntu adaptation validation record — 2026-10-01
 
+## 2026-10-02 explicit WeasyPrint backend
+
+The new Linux backend is opt-in through `OOPZ_PDF_BACKEND=weasyprint`; existing
+Chromium/Windows behavior stays the default, without automatic error fallback.
+WeasyPrint 70.0 and Pydyf 0.12.1 executed locally with Pango 1.56.3. The project
+declares and checks stable WeasyPrint 70.x, including the official EPS security
+fix; earlier releases and unvalidated next-major APIs are rejected.
+
+Final development regression: **425 passed, 9 skipped, 2 existing SDK cleanup
+warnings**, 51.59 seconds. Python dependency checks, compilation, Node/shell syntax
+and diff checks passed. The 9 skips remain 3 unavailable cloud-browser tests and
+6 native Windows-only checks; target SDK browser tests were validated separately
+on the preceding prepared Ubuntu release.
+
+Real PDF tests verified Chinese text extraction, A4 multipage output, continuous
+page counters, retained inline raster images and absence of both EmbeddedFiles and
+FileAttachment annotations. Adversarial cases include network/local URLs, spoofed
+raster MIME/EPS bytes, inline SVG and data-URI attachment channels. A first review
+found attachment/SVG gaps; they were corrected with DOM filtering and independent
+document-level attachment removal, then reproduced as absent in actual PDFs.
+Source text/tails and ordinary links survive sanitization. Private resource URLs
+and document contents are not written to diagnostics.
+
+Resource limits cover the input, expanded HTML, Node heap and execution time, and
+the isolated WeasyPrint address space plus outer process-group timeout. Failure and
+interruption tests assert partial-output removal, no silent engine substitution,
+and the minimum supported security/API version. Missing PDF helpers are rejected
+before any installer dependency/service effects. No sample report or generated
+private PDF is included in Git or release artifacts.
+
+Representative synthetic PDFs and the separately authorized historical preview
+were rendered and visually reviewed outside the source deliverable. These are
+local conversion tests only: no analysis API requests or Feishu messages were
+made. The new backend still requires exact-package installation and testing on the
+Ubuntu target before its deployment can be marked complete. OOPZ capture/RTC and
+its Chromium sandbox remain separate prerequisites.
+
+Final synthetic visual/performance checks used the public project style and
+fabricated report content: 11 pages in 1.754 s at about 207.79 MiB sampled process-
+tree RSS, and 30 pages in 2.184 s at about 224.41 MiB. Sampling interval was 25 ms;
+these are single development-host observations, not target-host guarantees or a
+Chromium comparison. All 41 pages retained continuous counters, the complete
+110-row table with repeated headers, CJK font mapping and ordinary links. Final
+security filtering preserved the previously inspected page pixels. No private
+report text, title, session identifier or source file is included here.
+
 ## 2026-10-02 deployment-preparation addendum
 
 Re-fetched all remote refs. Latest Linux source was

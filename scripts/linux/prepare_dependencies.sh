@@ -4,7 +4,7 @@ set -euo pipefail
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cpu
-.venv/bin/python -m pip install -e '.[speech,feishu]'
+.venv/bin/python -m pip install -e '.[speech,feishu,pdf]'
 .venv/bin/python -m pip check
 node -e 'const [a,b]=process.versions.node.split(".").map(Number); if(a<22||(a===22&&b<12)) throw Error("Node >=22.12 required")'
 # npm exec uses the same PATH-selected Node as npx and the service.
@@ -28,6 +28,9 @@ with sync_playwright() as p:
 import oopz_capture.feishu_cli
 import funasr, torch, torchaudio, onnxruntime
 assert not torch.cuda.is_available(), 'Expected CPU runtime'
+from oopz_capture.weasy_pdf import require_weasyprint
+require_weasyprint()
+import weasyprint
 PY
 .venv/bin/python scripts/download_sensevoice_model.py --target models/SenseVoiceSmall
 .venv/bin/python -m pip freeze > DEPLOYED_PYTHON_PACKAGES.txt

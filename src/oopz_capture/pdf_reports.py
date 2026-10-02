@@ -7,6 +7,7 @@ import signal
 import shutil
 import re
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
@@ -21,6 +22,17 @@ RENDERER = PROJECT_ROOT / "tools" / "md_to_pdf.mjs"
 NODE_MODULES = PROJECT_ROOT / "node_modules"
 REPORT_ARCHIVE_SCHEMA = "oopz.report.archive.v1"
 PDF_SETUP_HINT = "run `pnpm install` in the project root to restore PDF reports"
+PDF_BACKENDS = {'chromium', 'weasyprint'}
+
+
+def pdf_backend() -> str:
+    """Engine changes are explicit; missing/failed engines never silently fall back."""
+    backend = os.environ.get('OOPZ_PDF_BACKEND', 'chromium').strip().lower()
+    if backend not in PDF_BACKENDS:
+        raise ValueError('OOPZ_PDF_BACKEND must be chromium or weasyprint')
+    if backend == 'weasyprint' and sys.platform != 'linux':
+        raise RuntimeError('The WeasyPrint backend is supported on Linux; select chromium on Windows')
+    return backend
 
 
 def find_node() -> Path:
@@ -145,6 +157,7 @@ def session_report_stamp(session_dir: Path) -> tuple[str, str]:
 def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     markdown_path = markdown_path.resolve()
     output_path = output_path.resolve()
+    backend = pdf_backend()
     if not RENDERER.is_file():
         raise FileNotFoundError(f"md-to-pdf renderer is missing: {RENDERER}")
     node = find_node()
@@ -157,9 +170,13 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     # A stale renderer output must never pass as fresh; delete it first so the
     # size check below can only succeed on a file produced by this run.
     output_path.unlink(missing_ok=True)
+    command = ([str(node), str(RENDERER), str(markdown_path), str(output_path)]
+               if backend == 'chromium' else
+               [sys.executable, '-m', 'oopz_capture.weasy_pdf', str(markdown_path),
+                str(output_path), '--node', str(node)])
     try:
         result = _run_renderer(
-            [str(node), str(RENDERER), str(markdown_path), str(output_path)], env,
+            command, env,
         )
     except subprocess.TimeoutExpired as error:
         output_path.unlink(missing_ok=True)
@@ -171,7 +188,11 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
         output_path.unlink(missing_ok=True)
         detail = str(error.stderr or error.stdout or "no renderer diagnostics").strip()
         raise RuntimeError(f"PDF renderer exited {error.returncode}: {detail[-1200:]}") from error
+    except BaseException:
+        output_path.unlink(missing_ok=True)
+        raise
     if not output_path.is_file() or output_path.stat().st_size == 0:
+        output_path.unlink(missing_ok=True)
         raise RuntimeError(f"PDF renderer returned without creating {output_path}: {result.stdout}")
     return output_path
 

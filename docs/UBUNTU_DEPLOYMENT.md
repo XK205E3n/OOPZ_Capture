@@ -48,6 +48,52 @@ port**. RTC firewall ranges must follow the deployed SDK/provider requirements
 and be validated on the test host; HTTPS alone is not a complete RTC test.
 No credentials belong in commands, logs, source, release ZIPs or audit reports.
 
+## Optional Linux PDF engine: WeasyPrint
+
+`OOPZ_PDF_BACKEND=chromium` is the compatibility default on every platform.
+Select `OOPZ_PDF_BACKEND=weasyprint` explicitly on the approved Linux target after
+validation. Windows retains Chromium. A missing or failing selected engine is an
+error; the application never silently switches engines. Existing shared `.env`
+files are preserved, so deployment alone does not enable the new backend.
+
+Linux preparation installs the `pdf` extra, currently `weasyprint>=70,<71`.
+Version 70 contains the security fix for malicious EPS inputs; do not substitute
+an older distribution package. [Official advisory](https://github.com/Kozea/WeasyPrint/security/advisories/GHSA-r543-q48m-4c9j)
+Native dependencies on Ubuntu include `libpango-1.0-0`, `libpangoft2-1.0-0`,
+`libharfbuzz0b`, `libharfbuzz-subset0`, Fontconfig and `fonts-noto-cjk`.
+Use the isolated release environment, not an unrelated application's Python.
+[Official installation instructions](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html)
+
+The existing Node Markdown parser and report CSS are shared with Chromium. Only
+HTML-to-PDF layout changes; rendering does not invoke an analysis model or Feishu.
+CSS page counters replace Chromium's footer template. Validate the resulting
+pagination, tables, CJK wrapping and fonts on representative reports; byte-for-byte
+or pixel-identical PDFs are not expected between engines.
+
+The worker blocks network/local resource fetching and all attachment channels,
+inline SVG and active embeds. Only signature-checked PNG/JPEG/GIF/WebP data URLs
+up to 2 MiB are permitted. It reads trusted report CSS directly and uses installed
+fonts; document-originated CSS/font URLs cannot fetch files or network resources.
+Original Markdown is not modified. Ordinary links and report text are retained;
+unsupported embeds cannot be used to read private files or create PDF attachments.
+Diagnostics retain counts, not the private document text or requested URLs.
+
+Limits are 10 MiB Markdown, 32 MiB expanded HTML, a 256 MiB Node heap, a 30-second
+Markdown stage, 1.5 GiB address space for the isolated WeasyPrint worker, and the
+existing 180-second outer process-group timeout. Failure/cancellation removes
+partial PDFs. These controls do not make arbitrary malicious documents risk-free
+or guarantee capacity; verify real workloads and continue operating as the
+authorized ordinary runtime user.
+
+Chromium remains required by the OOPZ recording SDK, and its sandbox/RTC acceptance
+is independent. Preparation intentionally retains its separate sandboxed browser
+gate even when the selected PDF backend is WeasyPrint. Keep its installation and
+approved security configuration; this new PDF backend does not remove that gate.
+Rollback can explicitly select Chromium, or activate an already prepared old
+release; old code ignores the new variable and uses its original renderer. Use a
+matching trusted old installer when reinstalling an older archive, since current
+archive validation requires the new backend helper files.
+
 ## Release provenance and layout
 
 Formal artifacts still come only from `scripts/build_release.ps1` on a clean,

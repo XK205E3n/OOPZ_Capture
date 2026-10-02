@@ -25,6 +25,9 @@ feishu = [
   "lark-oapi>=1.7.1,<2",
   "qrcode>=8,<9",
 ]
+pdf = [
+  "weasyprint>=70,<71",
+]
 
 [project.scripts]
 oopz-capture = "oopz_capture.main:main"

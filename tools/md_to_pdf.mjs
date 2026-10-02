@@ -63,6 +63,14 @@ export function checkChineseFonts(markdown, platform = process.platform, run = e
   if (!fonts.trim()) throw new Error("Chinese PDF fonts missing: install fonts-noto-cjk and rebuild font cache");
 }
 
+export function buildReportHtml(markdown, title) {
+  const mdRequire = createRequire(require.resolve("md-to-pdf"));
+  const { getHtml } = mdRequire("./lib/get-html.js");
+  const { defaultConfig } = mdRequire("./lib/config.js");
+  const documentTitle = title.replace(/[&<>"']/g, "_");
+  return getHtml(markdown, { ...defaultConfig, document_title: documentTitle });
+}
+
 async function main() {
   const version = process.versions.node.split(".").map(Number);
   if (version[0] < 22 || (version[0] === 22 && version[1] < 12)) {
@@ -84,10 +92,7 @@ async function main() {
   checkChineseFonts(markdown);
   const mdRequire = createRequire(require.resolve("md-to-pdf"));
   const puppeteer = mdRequire("puppeteer");
-  const { getHtml } = mdRequire("./lib/get-html.js");
-  const { defaultConfig } = mdRequire("./lib/config.js");
-  const documentTitle = path.basename(input, path.extname(input)).replace(/[&<>"']/g, "_");
-  const html = getHtml(markdown, { ...defaultConfig, document_title: documentTitle });
+  const html = buildReportHtml(markdown, path.basename(input, path.extname(input)));
   let browser;
   try {
     stage("browser-launch");
