@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.analysis.windows.v1",
+  "title": "Deterministic OOPZ analysis windows",
+  "type": "object",
+  "required": [
+    "schema_version", "planner_version", "session_id", "duration_ms", "short_window_ms",
+    "long_window_ms", "short_windows", "long_windows"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.analysis.windows.v1"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "planner_version": {"const": "2.0.0"},
+    "duration_ms": {"type": "integer", "minimum": 0},
+    "short_window_ms": {"const": 300000},
+    "long_window_ms": {"const": 3600000},
+    "short_windows_per_full_long_window": {"const": 12},
+    "short_windows": {"type": "array", "items": {"type": "object"}},
+    "long_windows": {"type": "array", "items": {"type": "object"}}
+  }
+}

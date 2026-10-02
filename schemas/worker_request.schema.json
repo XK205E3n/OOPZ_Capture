@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.worker.request.v1",
+  "title": "OOPZ worker request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "command", "request_id", "area_id", "channel_id",
+    "duration_seconds", "consent_confirmed"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.worker.request.v1"},
+    "command": {"const": "record_and_transcribe"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "area_id": {"type": "string", "minLength": 1},
+    "channel_id": {"type": "string", "minLength": 1},
+    "duration_seconds": {"type": "number", "exclusiveMinimum": 0},
+    "consent_confirmed": {"const": true},
+    "language": {"enum": ["auto", "zh", "en", "yue", "ja", "ko"], "default": "auto"},
+    "retain_audio": {"type": "boolean", "default": false},
+    "processing_deadline_seconds": {"type": "integer", "minimum": 60, "maximum": 3600, "default": 900},
+    "retention_hours": {"type": "integer", "minimum": 1, "maximum": 168, "default": 168},
+    "poll_interval_seconds": {"type": "number", "minimum": 0.05, "maximum": 5, "default": 0.25},
+    "rtc_uid": {"type": ["string", "null"]},
+    "requested_by": {"type": ["object", "null"]}
+  }
+}

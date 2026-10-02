@@ -1,0 +1,8 @@
+{
+  "release_id": "v0.11.15-f19cb4a60606",
+  "application_version": "0.11.15",
+  "git_commit": "f19cb4a6060605ef315f126577cf241c807b7b16",
+  "git_commit_short": "f19cb4a60606",
+  "created_at_utc": "2026-10-02T21:20:19.0544344Z",
+  "source": "clean committed HEAD via git archive"
+}

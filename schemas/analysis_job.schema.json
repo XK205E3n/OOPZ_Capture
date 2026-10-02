@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.analysis.job.v1",
+  "title": "OOPZ analysis job",
+  "type": "object",
+  "required": [
+    "schema_version", "request_id", "session_id", "input_fingerprint",
+    "short_summary_seconds", "long_summary_seconds", "paths"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.analysis.job.v1"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "input_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "short_summary_seconds": {"const": 300},
+    "long_summary_seconds": {"const": 3600},
+    "paths": {"type": "object"}
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.analyzer.result.v1",
+  "title": "OOPZ compatible-model analyzer output",
+  "type": "object",
+  "required": [
+    "schema_version", "request_id", "session_id", "report_id", "status",
+    "completed_at", "input_fingerprint", "analysis_fingerprint", "analysis_profile",
+    "delivery_mode", "short_summaries", "long_summaries", "summary", "model", "outputs", "errors"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.analyzer.result.v1"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "report_id": {"type": "string", "format": "uuid"},
+    "status": {"enum": ["completed", "partial", "failed"]},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "input_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_profile": {"type": "object"},
+    "delivery_mode": {"const": "final_only"},
+    "reports": {"type": "array", "items": {"type": "object"}},
+    "short_summaries": {"type": "array", "items": {"type": "object"}},
+    "long_summaries": {"type": "array", "items": {"type": "object"}},
+    "summary": {"type": "object"},
+    "model": {"type": "object"},
+    "outputs": {"type": "object"},
+    "errors": {"type": "array", "items": {"type": "object"}}
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.analyzer.request.v1",
+  "title": "OOPZ compatible-model analyzer input",
+  "type": "object",
+  "required": [
+    "schema_version", "request_id", "session_id", "created_at",
+    "analysis_deadline_at", "encoding", "summary_windows", "inputs", "required_outputs", "retention"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.analyzer.request.v1"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "analysis_deadline_at": {"type": "string", "format": "date-time"},
+    "remaining_seconds_at_handoff": {"type": "integer", "minimum": 0},
+    "encoding": {"const": "UTF-8"},
+    "summary_windows": {
+      "type": "object",
+      "required": ["short_summary_seconds", "long_summary_seconds"],
+      "properties": {
+        "short_summary_seconds": {"const": 300},
+        "long_summary_seconds": {"const": 3600}
+      },
+      "additionalProperties": false
+    },
+    "inputs": {"type": "object"},
+    "required_outputs": {"type": "object"},
+    "retention": {"type": "object"}
+  }
+}

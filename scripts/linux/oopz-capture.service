@@ -1,0 +1,30 @@
+[Unit]
+Description=OOPZ Capture gateway
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=120
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=@USER@
+Group=@GROUP@
+WorkingDirectory="@ROOT@/current"
+Environment="HOME=@ROOT@/shared/home"
+Environment="PLAYWRIGHT_BROWSERS_PATH=@ROOT@/shared/browsers"
+Environment="OOPZ_ENV_FILE=@ROOT@/shared/config/.env"
+Environment="OOPZ_NODE_PATH=@NODE_PATH@"
+Environment="PATH=@NODE_BIN@:@ROOT@/shared/tools/node/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart="@ROOT_EXEC@/current/.venv/bin/python" -m oopz_capture.feishu_cli serve --runtime-log "@ROOT_EXEC@/shared/logs/feishu_runtime.log" --error-log "@ROOT_EXEC@/shared/logs/feishu_error.log"
+Restart=on-failure
+RestartSec=5
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=900
+SendSIGKILL=yes
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

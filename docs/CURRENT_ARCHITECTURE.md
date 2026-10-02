@@ -1,0 +1,37 @@
+# 当前架构
+
+## 控制边界
+
+飞书长连接网关是唯一远程控制面。SDK 策略禁用私聊，只允许 `OOPZ_FEISHU_ADMIN_CHAT_ID` 指定群内、且 @ 机器人的消息进入系统。网关将每名群成员映射为仅内存存在的控制器身份；这不是权限分级，受控群的所有成员都可执行同一组操作。
+
+命令解析是固定规则，不调用模型猜测意图。无法可靠识别时，网关要求用户查看帮助或通过卡片选择。
+
+## 处理链路
+
+```text
+飞书消息/卡片
+  → FeishuGateway → ControllerService → OOPZ 录音与分片
+  → 本地转写与修复 → 分析检查点 → 用户配置的分析 API
+  → 内部 Markdown、候选公开 PDF、飞书群审查卡片
+  → 飞书公开文档 → Base 索引
+```
+
+会话文件保存在 `OOPZ_OUTPUT_ROOT`（默认 `output`），网关事件、审查决定和审计日志保存在 `OOPZ_FEISHU_STATE_ROOT`（默认 `feishu_state`）。控制器、转写和分析可在后续命令中从文件状态恢复；分析会复用完成的短/长窗口。
+
+录音使用 OOPZ SDK 的无头浏览器语音后端；每个远端 Agora UID 单独采集 PCM。录音按最多 300 秒分片，分片结束后以本地 Silero VAD 和 SenseVoiceSmall（CPU）转写；默认 `OOPZ_RETAIN_AUDIO=false`，成功转写的分片音频随即删除。PDF 由项目内 Node 运行时调用 Chrome/Edge 无头渲染。
+
+## 录音浏览器依赖
+
+录音浏览器与 PDF 浏览器是两项独立依赖：默认录音后端使用 Playwright 的 Chromium 通道，必须通过该版本 Python 环境执行 `python -m playwright install --no-shell chromium` 并验证启动；已安装系统 Edge/Chrome 不会自动满足此要求。PDF 继续使用系统 Chrome/Edge。
+
+## 分析模型
+
+`configured-api` 是控制器的生产入口。全部 `ANALYZER_*` 配置必须由用户显式提供，程序不推断供应商、不补全 API 地址、不选择模型，也不为超时、重试、Token、思考模式或 JSON 模式提供环境默认值；缺少任意一项时生产网关拒绝启动。
+
+模型仅推荐 MiMo V2.5，不推荐供应商，也不设模型默认值。流水线将转录分为短窗口、长窗口和最终综合；每个非静音的 300 秒短窗口单独调用一次 API，不进行多窗口文本合并。`OOPZ_ANALYSIS_MAX_PARALLELISM=4` 仍是独立的窗口并行默认。用户应根据自行选择的服务配置 API 地址、模型标识及兼容的思考与 JSON 模式。
+
+## 发布、撤回与删除
+
+未批准的报告只在受控群内可见。批准操作以审查时公开 Markdown 的 SHA-256 为准，避免审查后内容变化而被发布。发布会创建飞书文档、开放“持链接可读”、并写入 Base 记录；Base 是稳定的公开索引，不承载报告正文。
+
+撤回会将文档改为非公开并将 Base 状态改为“已撤回”。明确删除或到期清理时，系统先删除远程文档和 Base 记录；任一远程删除失败都会保留本地会话以便后续重试。默认保留 15 天（`OOPZ_RETENTION_HOURS=360`）。

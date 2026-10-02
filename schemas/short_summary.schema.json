@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oopz.analysis.short_summary.v1",
+  "title": "300-second transcript summary",
+  "type": "object",
+  "required": [
+    "schema_version", "request_id", "session_id", "window_id", "window_index",
+    "start_ms", "end_ms", "silent", "source_segment_ids", "summary", "topics",
+    "decisions", "action_items", "open_questions", "uncertainties", "model",
+    "created_at", "input_fingerprint", "analysis_fingerprint"
+  ],
+  "properties": {
+    "schema_version": {"const": "oopz.analysis.short_summary.v1"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "session_id": {"type": "string", "anyOf": [{"format": "uuid"}, {"pattern": "^\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}_BJT(?:-\\d{2,3})?$"}]},
+    "window_id": {"type": "string", "format": "uuid"},
+    "window_index": {"type": "integer", "minimum": 0},
+    "start_ms": {"type": "integer", "minimum": 0},
+    "end_ms": {"type": "integer", "minimum": 1},
+    "partial": {"type": "boolean"},
+    "silent": {"type": "boolean"},
+    "speakers": {"type": "array", "items": {"type": "object"}},
+    "source_segment_ids": {"type": "array", "items": {"type": "string", "format": "uuid"}},
+    "summary": {"type": "string", "minLength": 1},
+    "topics": {"type": "array", "items": {"type": "string"}},
+    "decisions": {"type": "array", "items": {"type": "string"}},
+    "action_items": {"type": "array", "items": {"type": "string"}},
+    "open_questions": {"type": "array", "items": {"type": "string"}},
+    "uncertainties": {"type": "array", "items": {"type": "string"}},
+    "model": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "input_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "analysis_fingerprint": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}

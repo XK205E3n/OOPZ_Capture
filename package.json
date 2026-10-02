@@ -1,0 +1,13 @@
+{
+  "name": "oopz-capture-report-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Markdown to PDF renderer for OOPZ Capture reports",
+  "type": "module",
+  "scripts": {
+    "md-to-pdf": "node tools/md_to_pdf.mjs"
+  },
+  "dependencies": {
+    "md-to-pdf": "5.2.5"
+  }
+}
