@@ -8,6 +8,8 @@
 
 2026-10-02部署准备：远端Linux候选已推进至 `4e38d1dd50dd2fd90d10aff37341d7ee34082014`；在独立修复分支补齐Linux正式构建、Chromium准备检查及固定HOME。用户已批准本次替代独立发布审计，检查原基线、敏感信息、受保护路径、Git历史和大文件并保存脱敏报告；不宣称运行不可用的release-audit技能。代码/依赖准备与业务配置分离；在用户稍后提供配置前，不激活飞书网关，不影响其他项目。该条仅记录准备状态，不表示Ubuntu真实链路或生产服务已验收。
 
+Ubuntu 24.04实机首次准备：`v0.11.15-f19cb4a60606`（提交 `f19cb4a6060605ef315f126577cf241c807b7b16`）正式包已通过prepare，模型哈希已校验；网关未激活、用户业务配置尚未提供。三项真实浏览器捕获/PCM/probe测试通过；全量测试暴露一项请求先后顺序假设，独立复现后仅修复测试。项目PDF遇到宿主Chromium沙箱限制，尚未通过该门槛；不将此前浏览器成功推定为PDF成功，不修改全局安全策略。另一个项目的系统Python和进程保持原状，OOPZ采用独立Python与共享目录。
+
 2026-10-01复核修复：Linux切换guard已补 `last_job` 与真实分析阶段检查，拒绝无锁但已登记/进行中的分析。本机Windows单元回归309 passed、13 skipped；Linux真实管理入口和POSIX用例被跳过，Ubuntu实机与生产服务未操作。补丁交付分支为 `codex/fix-ubuntu-analysis-guard`，正式发布及部署由接手任务办理。
 
 Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux安装事务和中断恢复，开发验证环境为Debian 13，非Ubuntu 24.04。CPU VAD及固定模型公开音频转写成功；Chromium被沙箱socket权限阻止。实际systemd、Windows回归、飞书/API及数小时负载未验收。未提交或发布正式包，生产仍保持原状。详见 [验证记录](UBUNTU_VALIDATION.md)。

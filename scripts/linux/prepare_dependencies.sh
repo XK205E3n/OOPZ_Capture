@@ -11,10 +11,19 @@ node -e 'const [a,b]=process.versions.node.split(".").map(Number); if(a<22||(a==
 PUPPETEER_SKIP_DOWNLOAD=true npm exec --yes --package=pnpm@10.11.0 -- pnpm install --frozen-lockfile
 .venv/bin/python -m playwright install --no-shell chromium
 .venv/bin/python - <<'PY'
+import os
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
-    # Match oopz-sdk's Chromium channel after installing with --no-shell.
-    browser = p.chromium.launch(headless=True, channel="chromium")
+    # Verify the PDF browser's real sandbox prerequisite, independently of the
+    # SDK driver's default sandbox setting. Never fall back to --no-sandbox.
+    launch = dict(headless=True, chromium_sandbox=True)
+    browser_path = os.environ.get("MD_TO_PDF_CHROME_PATH")
+    if browser_path:
+        launch["executable_path"] = browser_path
+    else:
+        # Match the installed Chromium channel after --no-shell.
+        launch["channel"] = "chromium"
+    browser = p.chromium.launch(**launch)
     browser.close()
 import oopz_capture.feishu_cli
 import funasr, torch, torchaudio, onnxruntime

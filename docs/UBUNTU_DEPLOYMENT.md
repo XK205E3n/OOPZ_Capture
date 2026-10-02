@@ -112,14 +112,36 @@ Preparation restores `shared/home` even when runuser resets the account's HOME.
 If the host's system Python must remain untouched, provision an approved isolated
 Python 3.12 runtime and prepend its `bin` directory to PATH before prepare. Keep
 that interpreter in persistent storage because release virtual environments use
-it. Chromium is installed without the legacy headless shell, so smoke checks must
-use `chromium.launch(headless=True, channel="chromium")`, matching the SDK.
+it. The selected Node directory is placed first by preparation: if system Node is
+in `/usr/bin`, this can put system Python ahead of the isolated interpreter. Use
+the supported `shared/tools/node/bin` runtime location (or an administrator-managed
+link there to an already approved Node), then verify both resolved executables
+under the complete preparation environment. Include `/usr/sbin` and `/sbin` in
+the operator PATH so `runuser` is available. Do not upgrade an unrelated project's
+Python to repair an OOPZ PATH selection problem.
+
+Chromium is installed without the legacy headless shell. The preparation check
+explicitly enables `chromium_sandbox=True` and uses the installed `chromium`
+channel. If an administrator-managed browser is required, pass its absolute
+path in the preparation process's `MD_TO_PDF_CHROME_PATH`; the check launches that
+exact executable with sandboxing enabled. Configure the same supported path for
+the later application/PDF runtime. No automatic disabling fallback is provided.
 
 When configuration will be supplied later, stop after prepare and credential-free
 checks: imports/pip check, service-user browser and synthetic PCM, Chinese PDF,
 verified model/VAD/public-audio transcription. Leave the gateway inactive and
 disabled; do not run setup or activate with an empty configuration. These checks
 do not establish live OOPZ/Feishu/API or sustained-load acceptance.
+
+On Ubuntu, a `No usable sandbox` Chromium error must be investigated independently
+of the Python browser tests. Different browser drivers can have different sandbox
+defaults: the current upstream OOPZ SDK uses Playwright's disabled-sandbox default,
+whereas the PDF renderer enables the browser's normal sandbox. SDK PCM success is
+not sandbox readiness evidence. This adaptation does not patch that upstream SDK
+behavior. Preserve PDF Chromium sandboxing. Do not add `--no-sandbox`,
+disable AppArmor or globally relax user-namespace restrictions to make a check
+pass. Any needed host security-policy change requires explicit approval and must
+remain scoped to the verified browser executable.
 
 Configure `shared/config/.env` through the authorized secure operator flow. Do not
 paste secrets into chat. Keep the existing provider semantics: target DeepSeek

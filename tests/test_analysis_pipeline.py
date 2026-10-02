@@ -241,9 +241,27 @@ def make_session(
     return handoff
 
 
-def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: Path) -> None:
+@pytest.mark.parametrize('reverse_short_completion', [False, True])
+def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(
+    tmp_path: Path, monkeypatch, reverse_short_completion: bool,
+) -> None:
+    monkeypatch.setenv('OOPZ_ANALYSIS_MAX_PARALLELISM', '4')
     handoff = make_session(tmp_path)
-    client = RecordingClient()
+    class ReverseShortCompletionClient(RecordingClient):
+        def __init__(self):
+            super().__init__()
+            self.second_finished = threading.Event()
+
+        def complete_json(self, **kwargs):
+            short = kwargs['required_keys'] == SHORT_REQUIRED and kwargs['max_tokens'] == 1024
+            if short and '第一段测试内容' in kwargs['user_prompt']:
+                assert self.second_finished.wait(5), 'Second window must run concurrently'
+            response = super().complete_json(**kwargs)
+            if short and '第二段测试内容' in kwargs['user_prompt']:
+                self.second_finished.set()
+            return response
+
+    client = ReverseShortCompletionClient() if reverse_short_completion else RecordingClient()
     output = run_analysis(handoff, client)
 
     assert [(item["thinking"], item["reasoning_effort"]) for item in client.calls] == [
@@ -253,11 +271,20 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     assert [item["max_tokens"] for item in client.calls[:-1]] == [1024, 1024, 2048]
     assert all("oopz-user" not in item["user_prompt"] for item in client.calls)
     assert all("agora_uid" not in item["user_prompt"] for item in client.calls)
-    assert "segment_id" not in client.calls[0]["user_prompt"]
-    assert "start_ms" not in client.calls[0]["user_prompt"]
-    assert "end_ms" not in client.calls[0]["user_prompt"]
-    assert '第一段测试内容' in client.calls[0]["user_prompt"]
-    assert "2026-08-13 13:10" in client.calls[0]["user_prompt"]
+    short_calls = [call for call in client.calls
+                   if call['required_keys'] == SHORT_REQUIRED and call['max_tokens'] == 1024]
+    assert len(short_calls) == 2
+    for call in short_calls:
+        assert all(key not in call['user_prompt'] for key in ('segment_id', 'start_ms', 'end_ms'))
+    # Independent windows are concurrent; submission/completion order is not
+    # chronological. Check each request's own evidence, not calls[0]'s identity.
+    first = next(call for call in short_calls if '第一段测试内容' in call['user_prompt'])
+    second = next(call for call in short_calls if '第二段测试内容' in call['user_prompt'])
+    assert first is not second
+    assert "2026-08-13 13:10" in first['user_prompt']
+    assert "2026-08-13 13:15" in second['user_prompt']
+    if reverse_short_completion:
+        assert short_calls[0] is second
     assert "北京时间 UTC+8" not in client.calls[2]["user_prompt"]
     assert "朋友之间的现实日常生活交流和多人游戏游玩交流" in client.calls[0]["system_prompt"]
     assert '"participants":["测试用户"]' in client.calls[2]["user_prompt"]
@@ -267,6 +294,9 @@ def test_pipeline_uses_non_thinking_short_and_thinking_long_and_final(tmp_path: 
     result = output["result"]
     assert result["status"] == "completed"
     assert len(result["short_summaries"]) == 2
+    assert [(item['start_ms'], item['end_ms']) for item in result['short_summaries']] == [
+        (0, 300_000), (300_000, 600_000),
+    ]
     assert len(result["long_summaries"]) == 1
     assert result["model"]["usage"]["mode_calls"] == {"disabled": 3, "enabled": 1, "deterministic": 0}
     assert result["analysis_policy"] == {

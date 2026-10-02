@@ -39,6 +39,36 @@ target must independently pass browser/synthetic PCM, Chinese PDF, model/VAD/aud
 and dependency checks. Live connections, actual recording/reconnect, reboot and
 multi-hour workload remain unverified until those later authorized tests run.
 
+### First target-host validation and concurrent test correction
+
+The audited `f19cb4a60606` package completed preparation on Ubuntu 24.04. The target
+ran all three actual SDK browser capture/PCM/probe tests successfully. Its full
+suite reported 392 passed, 9 skipped, 1 failure: a prompt-format test assumed the
+first concurrent request belonged to the first time window. A deterministic
+event-controlled reproduction forced window two before window one and reproduced
+that assertion failure while result status stayed completed and summary intervals
+remained `[0, 300000]`, `[300000, 600000]`. The corrected test identifies requests
+by their own evidence, covers both ordinary and forced-reverse execution, and
+still asserts stage parameters, data minimization, costs, report content and
+chronological output. It does not serialize or change production analysis.
+
+Target PDF failed separately with Chromium's `No usable sandbox` diagnostic.
+No disable-sandbox flag, AppArmor change, global sysctl change or production
+activation was performed by this source fix. That host gate remains open pending
+an approved sandbox-compatible remedy and an actual project-renderer retest.
+
+Preparation now explicitly requests `chromium_sandbox=True` and tests either the
+installed channel or the exact existing `MD_TO_PDF_CHROME_PATH` process override.
+Both branches run through the real shell entrypoint with an isolated Playwright
+double. This prevents the earlier preparation pass from hiding the host sandbox
+requirement. Upstream SDK browser tests use Playwright's disabled-sandbox default;
+those actual PCM tests are not sandbox acceptance, and this change does not vendor
+or alter the SDK. The ordering regression passed 20 repeated runs (40 cases).
+Final development-host regression for this correction: **395 passed, 9 skipped,
+2 existing SDK cleanup warnings**, 49.22 seconds. Python compilation, shell/Node
+syntax and whitespace checks also passed. Actual target sandbox/PDF testing remains
+a separate required gate.
+
 ## Scope and provenance
 
 Implementation branch: `codex/ubuntu-adaptation-implementation`, based on handoff
