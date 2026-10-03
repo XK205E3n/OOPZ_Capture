@@ -23,6 +23,15 @@ from .settings import canonical_setting_key, setting_description, setting_is_con
 from .send_request import acknowledge_send_request, list_send_requests, reschedule_send_request, send_request_is_due
 
 
+CAPTURE_ONLY_HELP_TEXT = "仅录音转写模式：@OOPZ 开始录音 [时长]，随后选择域和语音频道并确认已告知参与者；状态；停止。分析、报告、发布和删除均已禁用。"
+
+
+def _capture_only_command_allowed(command: str) -> bool:
+    return (command in {"/oopz 帮助", "/oopz help", "/oopz 状态", "/oopz 离开", "取消", "退出", "cancel"}
+            or command.isdigit()
+            or re.fullmatch(r"/oopz\s*(?:开始|start)(?:\s+\d+(?:\.\d+)?\s*(?:秒|分钟|分|小时|时|h|m|s)?)?", command, re.I) is not None)
+
+
 FEISHU_HELP_TEXT = "\n".join([
     "飞书群共用指令（仅本群成员 @OOPZ 后生效）",
     "",
@@ -190,6 +199,7 @@ class FeishuGatewayConfig:
     state_root: Path
     controller_config: ControllerConfig
     publication: PublicationConfig | None = None
+    capture_only: bool = False
 
     @classmethod
     def from_env(cls) -> "FeishuGatewayConfig":
@@ -202,17 +212,37 @@ class FeishuGatewayConfig:
             raise ValueError("OOPZ_FEISHU_APP_ID, OOPZ_FEISHU_APP_SECRET and OOPZ_FEISHU_ADMIN_CHAT_ID are required")
         # Production startup must fail early when the analysis API contract is
         # incomplete. No provider, endpoint, model, or tuning value is implied.
-        DeepSeekConfig.from_env()
+        capture_only = _env_bool("OOPZ_CAPTURE_ONLY")
         state_root = Path(os.environ.get("OOPZ_FEISHU_STATE_ROOT", "feishu_state"))
+        output_root = Path(os.environ.get("OOPZ_OUTPUT_ROOT", "output"))
+        if capture_only:
+            names = ("OOPZ_CAPTURE_ONLY_STATE_ROOT", "OOPZ_CAPTURE_ONLY_OUTPUT_ROOT")
+            roots = []
+            for name in names:
+                value = os.environ.get(name, "").strip()
+                if not value or not Path(value).is_absolute():
+                    raise ValueError(f"{name} requires an explicit absolute fresh directory")
+                path = Path(value).resolve()
+                if path.exists() and (not path.is_dir() or any(path.iterdir())):
+                    raise ValueError(f"{name} must be fresh and empty; choose a new directory")
+                roots.append(path)
+            def overlaps(a: Path, b: Path) -> bool:
+                return a == b or a in b.parents or b in a.parents
+            if overlaps(*roots) or any(overlaps(p, old.resolve()) for p in roots for old in (state_root, output_root)):
+                raise ValueError("capture-only roots must be separate from each other and normal state/output")
+            state_root, output_root = roots
+        else:
+            DeepSeekConfig.from_env()
         # Keep recording settings in their existing OOPZ_* variables.
         controller = ControllerConfig(
-            output_root=Path(os.environ.get("OOPZ_OUTPUT_ROOT", "output")), state_root=state_root,
+            output_root=output_root, state_root=state_root,
+            capture_only=capture_only,
             authorization=SenderPolicy(frozenset({_CONTROLLER_PLACEHOLDER_ID})),
-            consent_confirmed=True,
+            consent_confirmed=not capture_only,
             chunk_seconds=int(os.environ.get("OOPZ_CHUNK_SECONDS", "300")),
             cutoff_local_hour=int(os.environ.get("OOPZ_CUTOFF_LOCAL_HOUR", "4")),
             language=os.environ.get("OOPZ_LANGUAGE", "auto").strip(),
-            retain_audio=_env_bool("OOPZ_RETAIN_AUDIO"),
+            retain_audio=True if capture_only else _env_bool("OOPZ_RETAIN_AUDIO"),
             transcription_repair_attempts=int(os.environ.get("OOPZ_TRANSCRIPTION_REPAIR_ATTEMPTS", "1")),
             processing_deadline_seconds=int(os.environ.get("OOPZ_PROCESSING_DEADLINE_SECONDS", "900")),
             retention_hours=int(os.environ.get("OOPZ_RETENTION_HOURS", "360")),
@@ -227,7 +257,7 @@ class FeishuGatewayConfig:
             reconnect_initial_delay_seconds=float(os.environ.get("OOPZ_RECONNECT_INITIAL_DELAY_SECONDS", "1")),
             reconnect_max_delay_seconds=float(os.environ.get("OOPZ_RECONNECT_MAX_DELAY_SECONDS", "30")),
             reconnect_attempt_timeout_seconds=float(os.environ.get("OOPZ_RECONNECT_ATTEMPT_TIMEOUT_SECONDS", "30")),
-            device=os.environ.get("OOPZ_DEVICE", "cpu").strip(),
+            device="cpu" if capture_only else os.environ.get("OOPZ_DEVICE", "cpu").strip(),
         )
         controller.validate()
         values = {
@@ -236,10 +266,10 @@ class FeishuGatewayConfig:
             "base_table_id": os.environ.get("OOPZ_FEISHU_BASE_TABLE_ID", "").strip(),
             "public_index_url": os.environ.get("OOPZ_FEISHU_PUBLIC_INDEX_URL", "").strip(),
         }
-        publication = PublicationConfig(**values) if any(values.values()) else None
+        publication = PublicationConfig(**values) if not capture_only and any(values.values()) else None
         if publication is not None:
             publication.validate()
-        return cls(app_id, app_secret, chat_id, state_root, controller, publication)
+        return cls(app_id, app_secret, chat_id, state_root, controller, publication, capture_only)
 
 
 class FeishuGateway:
@@ -255,7 +285,7 @@ class FeishuGateway:
         self.state_root = config.state_root.resolve()
         self.state_root.mkdir(parents=True, exist_ok=True)
         self.controller = controller or ControllerService(config.controller_config)
-        self.publisher = publisher
+        self.publisher = None if config.capture_only else publisher
         self._lock = asyncio.Lock()
 
     async def _approver_display_name(self, open_id: str) -> str | None:
@@ -548,6 +578,9 @@ class FeishuGateway:
             self._audit("rejected_message", message_id=inbound.message_id, chat_id=inbound.chat_id)
             return
         command = normalize_intent(inbound.text)
+        if self.config.capture_only and (command is None or not _capture_only_command_allowed(command)):
+            await self._send_text(CAPTURE_ONLY_HELP_TEXT)
+            return
         self._console("识别", display_intent(command))
         if command is None:
             self._audit("ambiguous_message", message_id=inbound.message_id, sender_open_id=inbound.sender_open_id)
@@ -562,12 +595,15 @@ class FeishuGateway:
             if command in {"/oopz 帮助", "/oopz help"}:
                 _atomic_json(path, {"feishu_message_id": inbound.message_id, "handled_as": "feishu_help", "received_at": _iso()})
                 self._audit("accepted_command", message_id=inbound.message_id, sender_open_id=inbound.sender_open_id, command="feishu_help")
-                outbound = {"text": FEISHU_HELP_TEXT}
+                outbound = {"text": CAPTURE_ONLY_HELP_TEXT if self.config.capture_only else FEISHU_HELP_TEXT}
             else:
                 outbound = await self._direct_command(command, inbound.sender_open_id) or {}
                 if not outbound:
                     dispatched = await self._controller_reply(command, inbound.sender_open_id)
                     outbound = {"text": str(dispatched["reply"].get("text") or "已处理。"), "controller_message_id": dispatched["controller_message_id"]}
+                    token = dispatched["reply"].get("capture_consent_token")
+                    if self.config.capture_only and token:
+                        outbound["card"] = self._capture_consent_card(str(token), outbound["text"])
                 _atomic_json(path, {
                     "feishu_message_id": inbound.message_id,
                     "controller_message_id": outbound.get("controller_message_id"),
@@ -588,6 +624,21 @@ class FeishuGateway:
     async def handle_card_action(self, *, action_id: str, open_id: str, event_id: str, chat_id: str) -> None:
         if chat_id != self.config.admin_chat_id:
             self._audit("rejected_card_action", action_id=action_id, chat_id=chat_id)
+            return
+        if self.config.capture_only and action_id.startswith("capture_consent:"):
+            token = action_id.removeprefix("capture_consent:")
+            if not re.fullmatch(r"[a-f0-9]{32}", token):
+                return
+            async with self._lock:
+                path = self._event_path(event_id)
+                if path.exists():
+                    return
+                dispatched = await self._controller_reply("capture_consent:" + token, open_id)
+                _atomic_json(path, {"received_at": _iso(), "handled_as": "capture_consent"})
+            await self._send_reply(str(dispatched["reply"].get("text") or "已处理。"))
+            return
+        if self.config.capture_only and not action_id.startswith("selection:"):
+            await self._send_text(CAPTURE_ONLY_HELP_TEXT)
             return
         if action_id in {"analysis_yes", "analysis_no"}:
             await self.handle_message(FeishuInbound(event_id, self.config.admin_chat_id, open_id, "是" if action_id == "analysis_yes" else "否"))
@@ -805,6 +856,8 @@ class FeishuGateway:
         return {"text": "未知的卡片操作。"}
 
     async def drain_outbox(self) -> int:
+        if self.config.capture_only:
+            return 0
         sent = 0
         for item in list_send_requests(self.state_root, statuses={"pending"}):
             if not send_request_is_due(item):
@@ -830,6 +883,8 @@ class FeishuGateway:
 
     async def reconcile_publications(self) -> int:
         """Remove remote reports whose local Session is already absent."""
+        if self.config.capture_only:
+            return 0
         if self.publisher is None:
             return 0
         changed = 0
@@ -900,6 +955,8 @@ class FeishuGateway:
 
     async def cleanup_expired_sessions(self) -> int:
         """Delete an expired local Session only after its remote report is deleted."""
+        if self.config.capture_only:
+            return 0
         removed = 0
         async with self._lock:
             for session_id in self._expired_session_ids(self.config.controller_config.output_root):
@@ -956,6 +1013,8 @@ class FeishuGateway:
 
     async def backfill_publications(self) -> int:
         """Publish every current, non-future local public report exactly once."""
+        if self.config.capture_only:
+            return 0
         if self.publisher is None:
             raise ValueError("未配置公开文档文件夹、Base 或固定索引链接")
         approver_open_id = self._backfill_approver_open_id()
@@ -1008,6 +1067,8 @@ class FeishuGateway:
 
     async def repair_publication_index(self) -> int:
         """Update active legacy Base entries to the tenant-hosted report URL."""
+        if self.config.capture_only:
+            return 0
         if self.publisher is None:
             return 0
         changed = 0
@@ -1030,6 +1091,17 @@ class FeishuGateway:
             except Exception as error:
                 self._audit("publication_index_repair_failed", record=str(path), error=f"{type(error).__name__}: {error}")
         return changed
+
+    @staticmethod
+    def _capture_consent_card(token: str, text: str) -> dict[str, Any]:
+        return {"config": {"wide_screen_mode": True},
+                "header": {"title": {"tag": "plain_text", "content": "确认后开始录音"}},
+                "elements": [{"tag": "markdown", "content": text},
+                             {"tag": "action", "actions": [
+                                 {"tag": "button", "text": {"tag": "plain_text", "content": "已告知参与者并开始录音"},
+                                  "type": "primary", "value": {"action_id": "capture_consent:" + token}},
+                                 {"tag": "button", "text": {"tag": "plain_text", "content": "取消"},
+                                  "value": {"action_id": "selection:cancel"}}]}]}
 
     async def _send_text(self, text: str) -> None:
         self._console("发信", text[:500])

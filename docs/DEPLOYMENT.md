@@ -112,3 +112,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File C:\OOPZ\admin\rollback_relea
 - 紧急 Bug 也走“本地修复 → 测试 → 提交 → 发布包 → 部署”，不在服务器热改。
 - 正常保留当前版和至少两个已验证旧版本；确认数据兼容且备份有效后再人工清理更旧发布目录。
 - 每次部署完成后立即更新 `DEPLOYMENT_STATE.md` 与 `DEPLOYMENT_CHANGELOG.md` 并提交，确保文档与线上状态闭环。
+
+## 临时隔离录音转写模式
+
+使用已安全配置的账号和既有控制群，运行 `python -m oopz_capture.feishu_cli serve --capture-only`。网关只监听；无需预先声称已告知参与者，也不会自动录音。
+
+- 设置 `OOPZ_CAPTURE_ONLY_STATE_ROOT`、`OOPZ_CAPTURE_ONLY_OUTPUT_ROOT` 为两个全新/空的绝对目录，彼此及普通目录不得重叠。每次重启换新目录，保留上次音频，不设自动重启循环。
+- 群内发送“开始录音 [时长]”，选择域和频道后，由同一发起人点击“已告知参与者并开始录音”。取消、十分钟过期、旧卡和其他人的确认不能启动。
+- 强制CPU、保留音频；不需要分析配置，不投递旧/新报告，不生成分析报告，不公开发布、不清理会话。可发送状态和停止。默认无人300秒退出，北京时间04:00结束保护保留。
+- 该模式不激活服务、不切换current、不建立新凭据。新包应仅prepare，使用独立版本路径临时运行。回滚旧版须去掉新参数；不要将隔离目录改成普通网关目录。

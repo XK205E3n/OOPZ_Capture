@@ -12,7 +12,7 @@ import signal
 import sys
 from typing import Sequence
 
-from .feishu_gateway import FEISHU_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
+from .feishu_gateway import CAPTURE_ONLY_HELP_TEXT, FEISHU_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
 from .feishu_publisher import FeishuPublisher, LarkPublishingClient
 from .settings import upsert_env
 
@@ -146,6 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     load_project_env()
     parser = argparse.ArgumentParser(prog="oopz-feishu", description="OOPZ Feishu group-control gateway")
     parser.add_argument("command", choices=["serve", "drain", "notify", "reconcile-publications", "repair-publication-index", "backfill-publications", "discover-ids", "setup"])
+    parser.add_argument("--capture-only", action="store_true", help="isolated CPU capture/transcription; disables analysis, reports, publication and cleanup")
     parser.add_argument("message", nargs="?", help="message text for notify")
     parser.add_argument("--lifecycle", choices=["started", "restarted"], help="send this lifecycle status once the long connection is ready")
     parser.add_argument("--runtime-log", help="append stdout to this UTF-8 log (serve only)")
@@ -155,6 +156,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", help="setup: 允许把 .env 凭据覆盖为另一应用")
     parser.add_argument("--url-only", action="store_true", help="setup: 不渲染终端二维码，仅打印确认链接")
     args = parser.parse_args(argv)
+    if args.capture_only:
+        os.environ["OOPZ_CAPTURE_ONLY"] = "true"
+    from .controller import _env_bool
+    if _env_bool("OOPZ_CAPTURE_ONLY"):
+        if args.command != "serve":
+            parser.error("capture-only supports serve only")
+        if not os.environ.get("OOPZ_FEISHU_ADMIN_CHAT_ID", "").strip():
+            parser.error("capture-only requires an existing configured control group")
     if args.command == "setup":
         from .feishu_setup import run_setup
         try:
@@ -346,7 +355,8 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
                 connecting.cancel()
             await asyncio.gather(connecting, stop_waiter, return_exceptions=True)
         print("飞书长连接已就绪；正在监听受控群的 @OOPZ 指令。", flush=True)
-        for notice in lifecycle_notices(lifecycle):
+        notices = ((CAPTURE_ONLY_HELP_TEXT,) if lifecycle else ()) if getattr(getattr(gateway, "config", None), "capture_only", False) else lifecycle_notices(lifecycle)
+        for notice in notices:
             if stopping.is_set():
                 break
             await gateway.send_lifecycle_notice(notice)
