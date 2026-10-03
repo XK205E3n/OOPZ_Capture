@@ -6,6 +6,11 @@
 
 ## 未发布
 
+### 2026-10-03 — 恢复：采用生产 Ubuntu 线作为 Linux 部署基础
+
+- 将服务器实际部署的 `v0.11.15-4291aa894f7a` 代码树纳入 Git（Linux 发布管理 Python 工具、WeasyPrint PDF 后端、`--capture-only` 模式与发起人确认、优雅关闭及对应测试/文档）；与 `codex/fix-ubuntu-analysis-guard` 同源，取代本地较早的独立 R1–R6 实现。
+- 此前的源码历史已丢失，仅以经校验的发布包快照保存在 `recovery/server-v0.11.15-snapshots`；不声称恢复原历史。详见部署变更记录与 `docs/DEPLOYMENT_STATE.md`。
+
 ### 2026-10-03 — 修复：隔离飞书录音转写及启动确认
 
 - 新增可选 `--capture-only` / `OOPZ_CAPTURE_ONLY`，仅保留受控群开始、状态、停止、目标选择和帮助。强制CPU及音频保留，禁用分析入口、报告发件箱、发布和清理；默认模式原行为保留。

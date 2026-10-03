@@ -4,6 +4,12 @@
 
 ## 待发布
 
+### 2026-10-03 — 记录：采用生产 Ubuntu 线并核对服务器实际状态
+
+- 服务器实际运行 `v0.11.15-4291aa894f7a`（`--capture-only` 测试进程，未建立 `current`/systemd），其余三个同版本发布目录并存；这些提交来自丢失的工作环境，已从发布包（SHA-256 核对）导入 `recovery/server-v0.11.15-snapshots`。本分支把最新快照作为 Linux 部署基础，去除生成文件并按仓库换行规范化。
+- 修复 `tests/test_release_build.py` 夹具缺少 `.gitattributes` 导致 Windows `autocrlf=true` 下 LF 检查失败；真实构建不受影响。
+- 验证：本机 Windows 全量 372 项：352 通过、20 跳过（缺 Linux/符号链接/PowerShell 条件）、0 失败（夹具修复前有 1 项因 `autocrlf` 失败）；Ubuntu 实机未重跑。未改动服务器，无配置或数据迁移。服务器代码此前未经 Git 管理，此提交使 Git 与服务器首次一致（以 `4291aa894f7a` 为准）。
+
 ### 2026-10-03 — 修复：隔离飞书录音转写及启动确认
 
 - 新增可选 `--capture-only` / `OOPZ_CAPTURE_ONLY`，仅保留受控群开始、状态、停止、目标选择和帮助。强制CPU及音频保留，禁用分析入口、报告发件箱、发布和清理；默认模式原行为保留。
