@@ -12,7 +12,12 @@ try {
     if ($dirty) { throw 'Refusing to build: commit or stash every working-tree change first.' }
 
     if (-not $SkipTests) {
-        $python = Join-Path $projectRoot '.venv\Scripts\python.exe'
+        $pythonRelative = if ([System.IO.Path]::DirectorySeparatorChar -eq '\') {
+            '.venv\Scripts\python.exe'
+        } else {
+            '.venv/bin/python'
+        }
+        $python = Join-Path $projectRoot $pythonRelative
         if (-not (Test-Path -LiteralPath $python -PathType Leaf)) {
             throw "Local virtual environment is missing: $python"
         }
@@ -56,9 +61,16 @@ try {
             [System.IO.Compression.ZipArchiveMode]::Create
         )
         try {
-            $stagingPrefix = $staging.TrimEnd('\') + '\'
-            Get-ChildItem -LiteralPath $staging -Recurse -File | ForEach-Object {
-                if (-not $_.FullName.StartsWith($stagingPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $separator = [System.IO.Path]::DirectorySeparatorChar
+            $stagingPrefix = $staging.TrimEnd($separator) + $separator
+            $pathComparison = if ($separator -eq '\') {
+                [System.StringComparison]::OrdinalIgnoreCase
+            } else {
+                [System.StringComparison]::Ordinal
+            }
+            # Unix dotfiles (including the required .env.example) are hidden.
+            Get-ChildItem -LiteralPath $staging -Recurse -File -Force | ForEach-Object {
+                if (-not $_.FullName.StartsWith($stagingPrefix, $pathComparison)) {
                     throw "Release source escaped the staging directory: $($_.FullName)"
                 }
                 $entryName = $_.FullName.Substring($stagingPrefix.Length).Replace('\', '/')
@@ -78,11 +90,36 @@ try {
         try {
             foreach ($requiredEntry in @(
                 'RELEASE_MANIFEST.json',
+                'pyproject.toml',
+                '.env.example',
                 'scripts/install_release.ps1',
-                'scripts/download_sensevoice_model.py'
+                'scripts/download_sensevoice_model.py',
+                'scripts/linux/install_release.sh',
+                'scripts/linux/update_release.sh',
+                'scripts/linux/rollback_release.sh',
+                'scripts/linux/manage_release.py',
+                'scripts/linux/release_archive.py',
+                'scripts/linux/release_locks.py',
+                'scripts/linux/release_transaction.py',
+                'scripts/linux/prepare_dependencies.sh',
+                'scripts/linux/oopz-capture.service',
+                'scripts/linux/oopz-capture.logrotate',
+                'src/oopz_capture/weasy_pdf.py',
+                'tools/md_to_html.mjs',
+                'tools/md_to_pdf.mjs',
+                'tools/md_to_pdf.css'
             )) {
                 if ($null -eq $verification.GetEntry($requiredEntry)) {
                     throw "Release entry is missing: $requiredEntry"
+                }
+            }
+            foreach ($entry in $verification.Entries) {
+                if ($entry.FullName -match '^scripts/linux/.*\.sh$') {
+                    $reader = [System.IO.StreamReader]::new($entry.Open())
+                    try { $scriptText = $reader.ReadToEnd() } finally { $reader.Dispose() }
+                    if ($scriptText.Contains("`r")) {
+                        throw "Linux shell script must use LF line endings: $($entry.FullName)"
+                    }
                 }
             }
             $blockedEntries = @($verification.Entries | Where-Object {

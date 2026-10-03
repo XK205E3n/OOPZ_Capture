@@ -4,6 +4,51 @@
 
 ## 待发布
 
+### 2026-10-03 — 修复：隔离飞书录音转写及启动确认
+
+- 新增可选 `--capture-only` / `OOPZ_CAPTURE_ONLY`，仅保留受控群开始、状态、停止、目标选择和帮助。强制CPU及音频保留，禁用分析入口、报告发件箱、发布和清理；默认模式原行为保留。
+- 网关就绪不代表已告知参与者，不自动录音。选择频道后，发起人须点击“已告知参与者并开始录音”；确认绑定唯一目标流程，过期、取消、他人确认和重放不能启动。实际录音请求才设置确认标记。
+- 使用全新独立绝对state/output目录；重启换新目录且保留旧数据，不设自动重启。影响启动配置，无数据迁移；旧版回滚去掉新参数。
+- 本候选由已核验正式基线归档恢复源码后创建新的本地Git快照；不声称恢复原Git历史。离线专项测试通过，全量与正式打包结果保存在发布审计记录；真实网关、录音和部署尚未验证。
+
+
+### 2026-10-02 — Linux可选WeasyPrint后端
+
+- 新增OOPZ_PDF_BACKEND（chromium/weasyprint），未设置时保留Chromium；本次Ubuntu目标经验证后明确选择weasyprint，Windows不自动改变。现有输出/归档数据格式不变，不自动重发或重算历史分析。
+- Linux独立环境安装WeasyPrint>=70,<71与原有speech/feishu依赖；本机需Pango、PangoFT2、HarfBuzz及subset库、Fontconfig和中文字体。准备检查这些Python依赖，正式包/校验器增加新PDF辅助文件完整性保护。
+- 仅替换可选HTML到PDF阶段，Node继续负责原有Markdown方言；OOPZ录音仍保留浏览器。禁用任何隐式失败回退，运行错误明确保留，半成品清理；不放宽Chromium或宿主安全策略。
+- 资源/隐私边界：10MiB输入、32MiB展开HTML、256MiB Node堆、1.5GiB Weasy地址空间、180秒外层超时；仅2MiB以内且签名一致的raster data资源；不读取文档引用的本地文件或网络，不输出其敏感URL，不嵌入附件或SVG。
+- 回退：同版明确设置chromium并验证受管理浏览器，或激活已准备旧版；旧版不识别新键并使用原Chromium流程。用旧包从零重装时采用该旧包经验证的管理脚本，新完整性规则有意拒绝缺少当前helper的包。共享数据与原Markdown保留，无格式迁移。
+
+### 2026-10-02 — 修复：Linux构建和配置前准备
+
+- 正式PowerShell构建支持Unix虚拟环境、平台原生路径及隐藏文件，保留Windows路径；未绕过干净HEAD、测试、清单、受保护目录或SHA-256检查。
+- Linux浏览器启动检查使用已安装的Chromium channel；root通过runuser执行准备/setup后恢复项目共享HOME，已有普通服务账户也能保持独立缓存目录。
+- 新增五项真实入口行为回归；无新业务配置/状态迁移。回滚不会修改shared数据，但旧管理脚本会恢复构建/准备缺陷。用户确认稍后提供配置时，仅执行prepare和无凭据健康检查，不执行setup/activate，不连接飞书或OOPZ账户。
+- 首次Ubuntu准备后复核发现一项并行测试的顺序假设和PDF浏览器沙箱限制：测试已增加强制反序执行并按窗口识别请求，生产分析代码不变；操作指南说明完整PATH、系统Node优先级及沙箱审批边界。未通过的实机项目不计为验收完成，不通过关闭沙箱绕过。
+- prepare 现在以 `chromium_sandbox=True` 检查PDF前置，支持以既有 `MD_TO_PDF_CHROME_PATH` 进程变量选择精确受管理路径；旧版遗漏的宿主限制会在prepare阶段明确失败，不自动修改宿主策略。配置键未新增，业务数据无需迁移；升级前需完成获批的浏览器沙箱准备，回滚只恢复旧检查宽度。
+
+### 2026-10-01 — 修复：Linux后台分析状态保护
+
+- 升级与回滚使用的共享guard现在检查 `controller.json` 的 `last_job`，并匹配分析器实际阶段；已登记且尚无锁的后台分析不能被普通切换中断。非法last_job/状态类型拒绝，完成/失败或仅准备好的窗口计划不新增阻塞；显式force语义保留。
+- 无环境变量、依赖或业务格式变化，无需迁移；回滚到旧管理脚本会恢复旧漏检行为。仅影响Linux管理保护，不改变生产版本或服务状态。
+- 验证：Windows全量309 passed、13 skipped，含19项新增跨平台保护/入口逻辑回归；新增五项Linux真实入口用例因本机平台未执行。本次仅Git分支交付，未发布正式包或部署，Ubuntu/systemd及真实链路仍待验收。
+
+### 2026-10-01 — 实现：Ubuntu适配开发候选（未发布）
+
+- 增加Linux分阶段安装、共享配置、完整校验后helper提取、更新/回滚事务和systemd/logrotate模板；失败恢复实际文件/current及active/enabled状态，损坏锁与不可读任务树保守拒绝切换。
+- 跨平台Node/PDF浏览器/字体查找，Node最低22.12；新增OOPZ_ENV_FILE/OOPZ_NODE_PATH，保持Windows配置硬链接写回；SIGTERM停止接收新工作并排空自有任务。供应商、思考及分析提示词语义不变。
+- Debian13/Python3.12集成测试364 passed、9 skipped、2条既有SDK清理警告；CPU依赖、VAD和固定SenseVoice公开音频样本实测成功。Chromium被沙箱socket权限阻止，实际Ubuntu/systemd/Windows/飞书/API与数小时负载仍未验收。
+- 影响部署/配置/构建；正式包仍须干净已提交HEAD经build_release.ps1生成。release-audit技能不可用，仅补充基线扫描无命中，未提交/推送/发布或操作生产。迁移和回滚见docs/UBUNTU_DEPLOYMENT.md，验证边界见docs/UBUNTU_VALIDATION.md；共享数据不清理。
+
+
+
+### 2026-10-01 — 文档：Ubuntu适配交接
+
+- 新增独立方案及接手任务，记录需求、已知草稿失败场景及Ubuntu实测边界；本次只交付文档，不包含本机未推送的Linux实现。
+- 无部署基线、环境变量、依赖或业务数据变化；无需迁移，回滚文档提交不影响运行程序。未生成Release或操作生产服务器。
+- 验证：核对远端Git基线和文档路径/差异，完整方案不依赖本机被忽略的日志文件。
+
 ## 0.11.15 — 2026-09-21
 
 Release：[v0.11.15](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.15)。

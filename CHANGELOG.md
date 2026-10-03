@@ -6,6 +6,50 @@
 
 ## 未发布
 
+### 2026-10-03 — 修复：隔离飞书录音转写及启动确认
+
+- 新增可选 `--capture-only` / `OOPZ_CAPTURE_ONLY`，仅保留受控群开始、状态、停止、目标选择和帮助。强制CPU及音频保留，禁用分析入口、报告发件箱、发布和清理；默认模式原行为保留。
+- 网关就绪不代表已告知参与者，不自动录音。选择频道后，发起人须点击“已告知参与者并开始录音”；确认绑定唯一目标流程，过期、取消、他人确认和重放不能启动。实际录音请求才设置确认标记。
+- 使用全新独立绝对state/output目录；重启换新目录且保留旧数据，不设自动重启。影响启动配置，无数据迁移；旧版回滚去掉新参数。
+- 本候选由已核验正式基线归档恢复源码后创建新的本地Git快照；不声称恢复原Git历史。离线专项测试通过，全量与正式打包结果保存在发布审计记录；真实网关、录音和部署尚未验证。
+
+
+### 2026-10-02 — 新增：Linux WeasyPrint PDF后端
+
+- 新增显式 `OOPZ_PDF_BACKEND=weasyprint`，沿用现有Markdown解析、基础HTML/CSS与报告归档接口，用独立Python进程生成中文A4和连续页码；缺省仍为chromium，Windows路径保留，失败不会自动换引擎。分析模型、提示词、飞书正文和投递逻辑不变。
+- Linux安装加入 `pdf` extra（安全修复版WeasyPrint稳定70.x）及Pango/HarfBuzz前置说明。转换只允许限量且校验签名的内嵌光栅图，拒绝网络/本地资源、SVG、活动嵌入及两类PDF附件；日志不包含文档/资源URL正文。
+- 增加输入/HTML/Node堆/渲染内存限制，沿用180秒超时和进程组回收，失败/中断清理半成品。真实中文多页PDF及恶意资源/附件、显式后端、版本与安装/包完整性回归已执行；具体全量和视觉结果见Ubuntu验证记录。
+- 影响依赖、可选配置和PDF版式，无业务状态迁移；旧会话仅使用已有Markdown本地转换，不请求分析API或重发报告。回退需明确选chromium或回滚已准备版本，保留既有浏览器依赖。
+
+### 2026-10-02 — 修复：Linux正式构建与隔离依赖准备
+
+- 修复 `build_release.ps1` 的Windows虚拟环境/路径分隔符假设，并保留Unix隐藏文件，正式包继续只从干净已提交HEAD生成；Windows构建路径保留。
+- Linux准备阶段的浏览器检查显式使用与SDK一致的Chromium channel，匹配 `--no-shell` 安装；特权切换至已有服务账户后恢复项目专属HOME，避免把缓存写入其他项目的用户目录。
+- 五项新增行为测试执行真实PowerShell构建和Linux依赖脚本，覆盖空格/中文路径、隐藏文件、清单/哈希、脏树/重复产物拒绝、Unix虚拟环境测试调用及服务账户HOME。影响构建/准备，无新业务配置、数据格式或迁移；回滚旧脚本会恢复上述问题。生产启用和外部链路验收不由这些测试替代。
+- Ubuntu实机暴露分析测试错误依赖并行请求到达次序；通过事件强制第二窗口先完成复现，分析结果仍按原时间顺序正确输出。修复测试按窗口证据识别请求并增加反序回归，保留并发、各阶段参数及输出顺序断言；未改变分析生产逻辑。补充隔离Python/Node的PATH和浏览器沙箱操作边界，PDF实机验收仍须独立通过。
+- Linux prepare 明确启用Chromium沙箱，并接受现有 `MD_TO_PDF_CHROME_PATH` 进程覆盖来检查实际受管理浏览器；新增默认channel/精确路径双分支回归。SDK自带的Playwright沙箱默认值不在本次改写范围，不能把SDK收音测试当作沙箱验收；未新增关闭沙箱回退或全局安全策略变更。
+
+### 2026-10-01 — 修复：Linux切换保护漏检无锁后台分析
+
+- `scripts/linux/release_locks.py` 增加控制器 `last_job` 检查，识别 `analyzing_*`、`preparing_windows` 和 `building_final_report`，防止后台任务登记后、锁创建前被误判空闲；完成/失败状态及仅准备好的窗口计划仍可通过，非法状态类型保守拒绝。
+- 新增跨平台保护和管理入口逻辑回归，以及Linux真实入口的五个无锁分析拒绝用例，检查拒绝时不调用服务/切换且保留原current。
+- 本机Windows全量309 passed、13 skipped；Linux账户/入口及POSIX测试在本机跳过，新增Unix子进程用例未执行。影响Linux升级/回滚保护，无新配置或数据迁移；本次仅Git分支交付，未发布正式包或部署，Ubuntu实机仍未验收。
+
+### 2026-10-01 — 实现：Ubuntu适配开发候选（未发布）
+
+- 增加Linux分阶段安装、共享配置、完整校验后helper提取、更新/回滚事务和systemd/logrotate模板；失败恢复实际文件/current及active/enabled状态，损坏锁与不可读任务树保守拒绝切换。
+- 跨平台Node/PDF浏览器/字体查找，Node最低22.12；新增OOPZ_ENV_FILE/OOPZ_NODE_PATH，保持Windows配置硬链接写回；SIGTERM停止接收新工作并排空自有任务。供应商、思考及分析提示词语义不变。
+- Debian13/Python3.12集成测试364 passed、9 skipped、2条既有SDK清理警告；CPU依赖、VAD和固定SenseVoice公开音频样本实测成功。Chromium被沙箱socket权限阻止，实际Ubuntu/systemd/Windows/飞书/API与数小时负载仍未验收。
+- 影响部署/配置/构建；正式包仍须干净已提交HEAD经build_release.ps1生成。release-audit技能不可用；用户授权本次独立审阅分支提交/推送采用替代审计，保留现有误报基线，检查敏感信息、受保护路径、Git历史和大文件。未发布正式包或操作生产。迁移和回滚见docs/UBUNTU_DEPLOYMENT.md，验证边界见docs/UBUNTU_VALIDATION.md；共享数据不清理。
+
+
+
+### 2026-10-01 — 文档：Ubuntu适配方案与交接任务
+
+- 新增 `docs/UBUNTU_ADAPTATION_PLAN.md` 和 `docs/UBUNTU_ADAPTATION_TASK.md`，包含目标、L01–L17需求、未推送草稿问题、验收、操作边界及可复制任务提示词。
+- 明确本次分支从Windows远端基线创建，仅提交文档；本机Ubuntu开发与修复不随本次上传，Ubuntu仍未实机验收。
+- 验证：核对远端基线、参考路径和文档差异；不修改运行代码、依赖、配置或数据，未发布或部署。
+
 ## 0.11.15 — 2026-09-21
 
 Release：[v0.11.15](https://github.com/XK205E3n/OOPZ_Capture/releases/tag/v0.11.15)。

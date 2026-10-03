@@ -1,0 +1,4 @@
+scripts/linux/*.sh text eol=lf
+scripts/linux/*.py text eol=lf
+scripts/linux/*.service text eol=lf
+scripts/linux/*.logrotate text eol=lf

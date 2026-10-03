@@ -121,6 +121,9 @@ def emit_event(
 
 
 def _resolved_direct_child(root: Path, child: Path) -> tuple[Path, Path]:
+    # A deployment root may link to shared storage, but Session aliases are unsafe.
+    if child.is_symlink() or (child.exists() and _is_reparse_point(child)):
+        raise ValueError(f"refusing linked session path: {child}")
     root = root.resolve()
     child = child.resolve()
     if child.parent != root or child == root:
@@ -319,10 +322,16 @@ async def _run_transcription_process(
     )
     try:
         stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        process.kill()
+    except (asyncio.TimeoutError, asyncio.CancelledError) as error:
+        if process.returncode is None:
+            try:
+                process.kill()
+            except ProcessLookupError:
+                pass
         await process.communicate()
-        raise TimeoutError("transcription exceeded the remaining analysis deadline")
+        if isinstance(error, asyncio.CancelledError):
+            raise
+        raise TimeoutError("transcription exceeded the remaining analysis deadline") from error
     output = stdout.decode("utf-8", errors="replace")
     errors = stderr.decode("utf-8", errors="replace")
     if process.returncode != 0:

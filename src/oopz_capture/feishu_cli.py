@@ -8,10 +8,11 @@ import logging
 import os
 from pathlib import Path
 import re
+import signal
 import sys
 from typing import Sequence
 
-from .feishu_gateway import FEISHU_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
+from .feishu_gateway import CAPTURE_ONLY_HELP_TEXT, FEISHU_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
 from .feishu_publisher import FeishuPublisher, LarkPublishingClient
 from .settings import upsert_env
 
@@ -145,6 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     load_project_env()
     parser = argparse.ArgumentParser(prog="oopz-feishu", description="OOPZ Feishu group-control gateway")
     parser.add_argument("command", choices=["serve", "drain", "notify", "reconcile-publications", "repair-publication-index", "backfill-publications", "discover-ids", "setup"])
+    parser.add_argument("--capture-only", action="store_true", help="isolated CPU capture/transcription; disables analysis, reports, publication and cleanup")
     parser.add_argument("message", nargs="?", help="message text for notify")
     parser.add_argument("--lifecycle", choices=["started", "restarted"], help="send this lifecycle status once the long connection is ready")
     parser.add_argument("--runtime-log", help="append stdout to this UTF-8 log (serve only)")
@@ -154,6 +156,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--force", action="store_true", help="setup: 允许把 .env 凭据覆盖为另一应用")
     parser.add_argument("--url-only", action="store_true", help="setup: 不渲染终端二维码，仅打印确认链接")
     args = parser.parse_args(argv)
+    if args.capture_only:
+        os.environ["OOPZ_CAPTURE_ONLY"] = "true"
+    from .controller import _env_bool
+    if _env_bool("OOPZ_CAPTURE_ONLY"):
+        if args.command != "serve":
+            parser.error("capture-only supports serve only")
+        if not os.environ.get("OOPZ_FEISHU_ADMIN_CHAT_ID", "").strip():
+            parser.error("capture-only requires an existing configured control group")
     if args.command == "setup":
         from .feishu_setup import run_setup
         try:
@@ -264,6 +274,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     async def on_message(message):
+        if getattr(gateway.controller, "_stopping", False):
+            return
         await gateway.handle_message(type("Inbound", (), {
             "message_id": message.message_id,
             "chat_id": message.chat_id,
@@ -272,6 +284,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         })())
 
     async def on_card(event):
+        if getattr(gateway.controller, "_stopping", False):
+            return
         if str(getattr(event, "chat_id", "")) != config.admin_chat_id:
             return
         value = getattr(getattr(event, "action", None), "value", {}) or {}
@@ -305,12 +319,48 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
 
     last_reconcile = 0.0
     last_retention_cleanup = 0.0
+    loop = asyncio.get_running_loop()
+    stopping = asyncio.Event()
+    controller = getattr(gateway, "controller", None)
+
+    def request_shutdown() -> None:
+        stopping.set()
+        if controller is not None:
+            controller.request_shutdown()
+
+    previous_handlers = {}
+    # Windows console handling stays with asyncio.run. Unix service managers
+    # send SIGTERM; never cancel an in-flight send or asyncio.to_thread job.
+    if os.name != "nt":
+        for signum in (signal.SIGTERM, signal.SIGINT):
+            previous = signal.getsignal(signum)
+            try:
+                loop.add_signal_handler(signum, request_shutdown)
+            except (NotImplementedError, RuntimeError, ValueError):
+                continue
+            previous_handlers[signum] = previous
     try:
-        await channel.connect_until_ready()
+        connecting = asyncio.create_task(channel.connect_until_ready())
+        stop_waiter = asyncio.create_task(stopping.wait())
+        try:
+            await asyncio.wait((connecting, stop_waiter), return_when=asyncio.FIRST_COMPLETED)
+            if stopping.is_set():
+                connecting.cancel()
+                await asyncio.gather(connecting, return_exceptions=True)
+                return
+            await connecting
+        finally:
+            stop_waiter.cancel()
+            if not connecting.done():
+                connecting.cancel()
+            await asyncio.gather(connecting, stop_waiter, return_exceptions=True)
         print("飞书长连接已就绪；正在监听受控群的 @OOPZ 指令。", flush=True)
-        for notice in lifecycle_notices(lifecycle):
+        notices = ((CAPTURE_ONLY_HELP_TEXT,) if lifecycle else ()) if getattr(getattr(gateway, "config", None), "capture_only", False) else lifecycle_notices(lifecycle)
+        for notice in notices:
+            if stopping.is_set():
+                break
             await gateway.send_lifecycle_notice(notice)
-        while True:
+        while not stopping.is_set():
             now = asyncio.get_running_loop().time()
             do_reconcile = now - last_reconcile >= 3600
             do_retention_cleanup = now - last_retention_cleanup >= 60
@@ -320,17 +370,29 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
                 last_retention_cleanup = now
             try:
                 await gateway.drain_outbox()
-                if do_reconcile:
+                if do_reconcile and not stopping.is_set():
                     await gateway.reconcile_publications()
-                if do_retention_cleanup:
+                if do_retention_cleanup and not stopping.is_set():
                     await gateway.cleanup_expired_sessions()
             except asyncio.CancelledError:
                 raise
             except Exception:
                 traceback.print_exc()
-            await asyncio.sleep(1)
+            try:
+                await asyncio.wait_for(stopping.wait(), timeout=1)
+            except asyncio.TimeoutError:
+                pass
     finally:
-        await channel.disconnect()
+        try:
+            if controller is not None:
+                await controller.shutdown()
+        finally:
+            try:
+                await channel.disconnect()
+            finally:
+                for signum, previous in previous_handlers.items():
+                    loop.remove_signal_handler(signum)
+                    signal.signal(signum, previous)
 
 
 if __name__ == "__main__":

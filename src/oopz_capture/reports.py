@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .jsonio import atomic_json as _atomic_json
-from .process_utils import pid_is_running
+from .process_utils import pid_is_running, valid_lock_pid
 from .workflow import _is_reparse_point
 
 
@@ -158,18 +158,20 @@ def _analysis_lock_paths(session_dir: Path) -> list[Path]:
 
 
 def _lock_is_active(lock_path: Path) -> bool:
-    """Return true only for a safe lock whose owning process is still alive."""
-    if not lock_path.exists():
+    """Treat live and unknown locks as occupied; only a valid dead PID is stale."""
+    if lock_path.parent.is_symlink() or (lock_path.parent.exists() and _is_reparse_point(lock_path.parent)):
+        return True
+    if not lock_path.exists() and not lock_path.is_symlink():
         return False
     if _is_reparse_point(lock_path) or not lock_path.is_file():
         # An unsafe lock must not be deleted or offered for concurrent recovery.
         return True
     try:
         value = json.loads(lock_path.read_text(encoding="utf-8"))
-        pid = int(value.get("pid", 0)) if isinstance(value, dict) else 0
+        pid = value.get("pid") if isinstance(value, dict) else None
     except (OSError, ValueError, TypeError, json.JSONDecodeError):
-        return False
-    return pid_is_running(pid)
+        return True
+    return not valid_lock_pid(pid) or pid_is_running(pid)
 
 
 def _has_active_analysis_lock(session_dir: Path) -> bool:
@@ -207,7 +209,7 @@ def recover_interrupted_analysis_sessions(output_root: Path) -> list[dict[str, A
         handoff = session_dir / "handoff" / "analyzer_request.json"
         if not handoff.is_file() or _is_reparse_point(handoff) or _has_analysis(session_dir):
             continue
-        locks = [path for path in _analysis_lock_paths(session_dir) if path.exists()]
+        locks = [path for path in _analysis_lock_paths(session_dir) if path.exists() or path.is_symlink()]
         if not locks or _has_active_analysis_lock(session_dir):
             continue
         safe_locks = [path for path in locks if path.is_file() and not _is_reparse_point(path)]

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
+import signal
+import shutil
 import re
 import subprocess
+import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
@@ -12,11 +16,93 @@ from .jsonio import atomic_json as _atomic_json, read_json as _read_json
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-NODE_PATH = PROJECT_ROOT / "tools" / "node" / "node.exe"
+NODE_PATH = PROJECT_ROOT / "tools" / "node" / ("node.exe" if os.name == "nt" else "bin/node")
+MIN_NODE_VERSION = (22, 12, 0)
 RENDERER = PROJECT_ROOT / "tools" / "md_to_pdf.mjs"
 NODE_MODULES = PROJECT_ROOT / "node_modules"
 REPORT_ARCHIVE_SCHEMA = "oopz.report.archive.v1"
 PDF_SETUP_HINT = "run `pnpm install` in the project root to restore PDF reports"
+PDF_BACKENDS = {'chromium', 'weasyprint'}
+
+
+def pdf_backend() -> str:
+    """Engine changes are explicit; missing/failed engines never silently fall back."""
+    backend = os.environ.get('OOPZ_PDF_BACKEND', 'chromium').strip().lower()
+    if backend not in PDF_BACKENDS:
+        raise ValueError('OOPZ_PDF_BACKEND must be chromium or weasyprint')
+    if backend == 'weasyprint' and sys.platform != 'linux':
+        raise RuntimeError('The WeasyPrint backend is supported on Linux; select chromium on Windows')
+    return backend
+
+
+def find_node() -> Path:
+    """Choose one runtime, then use its directory first in subprocess PATH."""
+    override = os.environ.get("OOPZ_NODE_PATH")
+    candidates = [Path(override).expanduser()] if override else [
+        NODE_PATH, PROJECT_ROOT / "tools" / "node" / "node",
+        Path(shutil.which("node") or "__missing_node__"),
+    ]
+    for candidate in candidates:
+        if not candidate.is_absolute():
+            candidate = PROJECT_ROOT / candidate
+        if candidate.is_file():
+            return candidate.absolute()
+    raise FileNotFoundError("Node runtime missing; install Node >=22.12.0 or set OOPZ_NODE_PATH")
+
+
+def node_environment(node: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    env["PATH"] = str(node.parent) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def validate_node(node: Path, env: dict[str, str]) -> None:
+    try:
+        result = subprocess.run([str(node), "--version"], env=env, check=True,
+                                capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as error:
+        detail = getattr(error, "stderr", None) or str(error)
+        raise RuntimeError(f"Cannot validate Node runtime: {detail}") from error
+    match = re.fullmatch(r"v?(\d+)\.(\d+)\.(\d+)\s*", result.stdout)
+    if not match or tuple(map(int, match.groups())) < MIN_NODE_VERSION:
+        raise RuntimeError("PDF dependencies require Node >=22.12.0; selected runtime is too old or invalid")
+
+
+def _run_renderer(command: list[str], env: dict[str, str], timeout: float = 180) -> subprocess.CompletedProcess:
+    # A separate POSIX process group owns only this renderer and its browser.
+    # Killing just Node on timeout leaves Chromium children behind.
+    process = subprocess.Popen(command, cwd=str(PROJECT_ROOT), env=env,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                               text=True, encoding="utf-8", errors="replace",
+                               start_new_session=os.name != "nt")
+    try:
+        stdout, stderr = process.communicate(timeout=timeout)
+    except BaseException:
+        if os.name == "nt":
+            try:
+                subprocess.run(["taskkill", "/PID", str(process.pid), "/T", "/F"],
+                               capture_output=True, timeout=10, check=False)
+            except (OSError, subprocess.SubprocessError):
+                # Still reap Node below when taskkill itself is unavailable.
+                pass
+        else:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        process.kill()
+        try:
+            process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            # Never hang cleanup if a Windows descendant retained a pipe.
+            if process.stdout:
+                process.stdout.close()
+            if process.stderr:
+                process.stderr.close()
+        raise
+    if process.returncode:
+        raise subprocess.CalledProcessError(process.returncode, command, stdout, stderr)
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def _safe_name(value: str) -> str:
@@ -71,10 +157,12 @@ def session_report_stamp(session_dir: Path) -> tuple[str, str]:
 def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     markdown_path = markdown_path.resolve()
     output_path = output_path.resolve()
+    backend = pdf_backend()
     if not RENDERER.is_file():
         raise FileNotFoundError(f"md-to-pdf renderer is missing: {RENDERER}")
-    if not NODE_PATH.is_file():
-        raise FileNotFoundError(f"Project Node runtime is missing: {NODE_PATH}")
+    node = find_node()
+    env = node_environment(node)
+    validate_node(node, env)
     if not NODE_MODULES.is_dir():
         raise FileNotFoundError(f"md-to-pdf dependencies are not installed; {PDF_SETUP_HINT}")
     if markdown_path.suffix.lower() != ".md":
@@ -82,25 +170,29 @@ def render_markdown_pdf(markdown_path: Path, output_path: Path) -> Path:
     # A stale renderer output must never pass as fresh; delete it first so the
     # size check below can only succeed on a file produced by this run.
     output_path.unlink(missing_ok=True)
+    command = ([str(node), str(RENDERER), str(markdown_path), str(output_path)]
+               if backend == 'chromium' else
+               [sys.executable, '-m', 'oopz_capture.weasy_pdf', str(markdown_path),
+                str(output_path), '--node', str(node)])
     try:
-        result = subprocess.run(
-            [str(NODE_PATH), str(RENDERER), str(markdown_path), str(output_path)],
-            cwd=str(PROJECT_ROOT),
-            check=True,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            timeout=180,
+        result = _run_renderer(
+            command, env,
         )
     except subprocess.TimeoutExpired as error:
+        output_path.unlink(missing_ok=True)
         detail = error.stderr or b""
         if isinstance(detail, bytes):
             detail = detail.decode("utf-8", errors="replace")
         raise RuntimeError(f"PDF renderer timed out after 180s: {str(detail)[-800:]}") from error
     except subprocess.CalledProcessError as error:
+        output_path.unlink(missing_ok=True)
         detail = str(error.stderr or error.stdout or "no renderer diagnostics").strip()
-        raise RuntimeError(f"PDF renderer exited {error.returncode}: {detail[:1200]}") from error
+        raise RuntimeError(f"PDF renderer exited {error.returncode}: {detail[-1200:]}") from error
+    except BaseException:
+        output_path.unlink(missing_ok=True)
+        raise
     if not output_path.is_file() or output_path.stat().st_size == 0:
+        output_path.unlink(missing_ok=True)
         raise RuntimeError(f"PDF renderer returned without creating {output_path}: {result.stdout}")
     return output_path
 

@@ -191,11 +191,12 @@ class ControllerConfig:
     reconnect_max_delay_seconds: float = 30.0
     reconnect_attempt_timeout_seconds: float = 30.0
     device: str = "cpu"
+    capture_only: bool = False
 
     def validate(self) -> None:
         if not self.authorization.allowed_sender_ids:
             raise ValueError("controller authorization requires at least one allowed sender")
-        if self.consent_confirmed is not True:
+        if self.consent_confirmed is not True and not self.capture_only:
             raise ValueError("recording consent must be confirmed by the caller")
         if self.device not in {"cpu", "cuda:0"}:
             raise ValueError("OOPZ_DEVICE must be cpu or cuda:0")
@@ -311,11 +312,43 @@ class ControllerService:
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._analysis_sessions: set[str] = set()
         self._lock = asyncio.Lock()
+        self._stopping = False
         self._active_task: asyncio.Task[None] | None = None
         self._state = self._load_state()
         self._recover_active_session()
         self._recover_interrupted_analyses()
         self._reconcile_last_job()
+
+    def request_shutdown(self) -> None:
+        """Stop admission and ask the recorder to finalize its current chunks."""
+        self._stopping = True
+        active = self._state.get("active")
+        if not isinstance(active, dict):
+            return
+        # The capture coroutine may still be loading config and not have a
+        # lifecycle file. Its startup handshake checks this durable flag.
+        active["stop_requested_before_capture"] = True
+        self._save_state()
+        session_id = str(active.get("session_id") or "")
+        if session_id:
+            try:
+                request_stop(self.output_root, session_id, reason="service_shutdown")
+            except (ValueError, FileNotFoundError):
+                # Already transcribing, or not started yet: await the driver.
+                pass
+
+    async def shutdown(self) -> None:
+        """Drain owned work without abandoning analysis running in a thread.
+
+        Completed reports remain in the durable outbox for the next gateway;
+        shutdown never retries sends or automatically launches another analysis.
+        systemd supplies the final bounded cgroup timeout if a provider hangs.
+        """
+        self.request_shutdown()
+        if self._active_task is not None:
+            await asyncio.shield(self._active_task)
+        if self._background_tasks:
+            await asyncio.gather(*tuple(self._background_tasks), return_exceptions=True)
 
     def _load_state(self) -> dict[str, Any]:
         if self.state_path.is_file():
@@ -441,6 +474,8 @@ class ControllerService:
 
     def _recover_interrupted_analyses(self) -> None:
         """Make dead analysis jobs visible and resumable after a controller restart."""
+        if self.config.capture_only:
+            return
         recovered = recover_interrupted_analysis_sessions(self.output_root)
         if not recovered:
             return
@@ -473,7 +508,7 @@ class ControllerService:
         capture_status = str((capture or {}).get("status") or "")
         if capture_status in {"ready_for_analysis", "ready_for_analysis_with_errors"}:
             updates = {
-                "status": capture_status,
+                "status": ("capture_transcription_completed_with_errors" if capture_status.endswith("with_errors") else "capture_transcription_completed") if self.config.capture_only else capture_status,
                 "stop_reason": str((capture or {}).get("stop_reason") or ""),
                 "stopped_at": str((capture or {}).get("stopped_at") or ""),
                 "chunks_total": int((capture or {}).get("chunks_total", 0) or 0),
@@ -481,7 +516,7 @@ class ControllerService:
                 "chunks_failed": int((capture or {}).get("chunks_failed", 0) or 0),
             }
 
-        lifecycle = self._latest_analysis_lifecycle(session_dir)
+        lifecycle = None if self.config.capture_only else self._latest_analysis_lifecycle(session_dir)
         analysis_status = str((lifecycle or {}).get("status") or "")
         if analysis_status == "ready_for_delivery":
             updates = {
@@ -533,6 +568,9 @@ class ControllerService:
     async def handle(self, raw_message: dict[str, Any]) -> dict[str, Any]:
         message = ControllerInboundMessage.from_dict(raw_message)
         async with self._lock:
+            if self._stopping:
+                return make_reply(message, command="shutdown", status="rejected", at=_iso(),
+                                  text="服务正在停止，请在重启后重试。")
             existing = self._saved_reply(message.message_id)
             if existing is not None:
                 return existing
@@ -554,6 +592,8 @@ class ControllerService:
                     message, command="invalid", status="rejected", at=_iso(),
                     text="不支持的指令；发送 /oopz 帮助 查看可用指令。",
                 ))
+            if self.config.capture_only and command not in {"help", "start_capture", "leave_channel", "status"}:
+                return self._store_reply(make_reply(message, command=command, status="rejected", at=_iso(), text="仅录音转写模式不支持此操作。"))
             if command == "help":
                 return self._store_reply(make_reply(
                     message, command=command, status="completed", at=_iso(),
@@ -716,6 +756,19 @@ class ControllerService:
                 message, command=command, status="rejected", at=_iso(),
                 text="录音任务已被占用，本次选择已取消。发送 /oopz 状态 可查看详情。",
             )
+        stage = str(flow.get("stage") or "")
+        if self.config.capture_only and stage == "awaiting_recording_consent":
+            token = str(flow.get("consent_token") or "")
+            if not token or text != "capture_consent:" + token:
+                return make_reply(message, command=command, status="rejected", at=_iso(),
+                                  text="请由发起人点击“已告知参与者并开始录音”，或取消。")
+            area, channel = flow["selected_area"], flow["selected_channel"]
+            self._clear_start_flow()
+            return await self._launch_capture(
+                message, command, area_id=str(area["area_id"]), channel_id=str(channel["channel_id"]),
+                area_name=str(area["name"]), channel_name=str(channel["display_name"]),
+                max_runtime=flow.get("max_runtime_seconds"), consent_confirmed=True,
+            )
         if not text.isdigit():
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
@@ -764,6 +817,13 @@ class ControllerService:
                 )
             area = flow.get("selected_area") or {}
             channel = channels[index - 1]
+            if self.config.capture_only:
+                token = uuid4().hex
+                flow.update(stage="awaiting_recording_consent", selected_channel=channel, consent_token=token)
+                self._save_start_flow(flow)
+                return make_reply(message, command=command, status="completed", at=_iso(),
+                                  text=f"即将录音：{area['name']} / {channel['display_name']}。尚未开始录音；请先告知所有参与者，再点击确认。",
+                                  capture_consent_token=token)
             self._clear_start_flow()
             return await self._launch_capture(
                 message, command,
@@ -777,8 +837,10 @@ class ControllerService:
     async def _launch_capture(
         self, message: ControllerInboundMessage, command: str, *, area_id: str,
         channel_id: str, area_name: str, channel_name: str,
-        max_runtime: float | None,
+        max_runtime: float | None, consent_confirmed: bool = False,
     ) -> dict[str, Any]:
+        if self.config.capture_only and consent_confirmed is not True:
+            raise ValueError("capture-only requires explicit initiator confirmation before recording")
         session_id = new_session_id(self.output_root)
         request_id = str(uuid4())
         active = {
@@ -796,7 +858,7 @@ class ControllerService:
             request_id=request_id,
             area_id=area_id,
             channel_id=channel_id,
-            consent_confirmed=True,
+            consent_confirmed=consent_confirmed if self.config.capture_only else True,
             max_runtime_seconds=max_runtime,
             chunk_seconds=self.config.chunk_seconds,
             cutoff_local_hour=self.config.cutoff_local_hour,
@@ -807,7 +869,7 @@ class ControllerService:
             membership_refresh_seconds=self.config.membership_refresh_seconds,
             membership_timeout_seconds=self.config.membership_timeout_seconds,
             empty_channel_timeout_seconds=self.config.empty_channel_timeout_seconds,
-            retain_audio=self.config.retain_audio,
+            retain_audio=self.config.capture_only or self.config.retain_audio,
             connection_check_seconds=self.config.connection_check_seconds,
             disconnect_grace_seconds=self.config.disconnect_grace_seconds,
             browser_operation_timeout_seconds=self.config.browser_operation_timeout_seconds,
@@ -920,6 +982,8 @@ class ControllerService:
             if isinstance(last, dict) and last.get("session_id"):
                 raw_status = str(last.get("status") or "unknown")
                 status_text = {
+                    "capture_transcription_completed": "录音与转写已结束（仅录音转写模式）",
+                    "capture_transcription_completed_with_errors": "录音已结束，转写存在错误（仅录音转写模式）",
                     "waiting_analysis_decision": "等待管理员确认是否分析",
                     "analyzing": "正在分析",
                     "analysis_interrupted_recoverable": "分析因机器人重启或异常退出而中断；可发送“待分析”恢复",
@@ -999,15 +1063,29 @@ class ControllerService:
                     else None
                 )
             if stop_early:
-                request_stop(
-                    self.output_root, session_id,
-                    requested_by=stop_requested_by or request.requested_by,
-                    reason="operator_stop_command",
-                )
+                try:
+                    request_stop(
+                        self.output_root, session_id,
+                        requested_by=stop_requested_by or request.requested_by,
+                        reason="service_shutdown" if self._stopping else "operator_stop_command",
+                    )
+                except (ValueError, FileNotFoundError):
+                    # Startup may not yet have created its lifecycle; retry
+                    # from the monitoring loop instead of orphaning the task.
+                    pass
             sync_interval = min(1.0, max(0.05, self.config.poll_interval_seconds))
             progress_state: dict[str, str] = {}
             next_heartbeat_at = 0.0
             while True:
+                if self._stopping:
+                    self.request_shutdown()
+                elif stop_early:
+                    try:
+                        request_stop(self.output_root, session_id,
+                                     requested_by=stop_requested_by or request.requested_by)
+                        stop_early = False
+                    except (ValueError, FileNotFoundError):
+                        pass
                 try:
                     session_dir = await asyncio.wait_for(
                         asyncio.shield(capture_task), timeout=sync_interval,
@@ -1067,7 +1145,10 @@ class ControllerService:
             # Automatic exits have no override and therefore return to the
             # administrator who originally started the session.
             requester = analysis_admin_id or str((request.requested_by or {}).get("sender_id") or "")
-            if (
+            if self.config.capture_only:
+                final_status = "capture_transcription_completed"
+                details = {"session_id": session_id, "stop_reason": stop_reason}
+            elif (
                 requester
                 and handoff.is_file()
                 and not _is_reparse_point(handoff)
@@ -1088,6 +1169,9 @@ class ControllerService:
                     source="analysis_decision",
                 )
                 final_status = "waiting_analysis_decision"
+                details = {"session_id": session_id, "stop_reason": stop_reason}
+            elif self._stopping:
+                final_status = "ready_for_analysis"
                 details = {"session_id": session_id, "stop_reason": stop_reason}
             else:
                 client = self.model_client_factory()
@@ -1267,6 +1351,8 @@ class ControllerService:
             self._decision_path.unlink()
 
     def _process_analysis_decision(self, message: ControllerInboundMessage, command: str) -> dict[str, Any] | None:
+        if self.config.capture_only:
+            return None
         decision = self._load_decision()
         if decision is None:
             return None
@@ -1299,7 +1385,7 @@ class ControllerService:
         return make_reply(message, command=command, status="rejected", at=_iso(), text="请回复：是 / 否。")
 
     def _start_analysis_and_deliver(self, session_dir: Path, admin_id: str) -> bool:
-        if session_dir.name in self._analysis_sessions:
+        if self.config.capture_only or self._stopping or session_dir.name in self._analysis_sessions:
             return False
         self._analysis_sessions.add(session_dir.name)
         last = self._state.get("last_job")
@@ -1316,6 +1402,8 @@ class ControllerService:
         return True
 
     async def _analyze_and_deliver(self, session_dir: Path, admin_id: str) -> None:
+        if self.config.capture_only:
+            return
         try:
             handoff = session_dir / "handoff" / "analyzer_request.json"
             if not handoff.is_file() or _is_reparse_point(handoff):

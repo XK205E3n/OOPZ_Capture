@@ -6,6 +6,7 @@ from test_deepseek_client import config, success
 from oopz_capture.analysis_pipeline import run_analysis, FINAL_REQUIRED, SHORT_REQUIRED
 from oopz_capture.deepseek_client import DeepSeekClient
 from oopz_capture.reports import overall_summary_text
+from oopz_capture.pdf_reports import find_node
 
 
 def test_legacy_text_and_public_report_only_deliver_overall():
@@ -54,7 +55,7 @@ assert.throws(() => findChrome({}, () => false), /PDF browser missing/);
 assert.throws(() => findChrome({MD_TO_PDF_CHROME_PATH:'missing'}, () => false), /MD_TO_PDF_CHROME_PATH/);
 assert.equal(findChrome({MD_TO_PDF_CHROME_PATH:'custom'}, p => p === 'custom'), 'custom');
 '''
-    result = subprocess.run([str(root/'tools/node/node.exe'),'--input-type=module','-e',program],cwd=root,capture_output=True,text=True,timeout=30)
+    result = subprocess.run([str(find_node()),'--input-type=module','-e',program],cwd=root,capture_output=True,text=True,timeout=30)
     assert result.returncode == 0, result.stderr
 
 
@@ -72,7 +73,8 @@ def test_pdf_subprocess_error_keeps_diagnostic_reason(tmp_path, monkeypatch):
     monkeypatch.setattr(pdf_reports, 'NODE_MODULES', tmp_path)
     def fail(*args, **kwargs):
         raise subprocess.CalledProcessError(1, ['node'], stderr='Browser executable missing')
-    monkeypatch.setattr(pdf_reports.subprocess, 'run', fail)
+    monkeypatch.setattr(pdf_reports, 'validate_node', lambda *args: None)
+    monkeypatch.setattr(pdf_reports, '_run_renderer', fail)
     with pytest.raises(RuntimeError, match='Browser executable missing'):
         pdf_reports.render_markdown_pdf(source, tmp_path / 'report.pdf')
 
@@ -84,7 +86,7 @@ def test_invalid_browser_cli_exits_without_http_server_hang(tmp_path):
     source.write_text('# test',encoding='utf-8')
     env = os.environ.copy()
     env['MD_TO_PDF_CHROME_PATH'] = str(tmp_path / 'missing.exe')
-    result = subprocess.run([str(root/'tools/node/node.exe'),str(root/'tools/md_to_pdf.mjs'),
+    result = subprocess.run([str(find_node()),str(root/'tools/md_to_pdf.mjs'),
         str(source),str(tmp_path/'out.pdf')],env=env,capture_output=True,text=True,timeout=8)
     assert result.returncode == 1
     assert 'MD_TO_PDF_CHROME_PATH' in result.stderr

@@ -25,8 +25,8 @@ from .jsonio import (
     read_json_or_none as _read_json_or_none,
 )
 from .identifiers import validate_session_id
-from .process_utils import pid_is_running
-from .workflow import _is_reparse_point, utc_now
+from .process_utils import pid_is_running, valid_lock_pid
+from .workflow import _is_reparse_point, _validate_tree_no_links, utc_now
 
 
 LOGGER = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ def _release_lock(lock_path: Path) -> None:
         existing = _read_json(lock_path)
     except (OSError, ValueError, TypeError):
         existing = None
-    if isinstance(existing, dict) and existing.get("pid") not in (None, os.getpid()):
+    if not isinstance(existing, dict) or type(existing.get("pid")) is not int or existing["pid"] != os.getpid():
         # Another owner reclaimed the lock after ours was stolen; leave theirs.
         return
     try:
@@ -54,20 +54,28 @@ def _release_lock(lock_path: Path) -> None:
 def _claim_lock(path: Path, *, locked_message: str) -> None:
     """Acquire a JSON PID lock, reclaiming one whose owner PID is dead.
 
-    The payload is serialized up front and written in a single call so a
-    concurrent reaper never observes a half-written lock file.
+    An unreadable or incomplete payload blocks acquisition, including during
+    another owner's initial write. Only a valid dead PID permits reclamation.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
-    if path.exists():
+    if path.exists() or path.is_symlink():
         if _is_reparse_point(path) or not path.is_file():
             raise RuntimeError(f"unsafe analysis lock: {path}")
         try:
+            before = path.stat(follow_symlinks=False)
             existing = _read_json(path)
-            if isinstance(existing, dict) and pid_is_running(int(existing.get("pid", 0) or 0)):
-                raise RuntimeError(locked_message)
-        except (OSError, ValueError, TypeError, AttributeError):
-            LOGGER.debug("analysis lock unreadable; treating it as stale: %s", path, exc_info=True)
+        except (OSError, ValueError, TypeError) as error:
+            raise RuntimeError(f"unreadable analysis lock; manual review required: {path}") from error
+        if not isinstance(existing, dict) or not valid_lock_pid(existing.get("pid")):
+            raise RuntimeError(f"invalid analysis lock PID; manual review required: {path}")
+        if pid_is_running(existing["pid"]):
+            raise RuntimeError(locked_message)
         try:
+            after = path.stat(follow_symlinks=False)
+            if (before.st_dev, before.st_ino, before.st_mtime_ns, before.st_size) != (
+                after.st_dev, after.st_ino, after.st_mtime_ns, after.st_size
+            ):
+                raise RuntimeError("analysis lock changed during recovery")
             path.unlink()
         except FileNotFoundError:
             pass
@@ -109,7 +117,7 @@ def _safe_session_file(session_dir: Path, relative: Any, field: str) -> Path:
     current = session_dir
     for part in path_value.parts:
         current = current / part
-        if current.exists() and _is_reparse_point(current):
+        if (current.exists() or current.is_symlink()) and _is_reparse_point(current):
             raise ValueError(f"{field} may not use a symlink or reparse point")
     path = lexical_path.resolve()
     try:
@@ -197,6 +205,9 @@ def load_analyzer_input(handoff_path: Path) -> AnalyzerInput:
             raise ValueError("handoff and Session paths may not be links")
     handoff_path = raw_handoff_path.resolve()
     session_dir = handoff_path.parent.parent.resolve()
+    # Resolve only the trusted deployment ancestors, then reject links inside
+    # the Session (including analysis/output destinations and dangling links).
+    _validate_tree_no_links(session_dir)
     request = _read_json(handoff_path)
     if not isinstance(request, dict) or request.get("schema_version") != "oopz.analyzer.request.v1":
         raise ValueError("unsupported analyzer request schema")
