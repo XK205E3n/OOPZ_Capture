@@ -303,9 +303,9 @@ def masked_value(key: str, value: str) -> str:
 def _write_env_file(path: Path, text: str) -> None:
     """Rewrite the .env file in place, preserving any hard link to it.
 
-    install_release.ps1 hard-links each release directory's .env to the
-    shared production config.  A temp-file-plus-replace write would silently
-    decouple the two names, so group binding, setup credentials and in-group
+    The release installer links each release directory's .env to the shared
+    production config (a symlink on Linux).  A temp-file-plus-replace write
+    would silently decouple the two names, so group binding, setup credentials and in-group
     setting changes would vanish from the shared config on the next upgrade.
     """
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -92,7 +92,6 @@ try {
                 'RELEASE_MANIFEST.json',
                 'pyproject.toml',
                 '.env.example',
-                'scripts/install_release.ps1',
                 'scripts/download_sensevoice_model.py',
                 'scripts/linux/install_release.sh',
                 'scripts/linux/update_release.sh',

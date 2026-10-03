@@ -309,6 +309,6 @@ def run_setup(
     print_line("")
     print_line("后续步骤：")
     print_line("1. 若开放平台提示有待发布版本，请到「版本管理与发布」创建并发布一个版本，机器人才能被搜索和邀请。")
-    print_line("2. 运行 启动OOPZ全流程.bat（或 oopz-feishu serve），把机器人邀请进目标群；首个群会自动绑定为控制群。")
+    print_line("2. 运行 oopz-feishu serve，把机器人邀请进目标群；首个群会自动绑定为控制群。")
     print_line("3. 如需公开发布报告，仍需在 .env 配置四个 OOPZ_FEISHU_PUBLIC_* 变量，并把应用加为对应文件夹和 Base 的协作者（见 README_FEISHU_BOT_SETUP.md 第 6、7 节）。")
     return 0

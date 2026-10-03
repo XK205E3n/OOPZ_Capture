@@ -27,7 +27,7 @@ def clean_source(tmp_path):
     source = tmp_path / 'source with space'
     source.mkdir()
     for relative in (
-        '.gitattributes', 'scripts/build_release.ps1', 'scripts/install_release.ps1',
+        '.gitattributes', 'scripts/build_release.ps1',
         'scripts/download_sensevoice_model.py', '.env.example',
         'src/oopz_capture/weasy_pdf.py', 'tools/md_to_html.mjs',
         'tools/md_to_pdf.mjs', 'tools/md_to_pdf.css',
