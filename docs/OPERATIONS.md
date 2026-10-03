@@ -44,7 +44,7 @@ OOPZ_LOGIN_PASSWORD=...
 
 `OOPZ_FEISHU_ADMIN_CHAT_ID` 可预先填写，也可留空后启动：将机器人首次邀请进目标群时，程序会自动写入该群 ID，之后不会被其他邀请覆盖。如果机器人已经在群内且无法重新触发邀请事件，可用 `oopz-feishu discover-ids` 手动发现 ID。
 
-飞书机器人配置的主流程是一键命令 `.\.venv\Scripts\oopz-feishu.exe setup`：扫码确认后自动创建/更新应用、申请 11 项权限并配置事件与卡片回调，App ID/Secret 自动写入当前 `.env`。随后检查版本发布、邀请进群；公开报告资源协作者授权仍须单独完成。只有一键流程不可用时才使用 `README_FEISHU_BOT_SETUP.md` 的折叠手动保底章节。已有完整可用配置无需重新创建应用。
+飞书机器人配置的主流程是一键命令 `oopz-feishu setup`：扫码确认后自动创建/更新应用、申请 11 项权限并配置事件与卡片回调，App ID/Secret 自动写入当前 `.env`。随后检查版本发布、邀请进群；公开报告资源协作者授权仍须单独完成。只有一键流程不可用时才使用 `README_FEISHU_BOT_SETUP.md` 的折叠手动保底章节。已有完整可用配置无需重新创建应用。
 
 要启用对外发布，还必须同时填写 `OOPZ_FEISHU_PUBLIC_FOLDER_TOKEN`、`OOPZ_FEISHU_BASE_APP_TOKEN`、`OOPZ_FEISHU_BASE_TABLE_ID` 和 `OOPZ_FEISHU_PUBLIC_INDEX_URL`。公开文件夹和 Base 必须向飞书应用授予编辑权限。只填其中一部分会使启动时配置校验失败。
 
@@ -52,11 +52,9 @@ OOPZ_LOGIN_PASSWORD=...
 
 ## 启停
 
-- 首次启动：[启动OOPZ全流程.bat](../启动OOPZ全流程.bat)
-- 正常关闭：[一键关闭OOPZ全流程.bat](../一键关闭OOPZ全流程.bat)
-- 重启：[一键重启OOPZ全流程.bat](../一键重启OOPZ全流程.bat)
+当前服务器以手动 `nohup` 方式运行测试网关，尚未建立 systemd 服务（见 [部署状态](DEPLOYMENT_STATE.md)）。服务化后使用 `systemctl start|stop|restart oopz-capture`；停止走 SIGTERM 优雅关闭：当前录音分片收尾、不中断正在运行的分析、已完成的报告留在发件箱待下次启动。本地开发运行 `oopz-feishu serve`（同一飞书应用只允许一个长连接网关，不要与服务器同时运行）。
 
-启动程序运行 `oopz_capture.feishu_cli serve`，并显示“飞书消息收发记录”与“录音、转写与分析状态”两个窗口。关闭/重启脚本先尝试发送群通知，随后停止网关和两个监视窗口。
+启停前先在群内发送“状态”，确认没有进行中的录音或分析；部署脚本也会在切换版本前自动检查并拒绝。
 
 ## 分析失败
 
@@ -68,40 +66,20 @@ OOPZ_LOGIN_PASSWORD=...
 
 批准发布前先确认候选公开 PDF 和内部 Markdown 内容。发布失败通常是飞书应用未获得公开文件夹或 Base 的编辑权限，或 Base 字段与程序所写字段不匹配。删除公开报告还要求应用开通 `space:document:delete` 和 `base:record:delete` 并发布包含这些权限的新版本；错误码 `99991672` 表示所需应用身份权限尚未开通。可在恢复权限后使用：
 
-```powershell
-.\.venv\Scripts\oopz-feishu.exe reconcile-publications
-.\.venv\Scripts\oopz-feishu.exe repair-publication-index
+```bash
+oopz-feishu reconcile-publications
+oopz-feishu repair-publication-index
 ```
 
 `backfill-publications` 会发布所有当前可用的历史报告，属于批量外部写入操作，只应在明确需要时手动执行。
 
-## 云服务器容量与试运行
+## 服务器容量
 
-录音前需单独验证 Playwright Chromium。`connecting` 日志若显示浏览器可执行文件不存在，应在网关运行账户下执行当前虚拟环境的 `python -m playwright install --no-shell chromium` 并进行启动检查；命令见[部署指南第 9.4 节](../README_CLOUD_SERVER_DEPLOYMENT.md#94-录音浏览器缺失或connecting持续失败)。系统 Edge/Chrome 的存在不能代替录音浏览器验收。
-
-当前发布脚本和运维入口是 Windows PowerShell/批处理，PDF 渲染也显式查找 Windows Chrome/Edge，因此不改代码时应使用 64 位 Windows Server 2022 或更新版本，并安装 Chrome 或 Edge。服务器只需主动访问 OOPZ、飞书和分析 API，不需要开放业务入站端口。
-
-首次安装还需允许出站访问魔搭社区。安装脚本会从官方 `iic/SenseVoiceSmall` 下载项目固定修订版并校验必需文件 SHA-256；模型保存在 `C:\OOPZ\shared\models\SenseVoiceSmall`，不通过 GitHub、本地复制或发布包分发。
-
-最低部署要求（4 vCPU / 8 GiB；低于此配置不作为支持的部署目标）：
-
-```text
-CPU：4 vCPU（持续型实例，不使用突发积分型）
-内存：8 GiB，并启用系统管理的页面文件
-系统盘：80 GiB SSD，长期保持至少 20 GiB 可用
-网络：按实际流量选择出站带宽，保证 OOPZ、飞书和分析 API 连通；无需 GPU
-系统：Windows Server 2022/2025 64 位 Desktop Experience
-```
-
-2026-09-09 至 09-10 的本机限额测试使用 Ryzen 9 7950X、Windows、CPU 版 SenseVoiceSmall，以及 10 条各 300 秒的合成音轨。中密度约 612 秒合计 VAD 语音、300 段；高密度约 2,032 秒、1,000 段。限制为 2 个逻辑 CPU 时，中密度约 101–117 秒、高密度约 260–261 秒；4 个逻辑 CPU 时分别约 74 秒与 190–191 秒。逻辑 CPU 包含 SMT 线程，不等同于任意云实例的同数量 vCPU；样本为重复短语音，不代表全部真实对话。
-
-进程峰值工作集约 3.3 GiB、峰值提交量约 5.2 GiB。将工作集硬限到 1.5–2 GiB、保留足够提交额度后，中密度仍完成；将提交额度硬限到 4 GiB 则在加载检查点深拷贝时分配失败。提交量不等于物理 RAM，工作集限额也不是整机低内存模拟：宿主剩余 RAM / 页面缓存会使测试偏有利，浏览器、Windows 与磁盘分页仍需在云机验证。
-
-上述限额实验仅为历史测量记录，不构成降低最低部署要求的依据。部署至少使用 4 vCPU / 8 GiB，并核对系统提交余量、页面文件及安装后可用磁盘。共享型 CPU 争抢未在本机模拟。900 秒是失败超时，不是性能目标；按需验收每片关闭至转写验证完成的耗时（例如低于 240 秒），并连续录制检查队列不增长、无音频丢块、无持续硬分页。
-
-若常见录音超过数小时、同时说话人数较多或需要更稳的处理时限，建议使用 8 vCPU、16 GiB 内存和 120 GiB SSD。默认每 300 秒分片且转写后删除音频，磁盘压力通常较小；若把 `OOPZ_RETAIN_AUDIO` 改为 `true`，应按每名说话人约 0.35 GiB/小时的 48 kHz 单声道 PCM 预留额外空间。
-
-当前启动方式是交互式 Windows 批处理，不是 Windows Service。迁移云服务器后，应使用任务计划程序在用户登录或系统启动时调用 `scripts/invoke_full_stack_launcher.ps1`，并用云厂商控制台或仅限管理 IP 的 RDP 维护；不要为了飞书机器人开放公网业务端口。自动启动属于部署配置，当前仓库不会替云主机创建系统级计划任务。
+- 最低部署要求：4 vCPU / 8 GiB 内存、80 GiB SSD（长期保持至少 20 GiB 可用）、出站访问 OOPZ、飞书、分析 API 与魔搭社区；无需 GPU，无需入站业务端口。当前 Ubuntu 服务器为 4 vCPU / 7.5 GiB / 59 GB 根分区，磁盘低于建议值，需持续监控。
+- 录音前须单独验证 Playwright Chromium（`python -m playwright install --no-shell chromium`），系统浏览器不能替代；PDF 使用 Chromium 或显式选择的 WeasyPrint 后端，详见 [部署指南](DEPLOYMENT.md)。
+- 模型使用项目固定修订版的 SenseVoiceSmall（CPU），由 `scripts/download_sensevoice_model.py` 下载并校验 SHA-256，保存在共享目录，发布间不重复下载。
+- 历史测量（2026-09，Windows、Ryzen 9 7950X）：10 条各 300 秒合成音轨，进程峰值工作集约 3.3 GiB；该数据仅作记录，不构成降低最低要求的依据。长录音、多说话人或需要更稳处理时限时，建议 8 vCPU / 16 GiB / 120 GiB。默认每 300 秒分片并在转写成功后删除音频。
+- 15 分钟转写处理期限须在目标服务器的实际 CPU 上复核，合成或模拟计时不算容量证明。
 
 ## DeepSeek 官方 Flash 费用参考（2026-09-21 核验）
 

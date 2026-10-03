@@ -2,9 +2,16 @@
 
 本文件记录 OOPZ Capture 的功能、Bug 修复、配置、依赖、脚本、测试和文档变化，供本地开发、代码审阅与版本发布共同使用。Git 提交仍是精确差异的最终依据。
 
-记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，还必须同步记录到 `docs/DEPLOYMENT_CHANGELOG.md`。
+记录中不得包含密钥、账号、服务器地址、用户数据或其他敏感信息。会影响部署、配置、运行、数据或回滚的修改，须在条目中写明迁移与回滚影响。本文件是唯一的变更记录；Windows 时代的部署变更记录已随 Windows 层移出 `main`，见分支 `windows-legacy`。
 
 ## 未发布
+
+### 2026-10-03 — 整理：移出 Windows 部署层，精简门禁与文档
+
+- 移除 Windows 部署层（13 个 PowerShell 安装/更新/启停脚本、3 个 `.bat`、1200 行 Windows 部署指南、6 个仅 Windows 的测试模块及其检查脚本）；Windows 版保留在 `windows-legacy`、`v0.11.*` 标签与 GitHub Release。保留 `scripts/build_release.ps1`（发布构建）与 `scripts/download_sensevoice_model.py`，构建器必需条目不再含 `install_release.ps1`。
+- 移除无法执行的 `release-audit` 门禁（技能不可用，基线文件 `.codex/release-audit-baseline.json`）、重复的 `docs/DEPLOYMENT_CHANGELOG.md`（合并为单一 `CHANGELOG.md`）、已完成的 Ubuntu 交接文档与过期的 `PROJECT_PROGRESS.md`。敏感信息改由构建器的受保护路径拒绝加提交前自查承担，写入 `AGENTS.md`。
+- 重写 `AGENTS.md`、`README.md`（Linux 主线、准确的模块表与运行步骤）；`docs/UBUNTU_DEPLOYMENT.md` 升格为 `docs/DEPLOYMENT.md`，`UBUNTU_VALIDATION.md` 改名 `VALIDATION_UBUNTU.md`；精简 `DEPLOYMENT_STATE.md`、`OPERATIONS.md`、飞书配置指南中的 Windows 内容；新增 `docs/PROJECT_STATUS.md`（模块进度与三端对应）。
+- 验证：340 通过、20 跳过、0 失败；文档相对链接已检查。无运行代码行为变化（仅 `feishu_setup.py` 提示文字与 `settings.py` 注释）；不影响服务器配置或数据；回滚到标签 `pre-cleanup-20261003` 即可还原。
 
 ### 2026-10-03 — 恢复：采用生产 Ubuntu 线作为 Linux 部署基础
 

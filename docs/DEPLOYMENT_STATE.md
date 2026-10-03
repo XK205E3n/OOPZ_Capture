@@ -23,11 +23,11 @@ Git 对应关系：这四个发布提交来自此前丢失的工作环境（dot�
 
 较早的本地 R1–R6 Linux 实现（`main@02dc4f6`，未推送）与上述服务器线相互独立，功能上已基本被服务器线覆盖；两者只能保留一套。该实现及其未提交改动分别保存在 `main` 与 `wip/local-main-uncommitted-20261003`，未并入本分支。已知差异：服务器线对仍存活的锁 PID 一律保守拒绝切换，不做 `/proc` 命令行归属判断，迁移后遇 PID 巧合只会误拒绝、不会误放行。
 
-### Windows 服务器已废弃
+### Windows 部署已废弃
 
-用户于 2026-10-03 确认 Windows 生产服务器已废弃。下方的 Windows 部署记录与表格仅为 2026-09-21 最后一次核实的历史，不再维护，也不应据此判断 Ubuntu 服务器。Windows 版代码冻结在分支 `windows-legacy`（停在 `037b988`，发布提交 `3be0c95`）。
+用户于 2026-10-03 确认 Windows 生产服务器已废弃。Windows 部署脚本、指南与历史部署记录已从 `main` 移除，保留在分支 `windows-legacy`（停在 `037b988`，发布提交 `3be0c95`）、`v0.11.x` 标签和 GitHub Release 中，不再维护，也不应据此判断 Ubuntu 服务器。
 
-本地检出布局（同一个 Git 仓库的两份工作副本）：`D:\AI-Cloud-Linux\OOPZ_Capture` 为 `main`（Linux/Ubuntu 主线，仍保留跨平台及 Windows 脚本），`D:\AI-Cloud-Linux\OOPZ_Capture_Windows` 为 `windows-legacy`（冻结的 Windows 版）。
+本地检出布局（同一个 Git 仓库的两份工作副本）：`D:\AI-Cloud-Linux\OOPZ_Capture` 为 `main`（Linux/Ubuntu 主线），`D:\AI-Cloud-Linux\OOPZ_Capture_Windows` 为 `windows-legacy`（冻结的 Windows 版）。`scripts/build_release.ps1` 仍是发布包构建入口，应用代码保持跨平台。
 
 2026-10-03隔离录音候选：正式基线归档恢复后独立增加capture-only及发起人确认卡；仅本地验证，无真实部署变更。工作环境重置导致之前未交付的候选丢失，本候选重新验证，不沿用其测试或提交身份。
 
@@ -41,59 +41,30 @@ Ubuntu 24.04实机首次准备：`v0.11.15-f19cb4a60606`（提交 `f19cb4a606060
 
 2026-10-01复核修复：Linux切换guard已补 `last_job` 与真实分析阶段检查，拒绝无锁但已登记/进行中的分析。本机Windows单元回归309 passed、13 skipped；Linux真实管理入口和POSIX用例被跳过，Ubuntu实机与生产服务未操作。补丁交付分支为 `codex/fix-ubuntu-analysis-guard`，正式发布及部署由接手任务办理。
 
-Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux安装事务和中断恢复，开发验证环境为Debian 13，非Ubuntu 24.04。CPU VAD及固定模型公开音频转写成功；Chromium被沙箱socket权限阻止。实际systemd、Windows回归、飞书/API及数小时负载未验收。未提交或发布正式包，生产仍保持原状。详见 [验证记录](UBUNTU_VALIDATION.md)。
-
-Ubuntu交接：2026-10-01新增 [适配方案](UBUNTU_ADAPTATION_PLAN.md) 与 [任务提示词](UBUNTU_ADAPTATION_TASK.md)。该文档分支仅包含需求交接，运行代码仍是Windows基线；本机Ubuntu草稿未随本次推送交付，Ubuntu实机验收未完成。下表的生产部署记录不因本次文档提交改变。
+Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux安装事务和中断恢复，开发验证环境为Debian 13，非Ubuntu 24.04。CPU VAD及固定模型公开音频转写成功；Chromium被沙箱socket权限阻止。实际systemd、Windows回归、飞书/API及数小时负载未验收。未提交或发布正式包，生产仍保持原状。详见 [验证记录](VALIDATION_UBUNTU.md)。
 
 最低部署要求：4 vCPU / 8 GiB；低于此配置不作为支持的部署目标。当前新服务器 CPU/内存达到最低要求，仍须完成实际负载验收。
 
-| 项目 | 当前已知状态 | 验证边界 |
-| --- | --- | --- |
-| 本地/远端 | v0.11.15；服务器发布包提交 `3be0c95a5a5a200048e25e5139236dac00d27baf` | 已部署并验证新网关就绪；文档固定下载值为后续提交 |
-| 费用文本更新 | 最新 Flash 费率与飞书“预估费用”提示已上线 | 最新已完成报告复用全部摘要刷新费用，未新增模型请求或重发历史消息 |
-| 新服务器 | 浏览器已确认 Windows Server 2022 x64、4 vCPU / 8 GiB、40 GiB 系统盘 | 用户已迁移；来宾环境、页面文件和可用磁盘尚未验收 |
-| 网络 | 普通安全组：TCP 3389、TCP 22、ICMP 入站允许；无额外出站规则 | 无需业务入站端口；RDP 来源目前为全部 IPv4；未检查来宾防火墙 |
-| 旧服务器经验 | v0.11.9 曾完成 Python/Node/模型续装，之后发生 Chromium 缺失、分析 401 与超时 | 不代表新服务器已具备这些依赖或修复 |
-| 录音浏览器 | 新安装器强制安装并启动验证 Playwright Chromium | 必须使用运行账户；系统 Edge 不能代替录音检查 |
-| 分析 API | DeepSeek 官方 `deepseek-flash`；思考开启、默认强度、单次超时 600 秒 | 服务器 JSON 请求及真实会话已成功；不使用 Pro，凭据仅在私有配置 |
-| 数据/配置 | `.env`、模型、会话、飞书状态及日志独立存放 shared | 不随升级/回滚覆盖；新服务器迁移完整性待确认 |
-| 启动 | 用户日志显示飞书长连接已就绪；恢复 v0.11.10 的 current 后，用户确认当前运行正常 | 安装器编码误判已复现；完整录音链路、无人登录和重启恢复尚未验收 |
-
-## 生产目录约定
-
-默认安装根目录为 `C:\OOPZ`：
+## 生产目录约定（Ubuntu）
 
 ```text
-C:\OOPZ\
-  current -> releases\<release-id>       # 只读使用的当前版本目录联接
-  releases\<release-id>\                 # 每次发布独立目录，含独立 .venv/node_modules
-  shared\config\.env                     # 生产配置，发布间共享
-  shared\models\SenseVoiceSmall\         # 大模型，发布间共享
-  shared\output\                          # 会话与报告
-  shared\feishu_state\                    # 网关状态与审计
-  shared\logs\                            # 运行日志
-  shared\tools\node\                      # PDF 渲染的 node.exe，发布间共享
-  artifacts\                              # 已上传发布包与 SHA-256 文件
+/opt/oopz/
+  current -> releases/<release-id>       # 计划中的当前版本链接（尚未建立）
+  releases/<release-id>/                 # 每次发布独立目录，含独立 .venv/node_modules
+  shared/config/.env                     # 生产配置，发布间共享
+  shared/{models,output,feishu_state,logs,tools,python,browsers,cache,home}
+  artifacts/                             # 发布包与 SHA-256 文件
 ```
 
-发布目录中的 `.env` 使用同盘硬链接指向 `shared\config\.env`；`models`、`output`、`feishu_state`、`logs` 使用目录联接指向 `shared`，`tools\node` 联接到 `shared\tools\node`。因此代码回滚不会回滚或清空业务数据和配置。程序对 `.env` 的写入（首次入群控制群绑定、一键配置、群内“设置”命令）必须保持原地写：改回“临时文件替换”式写入会切断硬链接，使这些修改在下次升级时丢失（见部署变更记录）。
+版本目录中的 `.env`、`models`、`output`、`feishu_state`、`logs` 是指向 `shared/` 的符号链接，代码回滚不会回滚或清空业务数据和配置。程序对 `.env` 的写入必须原地进行：改成“临时文件替换”式写入会切断链接，使修改在下次升级时丢失。
 
 ## 服务器专属差异（允许存在）
 
-- `.env` 中的密钥、账号、控制群 ID、绝对数据路径及性能参数；实际值不得进入本文档。
-- Windows 任务计划程序、云防火墙/RDP 白名单、页面文件、磁盘告警和系统补丁策略。
+- `.env` 中的密钥、账号、控制群 ID、绝对数据路径及性能参数；实际值不得进入 Git 或本文档。
+- systemd 单元状态、logrotate、云防火墙/安全组、磁盘告警和系统补丁策略。
 - 模型、会话数据、飞书状态和日志。
 
-除以上项目外，生产代码、Schema、模板、脚本及 Python/Node 依赖声明必须来自同一发布包，不允许服务器手改。
-
-## 新服务器验收待办
-
-- [ ] 使用正式 v0.11.10 ZIP，核对清单中的版本与提交。
-- [ ] 确认 Python、Node、依赖、Chromium 和模型检查全部通过。
-- [ ] 确认共享配置与分析 API 的账户/地址匹配，超时设置为 180 秒。
-- [ ] 验证飞书长连接、短录音、转写、分析和批准发布。
-- [ ] 检查系统管理页面文件和磁盘余量；当前 40 GiB 系统盘低于部署指南建议的 80 GiB。
-- [ ] 完成登录自启、服务器重启和版本回滚演练。
+除以上项目外，生产代码、Schema、模板、脚本及依赖声明必须来自同一发布包，不允许服务器手改。
 
 ## Ubuntu 验收待办
 
@@ -102,23 +73,3 @@ C:\OOPZ\
 - [ ] 在目标机验证无人频道退出、服务重启恢复与版本回滚演练。
 - [ ] 清理测试残留（测试网关进程、`artifacts/` 中的探测脚本与分片，磁盘仅剩约 12 GB）并设置告警。
 - [ ] 完成 4 vCPU 下的长时间负载与 15 分钟转写期限复核。
-
-## 最近一次生产发布
-
-2026-09-21 17:36 UTC 验证：v0.11.15 已部署，清单提交为 `3be0c95a5a5a200048e25e5139236dac00d27baf`，网关在原交互式会话中运行且新日志确认飞书连接就绪。安装时因依赖下载缓慢，确认新旧依赖声明一致后，为新版本复制旧环境的依赖到独立虚拟环境，重新安装新版项目并通过 pip check、应用导入、Chromium 启动及 Node 检查；保留原 torch/torchaudio/funasr 版本，记录在新版 DEPLOYED_PYTHON_PACKAGES.txt。旧版本与共享数据保留。Windows 目录联接切换使用已核对目标的非递归删除，仅移除 current 联接后指向新版。
-
-最新已完成会话的费用报告已在禁止 API 请求的条件下刷新，摘要文件哈希不变，PDF 渲染成功；未重发已发送的飞书消息。之前的生产记录如下。
-
-2026-09-12：用户终端报告安装目录为 `v0.11.10-351fee9b773b`，依赖记录存在，日志显示飞书长连接已就绪。首次安装入口被撤回，重试触发版本目录已存在保护；本机从原发布包复现 PowerShell 5.1/代码页 936 对健康标记误解码。按受限首次启动流程恢复 current 后，用户确认运行正常。未取得精确启动时间或完整会话验收证据，不能登记全链路已验收。安装器修复纳入 v0.11.11 发布包，服务器应用程序未手改。
-
-2026-09-12：用户报告分析初始化因转写 segment_id 非 UUID 失败；代码确认旧静音标记存在此格式冲突，已修复并覆盖新旧数据测试。未读取服务器错误行，具体会话重试结果待升级后确认。
-
-内容审核处理：用户诊断确认原窗口被 data_inspection_failed 拒绝；v0.11.13 增加受限拆分/跳过及报告缺失说明，无原始转写迁移。生产会话升级后执行结果待确认。
-
-更新入口：main 新增 update_latest_release.ps1 与在线指南第 12.1 节，支持查询最新正式版和受检更新；隔离目录 PrepareOnly 下载/清单校验通过。此次不更新服务器，不重发 v0.11.13 包。
-
-供应商配置：云部署配置当前为 openai-compatible、qwen3.8-flash、并行 4；main 已移除旧版本强制串行的提供商门槛，该修复纳入 v0.11.14。新增可选思考格式默认 auto，无需补填即可启动；缓存生成参数扩展导致首次升级可能重新生成摘要，原始数据不迁移。
-
-用户报告飞书正文混入小时明细、PDF 失败且状态窗口未提示。main 已修复正文提取、PDF 实际浏览器选择/错误进度；本机 PDF 渲染通过，服务器记录为 PDF 渲染超时 180 秒；本机复现旧库异常后遗留 HTTP 服务的挂起路径，新渲染流程已移除该服务且真实 PDF 生成通过，服务器修复结果仍待升级后验收。云部署 `.env` 已备份并将思考设置为 enabled，其他字段未改；未直接更新服务器，本次已授权发布 v0.11.14。
-
-2026-09-21：MiniMax 接入按用户指示停止，生产分析配置改为 DeepSeek 官方 deepseek-flash，服务器端独立 JSON 请求成功；等待分析许可时安全重载，未中断录音或执行中的分析，许可文件哈希保留。最新 Flash 费用文本/估算已在本地修正，尚未形成新部署包；当前运行代码仍为 v0.11.14。

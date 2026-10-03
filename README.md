@@ -2,7 +2,7 @@
 
 通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，以本地 CPU 模型分片转写，再通过可配置的分析 API 生成会话报告。报告经群内审查后，可发布为飞书文档并写入 Base 索引。
 
-当前应用版本 **0.11.9**。远程控制入口为飞书群，部署目标为 **Windows x64**；QQ、NapCat、OneBot 不属于当前运行链路。版本与发布包见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前主线应用版本 **0.11.15（Linux 主线，尚未发布）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 版已冻结在分支 `windows-legacy`。QQ、NapCat、OneBot 不属于当前运行链路。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 核心能力
 
@@ -16,18 +16,19 @@
 
 | 路径 / 模块 | 职责 |
 | --- | --- |
-| `src/oopz_capture/feishu_*` | 飞书应用配置、长连接网关、消息与卡片协议、文档发布 |
-| `controller.py`、`controller_protocol.py` | 录音任务控制、群内指令、分析与发布决策 |
-| `continuous.py`、`browser_probe.py`、`recorder.py` | 浏览器音频采集、分片队列、断线处理与 WAV 写入 |
-| `pipeline.py`、`vad.py`、`asr.py`、`transcript.py` | 语音检测、重采样、模型推理、转写输出 |
-| `analyzer_job.py`、`analysis_windows.py`、`analysis_pipeline.py` | 分析输入校验、时间窗口、API 调用与检查点 |
-| `pdf_reports.py`、`tools/md_to_pdf.mjs` | Node.js 与 Chrome/Edge PDF 渲染 |
-| `scripts/` | 启停监视、固定版本模型下载、发布包构建、安装和回滚 |
+| `feishu_gateway.py`、`feishu_protocol.py`、`feishu_cli.py`、`feishu_setup.py`、`feishu_publisher.py` | 长连接网关、消息与卡片协议、命令行入口（`oopz-feishu`）、一键配置、文档发布 |
+| `controller.py`、`controller_protocol.py`、`send_request.py` | 录音任务控制、群内指令、capture-only 模式、分析与发布决策 |
+| `continuous.py`、`browser_probe.py`、`recorder.py`、`session.py`、`capture_session.py`、`identity.py` | 浏览器音频采集、身份映射、分片队列、断线处理与 WAV 写入 |
+| `vad.py`、`asr.py`、`transcript.py`、`speech_cli.py`、`pipeline.py` | 语音检测、模型推理、转写输出（生产路径经 `speech_cli` 子进程调用） |
+| `analyzer_job.py`、`analysis_windows.py`、`analysis_pipeline.py`、`deepseek_client.py` | 分析输入校验、时间窗口、API 调用与检查点 |
+| `reports.py`、`pdf_reports.py`、`weasy_pdf.py`、`tools/md_to_pdf.mjs` | 报告生成与 PDF 渲染（默认 Chromium，可显式选 WeasyPrint） |
+| `settings.py`、`env_loader.py` | 配置读取与 `.env` 原地写入 |
+| `scripts/linux/`、`scripts/build_release.ps1` | Ubuntu 发布管理（安装、更新、回滚、任务锁与事务）与发布包构建 |
 | `tests/`、`schemas/` | 行为测试与数据契约 |
-| `docs/` | 架构、运维、部署状态与发布迁移说明 |
+| `docs/` | 项目状态、架构、运维、部署与验证记录 |
 | `output/`、`feishu_state/`、`logs/`、`models/` | 本地会话、网关状态、日志和模型；均不进入 Git / 发布包 |
 
-上表省略路径前缀的 Python 模块均位于 `src/oopz_capture/`。
+上表省略路径前缀的 Python 模块均位于 `src/oopz_capture/`。`main.py`、`worker_cli.py`、`continuous_cli.py`、`analyzer_cli.py`、`analysis.py` 是手动调试入口，生产路径不依赖它们。
 
 ## 生产流程
 
@@ -46,24 +47,29 @@
 
 录制下一片时，后台串行处理已关闭的分片；当前每片通过独立 Python 进程运行 VAD / ASR，重新加载模型，各语音段逐个识别。`OOPZ_PROCESSING_DEADLINE_SECONDS` 是失败超时，不是完成速度保证。默认成功转写后删除分片音频；会话和报告默认保留 15 天，详见 [架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)。
 
-## 安装与启动
+## 安装与运行
 
-推荐使用已验证的 Python 3.12 x64、Node.js LTS，以及 64 位 Chrome 或 Edge。以下是在本地检出目录中的准备步骤；服务器请走下文的 Release 安装流程。
+**服务器**：见 [部署指南](docs/DEPLOYMENT.md)（Ubuntu 24.04，发布包分阶段安装，事务式更新与回滚）。服务器尚未完成验收，实际状态以 [部署状态](docs/DEPLOYMENT_STATE.md) 为准。
 
-新服务器先执行[从零部署第 2.1 节](README_CLOUD_SERVER_DEPLOYMENT.md#21-自动安装全部基础环境首次部署主流程)的完整 PowerShell：缺少才安装 Visual C++ 运行库、Python 3.12、Node/npm/npx 和浏览器，已安装则跳过。服务器不需要安装 Git 或 GitHub CLI，也不需要预装 winget 或登录 GitHub。
+**本地开发**（任意系统；Python 3.12、Node.js LTS）：
 
-1. 创建虚拟环境：`py -3.12 -m venv .venv`。复制 `.env.example` 为 `.env`，填写 OOPZ 登录配置和下文全部 `ANALYZER_*` 项；飞书 App ID/Secret 由第 3 步自动写入，不需要先去开放平台手动创建应用。不要提交 `.env`。
-2. 安装 Python 依赖：`.\.venv\Scripts\python.exe -m pip install -e ".[speech,feishu]"`。安装报告工具依赖：`npx pnpm@10.15.0 install --frozen-lockfile`。PDF 使用固定路径 `tools/node/node.exe`，需将已安装 Node.js 的 `node.exe` 放到该目录。
-3. **一键创建/更新飞书机器人（主流程）**：运行 `.\.venv\Scripts\oopz-feishu.exe setup`，用飞书 App 扫码并确认。程序创建或更新应用、申请 11 项应用身份权限、配置长连接事件和卡片回调，自动将 App ID/Secret 写入 `.env`。无法显示二维码时加 `--url-only`；默认更新已有应用，切换应用需明确使用 `--force`。完成后检查是否需要发布应用版本、再邀请进群；公开报告资源授权仍须单独完成。完整步骤见 [一键配置主流程](README_FEISHU_BOT_SETUP.md#首选一键创建或更新机器人)。只有一键流程失败、租户不支持或受管理员策略限制时，才展开手册中的手动保底步骤。
-4. 下载并校验固定修订版模型：`.\.venv\Scripts\python.exe scripts/download_sensevoice_model.py --target models/SenseVoiceSmall`。**录音还需要**运行 `.\.venv\Scripts\python.exe -m playwright install --no-shell chromium`，并按[录音浏览器验收](README_CLOUD_SERVER_DEPLOYMENT.md#94-录音浏览器缺失或connecting持续失败)验证启动。系统 Chrome/Edge 用于 PDF，不自动代替 SDK 默认的 Playwright Chromium；浏览器应安装在实际运行网关的同一 Windows 账户下。
-5. 运行 [启动OOPZ全流程.bat](启动OOPZ全流程.bat)。
+```bash
+python -m venv .venv && . .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install -e ".[speech,feishu]"                 # Linux 可选 PDF 后端：".[pdf]"
+npx pnpm@10.15.0 install --frozen-lockfile        # PDF 工具依赖
+python scripts/download_sensevoice_model.py --target models/SenseVoiceSmall
+python -m playwright install --no-shell chromium  # 录音浏览器
+cp .env.example .env                              # 填写 OOPZ 登录与全部 ANALYZER_* 项
+oopz-feishu setup                                 # 飞书扫码一键配置，自动写入 App ID/Secret
+oopz-feishu serve                                 # 启动网关
+```
 
-启动后会打开两个可见窗口：飞书收发记录，以及录音/转写/分析进度。首次启动会在群内发送启动提示与帮助；重启只发送生命周期状态，不重复帮助。关闭和重启分别使用 [一键关闭OOPZ全流程.bat](一键关闭OOPZ全流程.bat)、[一键重启OOPZ全流程.bat](一键重启OOPZ全流程.bat)。
+同一飞书应用只允许一个长连接网关；本地运行前请确认服务器上的网关没有在用同一应用。首次启动会在群内发送启动提示与帮助，重启只发送生命周期状态。
 
 `OOPZ_FEISHU_ADMIN_CHAT_ID` 可以留空。首次启动后将机器人邀请进目标群，程序会自动保存首次邀请对应的群 ID，且以后不会被其他邀请覆盖。若机器人已经在群内、无法再次产生邀请事件，可手动运行：
 
-```powershell
-.\.venv\Scripts\oopz-feishu.exe discover-ids
+```bash
+oopz-feishu discover-ids
 ```
 
 然后在目标群 @ 机器人发送“帮助”；终端会打印 `OOPZ_FEISHU_ADMIN_CHAT_ID`。该兼容模式只用于发现 ID，不能执行录音或发送消息。
@@ -115,22 +121,16 @@ ANALYZER_JSON_MODE=
 
 ## 云服务器与发布
 
-最低部署要求为 Windows Server 2022/2025 Desktop Experience、4 vCPU / 8 GiB、80 GiB SSD，并启用系统管理页面文件。低于 4 vCPU 或 8 GiB 的服务器不属于支持的部署配置。最低配置不代表所有负载都能满足处理时限，仍需按实际频道验证每片耗时、内存、磁盘与队列；高负载应进一步升配。测试边界见 [运维说明](docs/OPERATIONS.md#云服务器容量与试运行)。
+最低部署要求为 Ubuntu 24.04 LTS x86_64、4 vCPU / 8 GiB、80 GiB SSD；低于此配置不属于支持的部署配置，最低配置也不保证所有负载满足处理时限，须按实际频道验证每片耗时、内存、磁盘与队列。容量与运维见 [运维说明](docs/OPERATIONS.md#服务器容量)。
 
-本项目通过出站连接访问 OOPZ、飞书与分析 API，**不要求开放业务入站端口**。RDP 管理端口应只允许可信来源。服务器尚未完成应用部署验收；实际状态以 [部署状态基线](docs/DEPLOYMENT_STATE.md) 为准。
+本项目只通过出站连接访问 OOPZ、飞书与分析 API，**不要求开放业务入站端口**。
 
-服务器使用 [Release ZIP 和 SHA-256 文件](https://github.com/XK205E3n/OOPZ_Capture/releases)，由 `scripts/install_release.ps1` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared` 中。不要把包含 `.env`、模型或会话数据的整个开发目录上传，也不要直接修改服务器版本目录。
-
-当前公开 Release 可匿名获取。从零部署指南提供完整 PowerShell：自动下载校验、提取管理脚本、终端配置、一键飞书配置及正式安装，不需要服务器登录 GitHub 或克隆仓库。业务账号、飞书扫码和租户审批仍由使用者完成。
+发布包只由 `scripts/build_release.ps1` 从干净的已提交 `HEAD` 构建（ZIP + SHA-256），服务器用 `scripts/linux/` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared/`。不要把包含 `.env`、模型或会话数据的开发目录上传，也不要直接修改服务器版本目录。现有 GitHub Release（≤0.11.15）是 Windows 版；Linux 版尚未发布，下一次发布应使用新的版本号（建议 0.12.0），因为已有多个内容不同的构建共用 0.11.15。
 
 ## 开发验证
 
-```powershell
-.\.venv\Scripts\python.exe -m pytest
+```bash
+python -m pytest
 ```
 
-提交与发布前按 [AGENTS.md](AGENTS.md) 执行审计、更新变更记录；正式发布包只由 `scripts/build_release.ps1` 从干净的已提交 `HEAD` 构建。
-
-更多部署和故障处理见 [docs/OPERATIONS.md](docs/OPERATIONS.md)；架构与数据生命周期见 [docs/CURRENT_ARCHITECTURE.md](docs/CURRENT_ARCHITECTURE.md)。
-
-Windows 云服务器从零部署见 [README_CLOUD_SERVER_DEPLOYMENT.md](README_CLOUD_SERVER_DEPLOYMENT.md)；飞书应用从零配置见 [README_FEISHU_BOT_SETUP.md](README_FEISHU_BOT_SETUP.md)。版本化更新和回滚原理见 [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)；本地与服务器的当前差异以 [docs/DEPLOYMENT_STATE.md](docs/DEPLOYMENT_STATE.md) 为准，部署相关修改必须登记到 [docs/DEPLOYMENT_CHANGELOG.md](docs/DEPLOYMENT_CHANGELOG.md)。
+提交约定与变更记录规则见 [AGENTS.md](AGENTS.md)。文档索引：[项目状态](docs/PROJECT_STATUS.md)、[架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)、[运维说明](docs/OPERATIONS.md)、[部署指南](docs/DEPLOYMENT.md)、[部署状态](docs/DEPLOYMENT_STATE.md)、[Ubuntu 验证记录](docs/VALIDATION_UBUNTU.md)、[飞书应用配置](README_FEISHU_BOT_SETUP.md)。
