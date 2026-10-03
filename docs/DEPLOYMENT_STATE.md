@@ -23,9 +23,11 @@ Git 对应关系：这四个发布提交来自此前丢失的工作环境（dot�
 
 较早的本地 R1–R6 Linux 实现（`main@02dc4f6`，未推送）与上述服务器线相互独立，功能上已基本被服务器线覆盖；两者只能保留一套。该实现及其未提交改动分别保存在 `main` 与 `wip/local-main-uncommitted-20261003`，未并入本分支。已知差异：服务器线对仍存活的锁 PID 一律保守拒绝切换，不做 `/proc` 命令行归属判断，迁移后遇 PID 巧合只会误拒绝、不会误放行。
 
-### Windows 服务器历史基线（未核实）
+### Windows 服务器已废弃
 
-下表及其后的 Windows 内容为 2026-09-21 最后一次核实的记录。2026-10-03 起从本机无法连通该 Windows 主机的 22/3389 端口，其当前状态未核实，不应据此判断 Ubuntu 服务器。
+用户于 2026-10-03 确认 Windows 生产服务器已废弃。下方的 Windows 部署记录与表格仅为 2026-09-21 最后一次核实的历史，不再维护，也不应据此判断 Ubuntu 服务器。Windows 版代码冻结在分支 `windows-legacy`（停在 `037b988`，发布提交 `3be0c95`）。
+
+本地检出布局（同一个 Git 仓库的两份工作副本）：`D:\AI-Cloud-Linux\OOPZ_Capture` 为 `main`（Linux/Ubuntu 主线，仍保留跨平台及 Windows 脚本），`D:\AI-Cloud-Linux\OOPZ_Capture_Windows` 为 `windows-legacy`（冻结的 Windows 版）。
 
 2026-10-03隔离录音候选：正式基线归档恢复后独立增加capture-only及发起人确认卡；仅本地验证，无真实部署变更。工作环境重置导致之前未交付的候选丢失，本候选重新验证，不沿用其测试或提交身份。
 

@@ -7,6 +7,7 @@
 ### 2026-10-03 — 记录：采用生产 Ubuntu 线并核对服务器实际状态
 
 - 服务器实际运行 `v0.11.15-4291aa894f7a`（`--capture-only` 测试进程，未建立 `current`/systemd），其余三个同版本发布目录并存；这些提交来自丢失的工作环境，已从发布包（SHA-256 核对）导入 `recovery/server-v0.11.15-snapshots`。本分支把最新快照作为 Linux 部署基础，去除生成文件并按仓库换行规范化。
+- 用户确认 Windows 生产服务器已废弃；Windows 版代码冻结于分支 `windows-legacy`，本地另设工作副本 `OOPZ_Capture_Windows`，`main` 作为 Linux 主线。较早的本地独立 Linux 实现保存在分支 `legacy/local-linux-r1-r6`。
 - 修复 `tests/test_release_build.py` 夹具缺少 `.gitattributes` 导致 Windows `autocrlf=true` 下 LF 检查失败；真实构建不受影响。
 - 验证：本机 Windows 全量 372 项：352 通过、20 跳过（缺 Linux/符号链接/PowerShell 条件）、0 失败（夹具修复前有 1 项因 `autocrlf` 失败）；Ubuntu 实机未重跑。未改动服务器，无配置或数据迁移。服务器代码此前未经 Git 管理，此提交使 Git 与服务器首次一致（以 `4291aa894f7a` 为准）。
 
