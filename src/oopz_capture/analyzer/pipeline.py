@@ -17,14 +17,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from ..digest.contract import no_odd_topic, validate_content
+from ..digest.contract import DigestValidationError, _text, no_odd_topic, validate_content
 from . import prompts
 from .backend import BackendError, parse_json_object
-from .transcript import Session, clock
+from .transcript import UNKNOWN_MEMBER, Session, clock
 from .windows import Window, split_windows
 
 ATTEMPTS = 4          # model answers tried per call before giving up
-MAX_PROFILES = 2      # the card shows at most two people; none is fine when nobody stood out
+MAX_PROFILES = 4      # people block is about as big as the topics block; none is fine when nobody stood out
 MERGE_ABOVE = 12      # more windows than this are merged in groups before the final digest
 MERGE_GROUP = 8
 
@@ -45,6 +45,8 @@ class Analysis:
     coverage: dict
     calls: list[dict]
     flow: list[dict]     # "how the session went": one {"time", "text"} per final-level unit
+    labels: dict         # corner tags written by the editor: {"odd", "topics", "moments"} (empty if the editor failed)
+    edited: bool         # False when the editor step failed and the plain draft is used
 
 
 class Aliases:
@@ -105,6 +107,10 @@ def _entries(content: dict):
 
 
 def check_style(content: dict) -> None:
+    for profile in content["people"]["profiles"]:
+        if profile["nickname"].startswith(UNKNOWN_MEMBER):
+            raise ValueError(f"style:profiles must not feature {UNKNOWN_MEMBER} (an audio track not matched to a member); "
+                             "remove that entry")
     count = len(content["people"]["profiles"])
     if count > MAX_PROFILES:
         raise ValueError(f"style:people.profiles has {count} entries but at most {MAX_PROFILES} are wanted; "
@@ -134,7 +140,7 @@ class Recorder:
 
 
 def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, recorder: Recorder, *,
-        stage: str, unit: str, extra=None) -> dict:
+        stage: str, unit: str, extra=None, prepare=None) -> dict:
     """Ask until the answer passes the validator (at most ATTEMPTS times); returns content with real ids."""
     body = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
     note, last = "", ""
@@ -142,7 +148,8 @@ def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, rec
         started = time.monotonic()
         reply = backend.complete(system, body + note)
         try:
-            content = normalize(aliases.to_real(_strip(parse_json_object(reply))))
+            parsed = _strip(parse_json_object(reply))
+            content = normalize(aliases.to_real(prepare(parsed) if prepare else parsed))
             validate_content(content, bundle)
             check_style(content)
             if extra:
@@ -234,6 +241,53 @@ def merge_group(backend, group: list[dict], number: int, pool: dict, aliases: Al
     return unit
 
 
+def check_labels(labels, content: dict, flow: list[dict]) -> dict:
+    """Corner tags written by the editor; they must match the (possibly shortened) content one to one."""
+    if not isinstance(labels, dict) or set(labels) != {"odd", "topics", "moments", "timeline"}:
+        raise DigestValidationError("labels:fields expected odd, topics, moments, timeline")
+    section = content["content"]
+    for name, size in (("topics", len(section["topics"])), ("moments", len(section["moments"])),
+                       ("timeline", len(flow))):
+        if not isinstance(labels[name], list) or len(labels[name]) != size:
+            raise DigestValidationError(f"labels:{name} must be a list with {size} entries (one per entry), "
+                                        f"got {len(labels[name]) if isinstance(labels[name], list) else 'a non-list'}")
+    out = {"odd": "" if section["odd_topic"]["status"] == "none" else _text(labels["odd"], 12, "labels.odd")}
+    for name in ("topics", "moments"):
+        out[name] = [_text(item, 12, f"labels.{name}[{i}]") for i, item in enumerate(labels[name])]
+    out["timeline"] = [_text(item, 20, f"labels.timeline[{i}]") for i, item in enumerate(labels["timeline"])]
+    return out
+
+
+def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases: Aliases, recorder: Recorder,
+                 fit=None, coverage: dict | None = None) -> tuple[dict, dict]:
+    """Rewrite the validated draft as poster copy.  Returns (content, labels); evidence is untouched
+    (the same validator runs again), entries the editor judges unreadable are dropped."""
+    pool = {e["id"]: e for e in bundle["evidence"]}
+    ids = [ref for entry in _entries(content) for ref in entry["evidence_ids"]]
+    for entry in _entries(content):
+        for stage in entry.get("stages", []):
+            ids += stage["evidence_ids"]
+    ids = list(dict.fromkeys(ids))
+    request = {"mode": "editor", "people": aliases.people(), "draft": aliases.to_alias(content),
+               "flow": [item["text"] for item in flow],
+               "evidence": [aliases.evidence(pool[i], brief=True) for i in ids if i in pool]}
+    held: dict = {}
+
+    def prepare(parsed: dict) -> dict:
+        held["labels"] = parsed.pop("labels", None)
+        return parsed
+
+    def extra(edited: dict) -> None:
+        held["checked"] = check_labels(held["labels"], edited, flow)
+        if fit:
+            fit(edited, bundle, coverage or {"missing": []}, [{"time": f["time"], "text": t}
+                                                            for f, t in zip(flow, held["checked"]["timeline"])])
+
+    edited = ask(backend, prompts.system_prompt("editor"), request, aliases, bundle, recorder,
+                 stage="edit", unit="all", extra=extra, prepare=prepare)
+    return edited, held["checked"]
+
+
 def analyze_session(session: Session, backend, *, parallelism: int = 3,
                     windows: list[Window] | None = None, fit=None) -> Analysis:
     """``fit(content, bundle, coverage, flow)`` may raise ValueError (e.g. card too tall) to send the final digest back."""
@@ -261,8 +315,13 @@ def analyze_session(session: Session, backend, *, parallelism: int = 3,
     flow = [{"time": u["time"], "text": u["notes"]["content"]["summary"]["title"]} for u in level]
     try:
         content = ask(backend, prompts.system_prompt("final"), request, aliases, bundle, recorder,
-                      stage="final", unit="all",
-                      extra=(lambda c: fit(c, bundle, coverage, flow)) if fit else None)
+                      stage="final", unit="all")
     except AnalysisError as error:
         raise AnalysisError(str(error), units, recorder.calls) from None
-    return Analysis(content, bundle, units, coverage, recorder.calls, flow)
+    try:
+        edited, labels = edit_content(backend, content, bundle, flow, aliases, recorder, fit, coverage)
+    except (AnalysisError, BackendError) as error:     # keep the checked draft rather than lose the run
+        print(f"EDITOR FAILED, plain draft is used: {error}", flush=True)
+        return Analysis(content, bundle, units, coverage, recorder.calls, flow, {}, False)
+    flow = [{"time": item["time"], "text": text} for item, text in zip(flow, labels["timeline"])]
+    return Analysis(edited, bundle, units, coverage, recorder.calls, flow, labels, True)

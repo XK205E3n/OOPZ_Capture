@@ -84,7 +84,8 @@ class CaseTests(unittest.TestCase):
         for c in CASES:
             roles = [(b["role"], b["text"]) for b in self.side(c, "visible_text.json")]
             sec = [t for r, t in roles if r.startswith("section_")]
-            self.assertEqual(sec, ["这场聊了什么", "大家的表现"])
+            self.assertEqual(sec[0], "大家的表现")  # people come right after the odd-topic block
+            self.assertIn(sec[1:], ([], ["这场聊了什么"]))
 
     def test_every_text_size_at_or_above_floor(self):
         floor = self.tokens["type_floor_px"]

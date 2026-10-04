@@ -170,39 +170,31 @@ class Builder:
         self.equalizer(y + 40, 80, col["mint"], col["violet"], 0.85)
         y += 80 + 56
 
-        # --- section 1: content
-        y = self.section("section_content", v["sections"]["content"], y, col["mint"])
+        # --- opening: the one-line verdict and the "today's best" block, then the people, then the rest
         mods = v["modules"]
-        for i, m in enumerate(mods):
-            top = y
-            y = getattr(self, "module_" + m["kind"])(m, y, i)
-            self.modules.append({"kind": m["kind"], "index": i, "top": top, "bottom": y})
-            if i < len(mods) - 1:
-                a, b = m["kind"], mods[i + 1]["kind"]
-                gap_mid = y + sp["module_gap"] / 2
-                if a in ("topic", "next_hook") and b in ("topic", "next_hook"):
-                    self.hline(mx + sp["gutter"], W - mx, gap_mid, alpha=1.0, dash=[10, 9])
-                elif "odd_topic" not in (a, b):
-                    self.add(op="wave", x0=W / 2 - 70, x1=W / 2 + 70, y=gap_mid, amp=6, length=46,
-                             color=col["mint"], alpha=0.5, w=3)
-                y += sp["module_gap"]
-        # dotted guide joining consecutive topic icons
-        idx = sorted(self.gutter)
-        for a, b in zip(idx, idx[1:]):
-            if b == a + 1:
-                self.add(op="line", pts=[[mx + sp["gutter_icon"] / 2, self.gutter[a][1] + 10],
-                                         [mx + sp["gutter_icon"] / 2, self.gutter[b][0] - 10]],
-                         color=col["sky"], alpha=0.5, w=3, dash=[2, 10], cap="round")
+        opening = [m for m in mods if m["kind"] in ("summary", "odd_topic")]
+        body = [m for m in mods if m["kind"] in ("moment", "topic", "next_hook")]
+        closing = [m for m in mods if m["kind"] == "flow"]
+        y = self.run_modules(opening, y)
         y += 64
 
         # --- chapter break: a second, shorter equalizer in the other accent colours
         self.equalizer(y + 26, 52, col["amber"], col["mint"], 0.6, seed_shift=7)
         y += 52 + 74
 
-        # --- section 2: people
+        # --- people (and the speaking-frequency block)
         y = self.section("section_people", v["sections"]["people"], y, col["amber"])
         y = self.people(y)
         y = self.stats(y)
+
+        # --- the other highlights
+        if body:
+            y += sp["section_gap"]
+            y = self.section("section_content", v["sections"]["content"], y, col["mint"])
+            y = self.run_modules(body, y)
+        if closing:
+            y += 64
+            y = self.run_modules(closing, y)
 
         # --- footer
         if v.get("footer"):
@@ -225,6 +217,31 @@ class Builder:
             k, yy = k + 1, yy + 1500
         self.ops[bg_index:bg_index] = rings
         return LayoutResult(W, height, self.ops, self.blocks, self.modules, self.header_height, self.min_font)
+
+    def run_modules(self, mods, y) -> float:
+        sp, col, W, mx = self.sp, self.col, self.W, self.mx
+        for i, m in enumerate(mods):
+            top = y
+            index = len(self.modules)
+            y = getattr(self, "module_" + m["kind"])(m, y, index)
+            self.modules.append({"kind": m["kind"], "index": index, "top": top, "bottom": y})
+            if i < len(mods) - 1:
+                a, b = m["kind"], mods[i + 1]["kind"]
+                gap_mid = y + sp["module_gap"] / 2
+                if a in ("topic", "next_hook") and b in ("topic", "next_hook"):
+                    self.hline(mx + sp["gutter"], W - mx, gap_mid, alpha=1.0, dash=[10, 9])
+                elif "odd_topic" not in (a, b):
+                    self.add(op="wave", x0=W / 2 - 70, x1=W / 2 + 70, y=gap_mid, amp=6, length=46,
+                             color=col["mint"], alpha=0.5, w=3)
+                y += sp["module_gap"]
+        # dotted guide joining consecutive topic icons
+        idx = sorted(k for k in self.gutter if k >= len(self.modules) - len(mods))
+        for a, b in zip(idx, idx[1:]):
+            if b == a + 1:
+                self.add(op="line", pts=[[mx + sp["gutter_icon"] / 2, self.gutter[a][1] + 10],
+                                         [mx + sp["gutter_icon"] / 2, self.gutter[b][0] - 10]],
+                         color=col["sky"], alpha=0.5, w=3, dash=[2, 10], cap="round")
+        return y
 
     # ------------------------------------------------------------------ pieces
     def section(self, role, title, y, color) -> float:

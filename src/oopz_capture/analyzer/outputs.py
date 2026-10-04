@@ -10,7 +10,7 @@ from .pipeline import Analysis
 from .transcript import Session
 
 
-def build_metadata(session: Session, coverage: dict, flow: list[dict]) -> dict:
+def build_metadata(session: Session, coverage: dict, flow: list[dict], labels: dict | None = None) -> dict:
     start = session.started_at
     end = session.stopped_at or start + timedelta(milliseconds=session.duration_ms)
     next_day = "次日 " if end.date() != start.date() else ""
@@ -18,7 +18,11 @@ def build_metadata(session: Session, coverage: dict, flow: list[dict]) -> dict:
     missing = coverage["missing"]
     if missing:
         note += f"有 {len(missing)} 个时间段分析失败，未纳入：" + "、".join(m["time"] for m in missing) + "。"
-    return {"synthetic": False, "session_id": session.session_id, "duration_ms": session.duration_ms,
+    labels = labels or {}
+    tags = {"odd_label": labels["odd"]} if labels.get("odd") else {}
+    tags |= {"topic_labels": labels["topics"]} if labels.get("topics") else {}
+    tags |= {"moment_labels": labels["moments"]} if labels.get("moments") else {}
+    return tags | {"synthetic": False, "session_id": session.session_id, "duration_ms": session.duration_ms,
             "session": {"date_label": start.strftime("%Y.%m.%d"),
                         "time_label": f"{start:%H:%M} — {next_day}{end:%H:%M}"},
             "timeline": [{"title": item["time"].replace("-", "–"), "text": item["text"]} for item in flow],
@@ -40,7 +44,7 @@ def save(session: Session, session_dir: Path, analysis: Analysis, out_dir: Path)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write(out_dir / "content.json", analysis.content)
     _write(out_dir / "bundle.json", analysis.bundle)
-    _write(out_dir / "meta.json", build_metadata(session, analysis.coverage, analysis.flow))
+    _write(out_dir / "meta.json", build_metadata(session, analysis.coverage, analysis.flow, analysis.labels))
     _write(out_dir / "stats.json", compute_stats(session, session_dir, analysis))
     _write(out_dir / "windows.json", analysis.units)
     _write(out_dir / "coverage.json", analysis.coverage)

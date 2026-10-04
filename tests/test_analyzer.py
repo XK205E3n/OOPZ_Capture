@@ -53,9 +53,24 @@ class FakeModel:
         self.calls += 1
         if request["mode"] == "window" and request["window"] in self.fail_windows:
             raise BackendError("simulated outage")
+        if request["mode"] == "editor":
+            return self._edit(request)
         if self.bad_first and not feedback:
             return self._digest(request, anchor="这句话根本不在证据里")
         return self._digest(request)
+
+    def _edit(self, request):
+        """Rewrites every title and text, keeps evidence, and tags what it was given."""
+        draft = request["draft"]
+        section = draft["content"]
+        entries = [section["summary"], section["odd_topic"], *section["topics"], *section["moments"],
+                   *section["next_hooks"], *draft["people"]["profiles"]]
+        for entry in entries:
+            if entry["evidence_ids"]:
+                entry["title"], entry["text"] = "改写后的标题", "改写后的一句吐槽"
+        labels = {"odd": "离谱至极", "topics": ["笑出声"] * len(section["topics"]),
+                  "moments": ["跑偏现场"] * len(section["moments"]), "timeline": ["小标题"] * len(request["flow"])}
+        return json.dumps(draft | {"labels": labels}, ensure_ascii=False)
 
     def _digest(self, request, anchor=None):
         evidence = request["evidence"]
@@ -177,7 +192,7 @@ def test_many_windows_are_merged_in_groups_before_the_final_digest(tmp_path, mon
     session = make_session(tmp_path)
     model = FakeModel()
     analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=500))
-    assert "section" in {mode for mode, _ in model.requests} and model.requests[-1][0] == "final"
+    assert "section" in {mode for mode, _ in model.requests} and [m for m, _ in model.requests][-2:] == ["final", "editor"]
     validate_content(analysis.content, analysis.bundle)
 
 
@@ -263,17 +278,17 @@ def test_a_card_that_is_too_tall_is_sent_back_with_the_height(tmp_path):
         check(tall, bundle, {"missing": []}, [])
 
 
-def test_more_than_two_people_are_sent_back(tmp_path):
+def test_too_many_people_are_sent_back(tmp_path):
     session = make_session(tmp_path, count=12)
 
-    class ThreePeople(FakeModel):
+    class TooMany(FakeModel):
         def _digest(self, request, anchor=None):
             content = json.loads(super()._digest(request, anchor))
             if request["mode"] == "final" and not self.requests[-1][1]:
-                content["people"]["profiles"] = [dict(content["people"]["profiles"][0], title=t) for t in ("称号甲", "称号乙", "称号丙")]
+                content["people"]["profiles"] = [dict(content["people"]["profiles"][0], title=t) for t in ("称号甲", "称号乙", "称号丙", "称号丁", "称号戊")]
             return json.dumps(content, ensure_ascii=False)
 
-    model = ThreePeople()
+    model = TooMany()
     analyze_session(session, model, windows=split_windows(session.runs, max_chars=100_000))
     assert any("style:people.profiles" in feedback for _, feedback in model.requests)
 
@@ -284,7 +299,7 @@ def test_flow_becomes_the_timeline_of_the_card(tmp_path):
     analysis = analyze_session(session, FakeModel(), windows=split_windows(session.runs, max_chars=600))
     meta = build_metadata(session, analysis.coverage, analysis.flow)
     assert [t["title"] for t in meta["timeline"]][0].startswith("14:00") and len(meta["timeline"]) == len(analysis.flow)
-    assert all(t["text"] == "这一段的标题" for t in meta["timeline"])
+    assert all(t["text"] == "小标题" for t in meta["timeline"])        # the editor's short timeline captions
 
 
 def test_every_faulty_entry_is_reported_at_once():
@@ -296,3 +311,26 @@ def test_every_faulty_entry_is_reported_at_once():
         validate_content(content, bundle)
     message = str(caught.value)
     assert "@summary" in message and "@topics[0]" in message and "这句话不在任何证据里" in message
+
+
+def test_editor_rewrites_text_keeps_evidence_and_supplies_tags(tmp_path):
+    from oopz_capture.analyzer.outputs import build_metadata
+    session = make_session(tmp_path)
+    analysis = analyze_session(session, FakeModel(), windows=split_windows(session.runs, max_chars=100_000))
+    assert analysis.edited and analysis.content["content"]["summary"]["title"] == "改写后的标题"
+    assert analysis.content["content"]["summary"]["evidence_ids"]          # evidence untouched and revalidated
+    assert analysis.labels["timeline"] == ["小标题"] * len(analysis.flow)
+    assert build_metadata(session, analysis.coverage, analysis.flow, analysis.labels).get("topic_labels", []) == []
+
+
+def test_editor_with_wrong_tag_count_is_sent_back_then_falls_back_to_the_draft(tmp_path, capsys):
+    class BadEditor(FakeModel):
+        def _edit(self, request):
+            return json.dumps(request["draft"] | {"labels": {"odd": "x", "topics": ["多余"], "moments": [], "timeline": []}},
+                              ensure_ascii=False)
+
+    session = make_session(tmp_path)
+    analysis = analyze_session(session, BadEditor(), windows=split_windows(session.runs, max_chars=100_000))
+    assert not analysis.edited and analysis.labels == {}
+    assert analysis.content["content"]["summary"]["title"] == "整场的标题"       # the checked draft is kept
+    assert "EDITOR FAILED" in capsys.readouterr().out

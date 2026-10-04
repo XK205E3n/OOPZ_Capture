@@ -68,7 +68,7 @@ def validate_metadata(metadata: Any) -> dict:
             raise RenderError("metadata:timeline_item")
         _text(item.get("title"), "metadata.timeline.title", limit=120)
         _text(item.get("text"), "metadata.timeline.text", limit=400)
-    for key in ("source_note", "summary_label"):
+    for key in ("source_note", "summary_label", "odd_label"):
         if metadata.get(key) is not None:
             _text(metadata[key], f"metadata.{key}", limit=600)
     return dict(metadata)
@@ -101,9 +101,11 @@ def build_view(content: Mapping, metadata: Mapping, *, stats_view: Mapping | Non
     modules.append({"kind": "summary", "kicker": summary_kicker, "text": summary_text})
 
     odd = section.get("odd_topic")
+    odd_label = sanitize_text(metadata.get("odd_label") or "")
+    odd_kicker = f"{labels['odd_topic']}：{odd_label}" if odd_label else labels["odd_topic"]
     if isinstance(odd, Mapping) and odd.get("status") == "supported":
         title, text = _item_text(odd, "odd_topic", limit=1600)
-        modules.append({"kind": "odd_topic", "status": "supported", "kicker": labels["odd_topic"],
+        modules.append({"kind": "odd_topic", "status": "supported", "kicker": odd_kicker,
                         "title": title, "text": text, "icon": normalize_category(odd.get("icon_category"))})
     else:  # absent or explicit "none": keep the module, say so honestly
         src = odd if isinstance(odd, Mapping) and odd.get("status") == "none" else _NO_ODD

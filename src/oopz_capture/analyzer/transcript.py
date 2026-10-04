@@ -45,6 +45,8 @@ class Session:
     segments: list[dict]        # raw ASR segments (statistics count these)
 
 
+UNKNOWN_MEMBER = "未识别成员"   # prefix of the nickname given to an audio track not matched to any member
+
 def speaker_key(segment: dict) -> str:
     """The OOPZ uid, or agora-<uid> for an audio track the recorder could not map to a member."""
     return str(segment.get("oopz_uid") or "") or f"agora-{segment['agora_uid']}"
@@ -114,7 +116,7 @@ def load_session(session_dir: Path) -> Session:
         if user.get("is_bot"):
             continue
         if speaker in unknown:
-            nickname = "未识别成员" + (chr(65 + unknown.index(speaker)) if len(unknown) > 1 else "")
+            nickname = UNKNOWN_MEMBER + (chr(65 + unknown.index(speaker)) if len(unknown) > 1 else "")
         else:
             nickname = clean(user.get("nickname") or seen_names.get(speaker) or speaker)
         roster.append({"speaker_id": speaker, "nickname": nickname})
