@@ -1,6 +1,6 @@
 # OOPZ Capture
 
-> **Windows 版（已冻结）**：本分支 `windows-legacy` 停在最后一次实测部署的 Windows 版本（v0.11.15，发布提交 `3be0c95`，文档提交 `037b988`）。Windows 生产服务器已于 2026-10-03 确认废弃，本分支不再部署、不再更新。当前主线与 Linux（Ubuntu 24.04）部署在 `main`，见 `docs/DEPLOYMENT_STATE.md`。
+> **Windows 部署线**：本分支 `windows-legacy` 保留已在生产验证过（2026-09-21）的 Windows 版本（v0.11.15，发布提交 `3be0c95`，文档提交 `037b988`）及其完整的原部署流程（PowerShell 安装/更新/回滚、从零部署指南），流程保持原样、不随 Linux 主线更新。当前开发重心在 Linux（`main`）；原 Windows 生产服务器已退役，但本流程可用于新的 Windows 服务器。注意：`scripts/update_latest_release.ps1` 读取 GitHub 的 latest Release，因此 Linux 版本发布必须使用 `linux-v*` 标签并且不设为 Latest，否则会干扰本流程。
 
 通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，以本地 CPU 模型分片转写，再通过可配置的分析 API 生成会话报告。报告经群内审查后，可发布为飞书文档并写入 Base 索引。
 
