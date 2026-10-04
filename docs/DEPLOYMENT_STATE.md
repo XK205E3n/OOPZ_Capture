@@ -6,22 +6,31 @@
 
 ## 当前状态
 
-### Ubuntu 生产服务器实测基线（2026-10-03 只读检查）
+### Ubuntu 生产服务器实测基线（2026-10-03 只读检查；2026-10-04 账号迁移后更新）
 
-检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB 已用约 79%。以下为实测事实，不含密钥或地址。
+检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB（清理音频后已用约 40%）。以下为实测事实，不含密钥或地址。
 
 | 项目 | 实测状态 |
 | --- | --- |
-| 目录 | `/opt/oopz`（`dot-admin` 专用账号）：`releases/` 下有四个 v0.11.15 发布目录（`f19cb4a60606`、`bf8a2d777692`、`b8ee9c881551`、`4291aa894f7a`），`shared/` 持久数据，`artifacts/` 发布包与脚本 |
-| 服务形态 | 无 `current` 链接、无 systemd 单元、无 cron；**尚未以服务形态部署**，服务器重启后不会自动恢复 |
-| 运行进程 | 手动 nohup 启动的 `feishu_cli serve --capture-only`，运行版本 `4291aa894f7a`，使用 `shared/capture-tests/20261003T0625` 下的独立测试 state/output；非正式环境 |
-| 最近一次实测 | 会话 `2026-10-03_14-32-31_BJT`（北京时间）：159 个分片全部转写成功、失败 0、共 7834 段，状态 `ready_for_analysis`；日志无错误。仅验证录音与转写 |
+| 账号 | 全机只有一个管理账号 `ubuntu`，所有操作者和 AI 共用，不另建服务账号；OOPZ 以 `ubuntu` 身份运行，靠 systemd 隔离（见下） |
+| 目录 | `/opt/oopz`（属主 `ubuntu`）：`releases/` 下有四个 v0.11.15 发布目录（`f19cb4a60606`、`bf8a2d777692`、`b8ee9c881551`、`4291aa894f7a`）和 `.management.lock`、`backups/` 属主 root；`shared/` 持久数据、`artifacts/` 发布包与脚本属主 `ubuntu` |
+| 服务形态 | 无 `current` 链接、无持久 systemd 单元；采集测试进程由瞬时单元 `oopz-capture-test`（`systemd-run`）托管：`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`、`PrivateTmp=yes`、`UMask=0077`、`Restart=no`。**服务器重启后不会自动恢复** |
+| 运行进程 | `feishu_cli serve --capture-only`，运行版本 `4291aa894f7a`；capture-only 每次启动都要求全新的空 state/output 目录，当前使用 `shared/capture-tests/20261004T1145`；非正式环境 |
+| 最近一次实测 | 会话 `2026-10-03_14-32-31_BJT`（北京时间）：159 个分片全部转写成功、失败 0、共 7834 段，状态 `ready_for_analysis`；日志无错误。仅验证录音与转写；该会话音频已按用户批准删除，转写文本保留供分析测试 |
 | 配置 | `shared/config/.env` 仅 8 个键（飞书应用与管理群、OOPZ 登录、设备、音频保留、`OOPZ_PDF_BACKEND=weasyprint`）；**无分析 API 配置**，分析、报告、飞书文档发布均未配置、未验收 |
-| 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；Chromium 在 `/opt/oopz-browser-runtime` 与 `shared/browsers`；模型约 897 MB |
+| 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；Chromium 在 `/opt/oopz-browser-runtime` 与 `shared/browsers`；模型约 897 MB；分析器用的 Qoder CLI 在 `shared/tools/qodercn-*`（登录状态在 `qodercn-home`，须留在 `/opt` 下，`ProtectHome` 会挡住 `/home`） |
 
-Git 对应关系：这四个发布提交来自此前丢失的工作环境（dot）的 Git 历史，不在本仓库历史中。四个发布包经 SHA-256 核对后逐个导入分支 `recovery/server-v0.11.15-snapshots`（仅为快照，非原始历史）。本分支以 `037b988` 为基线采用最新快照 `4291aa894f7a` 作为 Linux 部署基础，其 Linux 工具与 `codex/fix-ubuntu-analysis-guard` 同源。
+### 2026-10-04 服务账号迁移：退役原专用账号，OOPZ 改以 `ubuntu` 运行
 
-较早的本地 R1–R6 Linux 实现（`main@02dc4f6`，未推送）与上述服务器线相互独立，功能上已基本被服务器线覆盖；两者只能保留一套。该实现及其未提交改动分别保存在 `main` 与 `wip/local-main-uncommitted-20261003`，未并入本分支。已知差异：服务器线对仍存活的锁 PID 一律保守拒绝切换，不做 `/proc` 命令行归属判断，迁移后遇 PID 巧合只会误拒绝、不会误放行。
+- 备份：`/opt/oopz/backups/` 下 2026-10-04 11:42:56 生成的迁移备份压缩包及其 SHA-256 文件（root 属主、权限 600，含原账号家目录、`shared/config`、`shared/feishu_state`，含凭据，仅 root 可读）。
+- 属主：`/opt/oopz` 下原属专用账号的约 3.6 万个条目已改为 `ubuntu:ubuntu`；`releases/**` 全部保持 root（改前后条目数一致）。`shared/` 里另有 7,667 个 root 属主文件，是 pnpm 缓存与 `releases/*/node_modules` 共享 inode 的硬链接，改它们的属主会连带改掉发布目录文件，所以保持 root，属预期。
+- 隔离：服务进程为 `ubuntu` 身份，`NoNewPrivileges` 内核标志已生效，`/home` 在服务内不可见（SSH 密钥读不到），可写 `shared/`；`ubuntu` 不在 docker 组，服务无法操作同机的 ChatBot 容器。仓库的单元模板已加 `ProtectHome=yes`，`manage_release.py` 的 `--user` 默认值改为 `ubuntu`。
+- 清理：冗余的完整密钥副本 `/home/ubuntu/oopz-upload.env`（与本机 `.env` 逐字节相同）、Qoder 测试产物与 SDK probe、`/tmp`、`/var/tmp`、`/var/crash` 中属原账号的残留（含一份 Chromium 崩溃转储）、`artifacts/` 里的 `.pyc` 缓存均已删除。
+- 账号删除：待执行（见后续记录）。
+
+Git 对应关系：这四个发布提交来自此前丢失的工作环境的 Git 历史，不在本仓库历史中。四个发布包经 SHA-256 核对后逐个导入分支 `recovery/server-v0.11.15-snapshots`（仅为快照，非原始历史）。本分支以 `037b988` 为基线采用最新快照 `4291aa894f7a` 作为 Linux 部署基础，其 Linux 工具与 `codex/fix-ubuntu-analysis-guard` 同源。
+
+较早的本地 R1–R6 Linux 实现（分支 `legacy/local-linux-r1-r6`）与上述服务器线相互独立，功能上已基本被服务器线覆盖；两者只能保留一套。该实现的未提交改动保存在仅本地的 `wip/local-main-uncommitted-20261003`，未并入 `main`。已知差异：服务器线对仍存活的锁 PID 一律保守拒绝切换，不做 `/proc` 命令行归属判断，迁移后遇 PID 巧合只会误拒绝、不会误放行。
 
 ### Windows 部署已废弃
 

@@ -15,16 +15,20 @@ or send production Feishu messages. Retain at least 4 vCPU / 8 GiB RAM and the
 ## Prerequisites (operator on a clean, authorized test machine)
 
 The commands below describe privileged setup; they were not run on production.
-Use an existing dedicated unprivileged service account, or have the administrator
-create one. Do not use the login account that runs unrelated jobs.
+This host has a single administrator account, `ubuntu`, shared by every operator
+and AI session; **no extra service account is created**. The service runs as
+`ubuntu` and is isolated by systemd instead of by a separate login: `NoNewPrivileges=yes`
+(the service cannot use sudo or gain privileges), `ProtectHome=yes` (`/home` is
+invisible to the service, which hides other projects' data and the SSH keys) and
+`PrivateTmp=yes`. Consequently everything the service needs must live under
+`/opt/oopz/shared` (its `HOME` is `/opt/oopz/shared/home`), never under `/home/ubuntu`.
 
 ```bash
 sudo apt-get update
 sudo apt-get install python3.12 python3.12-venv fonts-noto-cjk fonts-liberation fontconfig logrotate
-sudo useradd --system --create-home --home-dir /opt/oopz/shared/home --shell /usr/sbin/nologin oopz
 ```
 
-Only run useradd if the account does not already exist. Provision a supported
+Provision a supported
 Node.js runtime from its official source and verify its published checksum.
 Minimum Node is **22.12.0**, as required by the locked PDF dependency tree.
 When using a Node tarball, put its complete contents (including `bin/node`,
@@ -141,7 +145,7 @@ are explicitly invoked with bash; ZIP executable bits are not required.
 
 ```bash
 sudo bash scripts/linux/install_release.sh prepare \
-  --root /opt/oopz --user oopz --artifact "$ARTIFACT" --sha256 "$SHA256"
+  --root /opt/oopz --user ubuntu --artifact "$ARTIFACT" --sha256 "$SHA256"
 ```
 
 Preparation verifies and extracts the full package, builds an independent Python
@@ -152,8 +156,8 @@ It never stops or switches the old service. A failed preparation retains a marke
 incomplete directory; retry with the same verified package. Unknown directories
 and the current release are never cleaned automatically.
 
-An existing authorized unprivileged account may be passed with `--user`; keep
-the OOPZ root, HOME, caches, configuration and state separate from unrelated jobs.
+The account defaults to `ubuntu` (`--user ubuntu`). Keep the OOPZ root, HOME, caches,
+configuration and state under `/opt/oopz`, separate from unrelated jobs on the host.
 Preparation restores `shared/home` even when runuser resets the account's HOME.
 If the host's system Python must remain untouched, provision an approved isolated
 Python 3.12 runtime and prepend its `bin` directory to PATH before prepare. Keep
@@ -198,7 +202,7 @@ its persistent permissions requires separate approval and user authorization.
 
 ```bash
 sudo bash scripts/linux/install_release.sh setup \
-  --root /opt/oopz --user oopz --release-id "$RELEASE_ID"
+  --root /opt/oopz --user ubuntu --release-id "$RELEASE_ID"
 ```
 
 Setup uses shared config without depending on a current link; activation must
@@ -208,7 +212,7 @@ this adaptation does not introduce a personal administrator allowlist.
 
 ```bash
 sudo bash scripts/linux/install_release.sh activate \
-  --root /opt/oopz --user oopz --release-id "$RELEASE_ID" --enable
+  --root /opt/oopz --user ubuntu --release-id "$RELEASE_ID" --enable
 sudo systemctl status oopz-capture.service
 sudo journalctl -u oopz-capture.service --since today
 ```
@@ -223,9 +227,9 @@ and application logs. A ready gateway alone is not full pipeline acceptance.
 
 ```bash
 sudo bash scripts/linux/update_release.sh \
-  --root /opt/oopz --user oopz --artifact "$ARTIFACT" --sha256 "$SHA256"
+  --root /opt/oopz --user ubuntu --artifact "$ARTIFACT" --sha256 "$SHA256"
 sudo bash scripts/linux/rollback_release.sh \
-  --root /opt/oopz --user oopz --release-id "$PREVIOUS_RELEASE_ID"
+  --root /opt/oopz --user ubuntu --release-id "$PREVIOUS_RELEASE_ID"
 ```
 
 Before stopping anything, guards reject active tasks, corrupt/illegal PID locks,
@@ -246,7 +250,7 @@ uncertain release. After an abrupt process/host termination, inspect the journal
 and recover using the reviewed management script:
 
 ```bash
-sudo bash scripts/linux/install_release.sh recover --root /opt/oopz --user oopz
+sudo bash scripts/linux/install_release.sh recover --root /opt/oopz --user ubuntu
 ```
 
 No shared data is rolled back or cleared. Do not manually remove locks or journals

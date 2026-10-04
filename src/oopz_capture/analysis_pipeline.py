@@ -1240,7 +1240,7 @@ def _variant_paths(value: AnalyzerInput, variant: str) -> tuple[Path, Path, str]
     if variant == "default":
         return value.session_dir / "analysis", value.session_dir / "handoff" / "report_messages.jsonl", "analysis"
     if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", variant):
-        raise ValueError("analysis variant must contain only lowercase letters, digits, dot, underscore, or dash")
+        raise ValueError("analysis variant must contain only lowercase letters, digits, period, underscore, or dash")
     if re.fullmatch(r"(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.[a-z0-9._-]*)?", variant) or variant.endswith((".", " ")):
         raise ValueError("analysis variant uses a reserved Windows device name or a trailing separator")
     relative = f"analysis_variants/{variant}"

@@ -225,7 +225,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('command', choices=['prepare', 'setup', 'activate', 'update', 'recover', 'status', 'start', 'stop', 'restart'])
     parser.add_argument('--root', type=Path, default=Path('/opt/oopz'))
-    parser.add_argument('--user', default='oopz')
+    parser.add_argument('--user', default='ubuntu')
     parser.add_argument('--artifact', type=Path)
     parser.add_argument('--sha256')
     parser.add_argument('--release-id')
