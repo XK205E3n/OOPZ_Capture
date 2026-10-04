@@ -1,0 +1,233 @@
+"""Analyzer: transcript runs, windows, and the whole pipeline against a scripted fake model."""
+import json
+
+import pytest
+
+from oopz_capture.analyzer import pipeline
+from oopz_capture.analyzer.backend import BackendError, parse_json_object
+from oopz_capture.analyzer.pipeline import AnalysisError, analyze_session
+from oopz_capture.analyzer.transcript import Run, clean, load_session, merge_runs
+from oopz_capture.analyzer.windows import split_windows
+from oopz_capture.digest.contract import validate_content
+
+SPEAKERS = {"a" * 32: "阿甲", "b" * 32: "阿乙", "c" * 32: "阿丙"}
+
+
+def segment(uid, start, text, length=900):
+    return {"oopz_uid": uid, "speaker": SPEAKERS[uid], "start_ms": start, "end_ms": start + length, "text": text}
+
+
+def make_session(tmp_path, count=60, unmapped=False):
+    """A fictional session: three people, `count` sentences, about 12 seconds apart."""
+    lines = ["今天先把语音设备调好再说", "这一关的路线我觉得可以换一条", "晚饭我们订外卖还是自己做",
+             "你那边的麦克风声音有点小", "下次我们换个新游戏试试看"]
+    segments = []
+    for i in range(count):
+        uid = list(SPEAKERS)[i % 3]
+        segments.append(segment(uid, i * 12_000, f"{lines[i % 5]}，{lines[(i + 1) % 5]}，{lines[(i + 2) % 5]}{i}号"))
+    if unmapped:   # an audio track the recorder could not match to any member
+        segments += [{"oopz_uid": "", "agora_uid": 12345, "speaker": "nickname-unavailable", "start_ms": 5_000 + i * 60_000,
+                      "end_ms": 6_000 + i * 60_000, "text": "这是一个没有身份的声音在说话"} for i in range(5)]
+    (tmp_path / "transcript.jsonl").write_text("\n".join(json.dumps(s, ensure_ascii=False) for s in segments),
+                                               encoding="utf-8")
+    (tmp_path / "session.json").write_text(json.dumps({"session_id": "t", "started_at": "2026-10-03T06:00:00+00:00",
+                                                       "capture_clock_started_at": "2026-10-03T06:00:00+00:00"}),
+                                                encoding="utf-8")
+    (tmp_path / "lifecycle.json").write_text(json.dumps({"stopped_at": "2026-10-03T07:00:00+00:00"}), encoding="utf-8")
+    (tmp_path / "users.json").write_text(json.dumps(
+        [{"oopz_uid": uid, "nickname": name, "is_bot": False} for uid, name in SPEAKERS.items()]
+        + [{"oopz_uid": "d" * 32, "nickname": "机器人", "is_bot": True}], ensure_ascii=False), encoding="utf-8")
+    return load_session(tmp_path)
+
+
+class FakeModel:
+    """Answers window/section/final requests with valid digests built from what it was shown."""
+
+    def __init__(self, *, fail_windows=(), bad_first=False):
+        self.requests, self.fail_windows, self.bad_first, self.calls = [], set(fail_windows), bad_first, 0
+
+    def complete(self, system, user):
+        body, _, feedback = user.partition("\n\n【上一次输出被程序拒绝】")
+        request = json.loads(body)
+        self.requests.append((request["mode"], feedback))
+        self.calls += 1
+        if request["mode"] == "window" and request["window"] in self.fail_windows:
+            raise BackendError("simulated outage")
+        if self.bad_first and not feedback:
+            return self._digest(request, anchor="这句话根本不在证据里")
+        return self._digest(request)
+
+    def _digest(self, request, anchor=None):
+        evidence = request["evidence"]
+        if request["mode"] == "window":
+            first = evidence[0]
+            own = [e for e in evidence if e["speaker_id"] == first["speaker_id"]][:4]
+            summary = {"title": "这一段的标题", "text": "这一段大家在聊设备和游戏的事情", "evidence_ids": [first["id"]],
+                       "anchor": anchor or first["text"][:8]}
+            person = {"title": "先把设备调好", "text": "这一段里这位朋友主要在处理设备问题",
+                      "evidence_ids": [e["id"] for e in own], "anchor": own[0]["text"][:8],
+                      "speaker_id": first["speaker_id"],
+                      "nickname": next(p["nickname"] for p in request["people"] if p["speaker_id"] == first["speaker_id"])}
+        else:
+            first = evidence[0]                       # a window_summary (or section summary)
+            summary = {"title": "整场的标题", "text": "整场主要聊了设备调试和接下来想玩的游戏", "evidence_ids": [first["id"]],
+                       "anchor": anchor or first["text"][:6]}
+            person = None
+            runs = [e for e in evidence if e["kind"] == "asr_excerpt"]
+            if runs:
+                first_run = runs[0]
+                own = [e for e in runs if e["speaker_id"] == first_run["speaker_id"]][:4]
+                person = {"title": "先把设备调好", "text": "整场里这位朋友多次处理设备问题",
+                          "evidence_ids": [e["id"] for e in own], "anchor": own[0]["text"][:8],
+                          "speaker_id": first_run["speaker_id"],
+                          "nickname": next(p["nickname"] for p in request["people"]
+                                           if p["speaker_id"] == first_run["speaker_id"])}
+        content = {"summary": summary,
+                   "odd_topic": {"status": "none", "title": "没有明显候选",
+                                 "text": "本次可用记录中，没有可确认的明显离奇话题或概念。",
+                                 "evidence_ids": [], "anchor": "", "participant_ids": []},
+                   "topics": [], "moments": [], "next_hooks": []}
+        return json.dumps({"content": content, "people": {"profiles": [person] if person else []}},
+                          ensure_ascii=False)
+
+
+def test_runs_merge_per_speaker_and_keep_all_text():
+    segments = [segment("a" * 32, 0, "你好"), segment("b" * 32, 500, "嗯"), segment("a" * 32, 1500, "今天怎么样"),
+                segment("a" * 32, 9000, "后来的话"), segment("b" * 32, 9500, "，。"), segment("a" * 32, 20_000, "<|zh|>  ")]
+    runs = merge_runs(segments)
+    assert [(r.speaker_id[0], r.text) for r in runs] == [("a", "你好今天怎么样"), ("b", "嗯"), ("a", "后来的话")]
+    assert [r.id for r in runs] == ["r0001", "r0002", "r0003"]          # time order; noise-only text is dropped
+    assert clean("<|zh|> a   b ") == "a b"
+
+
+def test_windows_cover_every_run_once_in_order():
+    runs = [Run(f"r{i}", "a", i * 10_000, i * 10_000 + 500, "字" * 100) for i in range(300)]
+    windows = split_windows(runs, max_chars=4000)
+    assert [r.id for w in windows for r in w.runs] == [r.id for r in runs]
+    assert all(w.chars <= 4000 + 100 for w in windows) and len(windows) >= 7
+    assert [w.index for w in windows] == list(range(1, len(windows) + 1))
+
+
+def test_tiny_windows_merge_into_a_neighbour():
+    runs = [Run(f"r{i}", "a", i * 1000, i * 1000 + 500, "字" * c) for i, c in enumerate([5000, 5000, 10, 5])]
+    assert [w.chars for w in split_windows(runs, max_chars=5500)] == [5000, 5015] or \
+        sum(w.chars for w in split_windows(runs, max_chars=5500)) == 10015
+
+
+def test_load_session_excludes_bots_and_computes_the_denominator(tmp_path):
+    session = make_session(tmp_path)
+    assert {p["nickname"] for p in session.roster} == set(SPEAKERS.values())
+    assert session.duration_ms == 3_600_000 and session.started_at.strftime("%H:%M") == "14:00"
+
+
+def test_pipeline_produces_a_valid_digest_and_shows_everything_to_the_model(tmp_path):
+    session = make_session(tmp_path)
+    model = FakeModel()
+    windows = split_windows(session.runs, max_chars=600)
+    analysis = analyze_session(session, model, parallelism=2, windows=windows)
+    assert len(windows) > 2 and analysis.coverage["missing"] == []
+    validate_content(analysis.content, analysis.bundle)
+    window_requests = [r for r in model.requests if r[0] == "window"]
+    assert len(window_requests) == len(windows)
+    assert all(len(unit["notes"]["people"]["profiles"]) == 1 for unit in analysis.units)
+
+
+def test_every_run_is_sent_to_a_window_call(tmp_path):
+    session = make_session(tmp_path)
+    seen = []
+
+    class Spy(FakeModel):
+        def complete(self, system, user):
+            request = json.loads(user.partition("\n\n【上一次输出被程序拒绝】")[0])
+            if request["mode"] == "window":
+                seen.extend(e["id"] for e in request["evidence"])
+            return super().complete(system, user)
+
+    analyze_session(session, Spy(), windows=split_windows(session.runs, max_chars=400))
+    assert seen == [run.id for run in session.runs]
+
+
+def test_rejected_answer_is_retried_with_the_located_error(tmp_path):
+    session = make_session(tmp_path, count=12)
+    model = FakeModel(bad_first=True)
+    analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=100_000))
+    assert analysis.coverage["missing"] == []
+    assert any("anchor:not_verbatim_source@summary" in feedback for _, feedback in model.requests)
+    assert [c["error"] is not None for c in analysis.calls].count(True) == 2     # window and final were each rejected once
+
+
+def test_failed_window_is_reported_not_hidden(tmp_path):
+    session = make_session(tmp_path)
+    windows = split_windows(session.runs, max_chars=400)
+    analysis = analyze_session(session, FakeModel(fail_windows={2}), windows=windows)
+    assert [m["window"] for m in analysis.coverage["missing"]] == ["w02"]
+    assert analysis.coverage["windows_analyzed"] == len(windows) - 1
+    validate_content(analysis.content, analysis.bundle)
+
+
+def test_all_windows_failing_is_an_error(tmp_path):
+    session = make_session(tmp_path, count=12)
+    with pytest.raises(AnalysisError):
+        analyze_session(session, FakeModel(fail_windows={1}), windows=split_windows(session.runs, max_chars=100_000))
+
+
+def test_many_windows_are_merged_in_groups_before_the_final_digest(tmp_path, monkeypatch):
+    monkeypatch.setattr(pipeline, "MERGE_ABOVE", 3)
+    monkeypatch.setattr(pipeline, "MERGE_GROUP", 2)
+    session = make_session(tmp_path)
+    model = FakeModel()
+    analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=500))
+    assert "section" in {mode for mode, _ in model.requests} and model.requests[-1][0] == "final"
+    validate_content(analysis.content, analysis.bundle)
+
+
+def test_json_reply_parsing():
+    assert parse_json_object('好的：\n```json\n{"a": 1}\n```') == {"a": 1}
+    for bad in ("没有对象", "[1, 2]"):
+        with pytest.raises(ValueError):
+            parse_json_object(bad)
+
+
+def test_unmapped_audio_track_gets_a_stable_id_and_a_neutral_name(tmp_path):
+    session = make_session(tmp_path, unmapped=True)
+    unknown = [p for p in session.roster if p["speaker_id"].startswith("agora-")]
+    assert unknown == [{"speaker_id": "agora-12345", "nickname": "未识别成员"}]
+    assert all(run.speaker_id for run in session.runs)
+
+
+def test_digits_inside_a_nickname_are_not_numeric_claims():
+    people = [{"speaker_id": "u1", "nickname": "星铸E3"}]
+    evidence = [{"id": "r1", "kind": "asr_excerpt", "speaker_id": "u1", "start_ms": 0, "end_ms": 1000,
+                 "text": "我们先把设备调好再开始吧"}]
+    def content(text):
+        item = {"title": "设备先行", "text": text, "evidence_ids": ["r1"], "anchor": "我们先把设备调好"}
+        none = {"status": "none", "title": "没有明显候选", "text": "本次可用记录中，没有可确认的明显离奇话题或概念。",
+                "evidence_ids": [], "anchor": "", "participant_ids": []}
+        return {"content": {"summary": item, "odd_topic": none, "topics": [], "moments": [], "next_hooks": []},
+                "people": {"profiles": []}}
+    validate_content(content("星铸E3提议先把设备调好"), {"people": people, "evidence": evidence})
+    with pytest.raises(ValueError, match="unsupported_numeric_claim"):
+        validate_content(content("星铸E3提议先调三次设备，大约3次"), {"people": people, "evidence": evidence})
+
+
+def test_a_failed_analysis_still_saves_what_was_asked(tmp_path):
+    from oopz_capture.analyzer.outputs import save_failure
+    error = AnalysisError("final all: rejected 3 times", [{"id": "w01", "notes": None}],
+                          [{"stage": "final", "unit": "all", "attempt": 1, "error": "anchor:not_verbatim_source@summary"}])
+    save_failure(tmp_path / "out", error)
+    assert json.loads((tmp_path / "out" / "failure.json").read_text(encoding="utf-8"))["error"].startswith("final")
+    assert "anchor:not_verbatim_source@summary" in (tmp_path / "out" / "calls.jsonl").read_text(encoding="utf-8")
+
+
+@pytest.mark.needs_fonts
+def test_analysis_saves_and_renders_a_card(tmp_path):
+    from oopz_capture.analyzer.outputs import render, save
+    (tmp_path / "s").mkdir()
+    session = make_session(tmp_path / "s")
+    analysis = analyze_session(session, FakeModel(), windows=split_windows(session.runs, max_chars=600))
+    save(session, tmp_path / "s", analysis, tmp_path / "out")
+    manifest = render(tmp_path / "out")
+    assert (tmp_path / "out" / "digest" / "digest.png").stat().st_size > 10_000
+    meta = json.loads((tmp_path / "out" / "meta.json").read_text(encoding="utf-8"))
+    assert meta["session"] == {"date_label": "2026.10.03", "time_label": "14:00 — 15:00"} and manifest["width"] > 0
+    assert json.loads((tmp_path / "out" / "stats.json").read_text(encoding="utf-8"))["status"] == "unavailable"

@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "oopz-sdk>=0.15,<0.16",
+  "Pillow>=12.3,<13",
 ]
 
 [project.optional-dependencies]
@@ -40,6 +41,10 @@ oopz-feishu = "oopz_capture.feishu_cli:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+oopz_capture = ["analyzer/*.txt", "digest/render/design/*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+markers = ["needs_fonts: renders a card, so the fonts from scripts/download_fonts.py must be present"]

@@ -1,0 +1,77 @@
+"""Model backend: the Qoder CN CLI run headless with every tool disabled (a plain text completion)."""
+from __future__ import annotations
+
+import json
+import os
+import subprocess
+import time
+from dataclasses import dataclass
+from pathlib import Path
+
+
+class BackendError(RuntimeError):
+    """The CLI failed or returned nothing usable (after retries)."""
+
+
+@dataclass(frozen=True)
+class QoderCli:
+    command: str                 # path to qoderclicn
+    home: str                    # HOME of the CLI (holds its login); must be readable by the service
+    model: str = "Qwen3.8-Flash"
+    timeout: float = 600.0
+    attempts: int = 3
+    node_dir: str = ""           # directory containing `node` when it is not on PATH
+
+    @classmethod
+    def from_env(cls, env=os.environ) -> "QoderCli":
+        for name in ("OOPZ_ANALYZER_CLI", "OOPZ_ANALYZER_HOME"):
+            if not env.get(name):
+                raise BackendError(f"{name} is not set")
+        node = env.get("OOPZ_NODE_PATH", "")
+        return cls(env["OOPZ_ANALYZER_CLI"], env["OOPZ_ANALYZER_HOME"],
+                   env.get("OOPZ_ANALYZER_MODEL") or cls.model,
+                   float(env.get("OOPZ_ANALYZER_TIMEOUT_SECONDS") or cls.timeout),
+                   node_dir=str(Path(node).parent) if node else "")
+
+    def complete(self, system: str, user: str) -> str:
+        """One model reply as text; transient failures are retried, the last failure is raised."""
+        environment = dict(os.environ, HOME=self.home)
+        if self.node_dir:
+            environment["PATH"] = self.node_dir + os.pathsep + environment.get("PATH", "")
+        command = [self.command, "-p", "--tools", "", "--no-session-persistence", "--output-format", "json",
+                   "-m", self.model, "--system-prompt", system]
+        for attempt in range(1, self.attempts + 1):
+            try:
+                return self._once(command, user, environment)
+            except BackendError:
+                if attempt == self.attempts:
+                    raise
+                time.sleep(3 * attempt)
+
+    def _once(self, command: list[str], user: str, environment: dict) -> str:
+        try:
+            done = subprocess.run(command, input=user, capture_output=True, text=True, encoding="utf-8",
+                                  env=environment, timeout=self.timeout)
+        except subprocess.TimeoutExpired:
+            raise BackendError(f"timed out after {self.timeout:.0f}s") from None
+        if done.returncode != 0:
+            raise BackendError(f"exit {done.returncode}: {done.stderr.strip()[:300]}")
+        try:
+            envelope = json.loads(done.stdout)
+        except ValueError:
+            raise BackendError("output is not the expected JSON envelope") from None
+        text = envelope.get("result")
+        if envelope.get("is_error") or not isinstance(text, str) or not text.strip():
+            raise BackendError(f"model returned no result (is_error={envelope.get('is_error')})")
+        return text
+
+
+def parse_json_object(text: str) -> dict:
+    """The first JSON object in the model's reply (tolerates a code fence or a leading sentence)."""
+    start, end = text.find("{"), text.rfind("}")
+    if start < 0 or end <= start:
+        raise ValueError("json:no_object_in_reply")
+    value = json.loads(text[start:end + 1])
+    if not isinstance(value, dict):
+        raise ValueError("json:not_an_object")
+    return value

@@ -281,7 +281,7 @@ class Builder:
             "op": "shape", "parts": [("poly", [[0, top + s], [W, top], [W, bottom - s], [0, bottom]])],
             "fill": accent, "alpha": a0 * (0.5 if none else 1.8), "alpha_r": a0 * (0.3 if none else 0.5),
             "outline": None, "ow": 0, "oalpha": 0}
-        # slanted edge lines (double line on top, single below) + a dot-grid texture on the right
+        # slanted edge lines (double line on top, single below) + a dotted grid texture on the right
         self.add(op="line", pts=[[0, top + s], [W, top]], color=accent, alpha=0.75, w=2)
         self.add(op="line", pts=[[0, top + s + 12], [W, top + 12]], color=accent, alpha=0.30, w=2)
         self.add(op="line", pts=[[0, bottom], [W, bottom - s]], color=accent, alpha=0.75, w=2)
