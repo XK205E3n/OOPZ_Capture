@@ -26,7 +26,8 @@
 - 属主：`/opt/oopz` 下原属专用账号的约 3.6 万个条目已改为 `ubuntu:ubuntu`；`releases/**` 全部保持 root（改前后条目数一致）。`shared/` 里另有 7,667 个 root 属主文件，是 pnpm 缓存与 `releases/*/node_modules` 共享 inode 的硬链接，改它们的属主会连带改掉发布目录文件，所以保持 root，属预期。
 - 隔离：服务进程为 `ubuntu` 身份，`NoNewPrivileges` 内核标志已生效，`/home` 在服务内不可见（SSH 密钥读不到），可写 `shared/`；`ubuntu` 不在 docker 组，服务无法操作同机的 ChatBot 容器。仓库的单元模板已加 `ProtectHome=yes`，`manage_release.py` 的 `--user` 默认值改为 `ubuntu`。
 - 清理：冗余的完整密钥副本 `/home/ubuntu/oopz-upload.env`（与本机 `.env` 逐字节相同）、Qoder 测试产物与 SDK probe、`/tmp`、`/var/tmp`、`/var/crash` 中属原账号的残留（含一份 Chromium 崩溃转储）、`artifacts/` 里的 `.pyc` 缓存均已删除。
-- 账号删除：待执行（见后续记录）。
+- 账号：原专用账号及其同名组、家目录已于 2026-10-04 删除；`/etc/subuid`、`/etc/subgid` 中无残留；全盘没有属于该账号 uid/gid 的文件。同时删除了 `/var/lib/` 下一个只给该组开放读取的 ChatBot 上下文脱敏快照目录（临时生成、可重新生成）。全盘仍有 21 个属 uid/gid 501 的无主条目，属腾讯云监控 agent（`/usr/local/qcloud/stargate`），与本次无关，保持原样。
+- 迁移后实测：OOPZ 单元 active、`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`；`maibot.service` active，`napcat` 容器运行时长未被重置，ubuntu 的 `authorized_keys` 未变。
 
 Git 对应关系：这四个发布提交来自此前丢失的工作环境的 Git 历史，不在本仓库历史中。四个发布包经 SHA-256 核对后逐个导入分支 `recovery/server-v0.11.15-snapshots`（仅为快照，非原始历史）。本分支以 `037b988` 为基线采用最新快照 `4291aa894f7a` 作为 Linux 部署基础，其 Linux 工具与 `codex/fix-ubuntu-analysis-guard` 同源。
 

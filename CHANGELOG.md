@@ -10,7 +10,7 @@
 
 - `scripts/linux/manage_release.py` 的 `--user` 默认值由 `oopz` 改为 `ubuntu`；`oopz-capture.service` 增加 `ProtectHome=yes`（与已有的 `NoNewPrivileges=yes`、`PrivateTmp=yes` 共同隔离）；`docs/DEPLOYMENT.md` 改为“全机只有 `ubuntu` 一个管理账号、不新建服务账号”，删除 `useradd oopz` 步骤并说明 `ProtectHome` 的后果（服务所需文件须在 `/opt/oopz/shared` 下）。
 - 服务器侧：原账号的文件改属 `ubuntu`，采集进程改由 `systemd-run` 的隔离单元以 `ubuntu` 运行，清理了冗余密钥副本与测试残留；详见 `docs/DEPLOYMENT_STATE.md`。
-- 验证：脚本与模板改动经全量测试；服务器侧以 `systemctl show`、内核 `NoNewPrivs` 标志、服务命名空间内 `/home` 不可见、`shared/` 可写等实测确认。迁移与回滚：备份在服务器 `/opt/oopz/backups/`；账号删除前可按备份恢复，删除后不可逆。无业务数据格式变化。
+- 验证：脚本与模板改动经全量测试；服务器侧以 `systemctl show`、内核 `NoNewPrivs` 标志、服务命名空间内 `/home` 不可见、`shared/` 可写等实测确认。迁移与回滚：备份在服务器 `/opt/oopz/backups/`；原账号已删除，不可逆；账号相关文件的备份在服务器 `/opt/oopz/backups/`。无业务数据格式变化。
 
 ### 2026-10-03 — 整理：移出 Windows 部署层，精简门禁与文档
 
