@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from .backend import QoderCli
-from .outputs import render, save, save_failure
+from .outputs import card_fit_check, render, save, save_failure
 from .pipeline import AnalysisError, analyze_session
 from .transcript import load_session
 from .windows import split_windows
@@ -23,6 +23,7 @@ def main(argv=None) -> int:
     run.add_argument("--out", type=Path, required=True)
     run.add_argument("--parallelism", type=int, default=3)
     run.add_argument("--plan", action="store_true", help="only print the windows, call no model")
+    run.add_argument("--no-fit-check", action="store_true", help="do not render the final digest to check that it fits")
     draw = sub.add_parser("render", help="render digest.png and digest.md from an analysis directory")
     draw.add_argument("out", type=Path)
     args = parser.parse_args(argv)
@@ -39,7 +40,8 @@ def main(argv=None) -> int:
     if args.plan:
         return 0
     try:
-        analysis = analyze_session(session, QoderCli.from_env(), parallelism=args.parallelism, windows=windows)
+        fit = None if args.no_fit_check else card_fit_check(session, args.session_dir)
+        analysis = analyze_session(session, QoderCli.from_env(), parallelism=args.parallelism, windows=windows, fit=fit)
     except AnalysisError as error:
         save_failure(args.out, error)
         print(f"FAILED: {error}", file=sys.stderr)

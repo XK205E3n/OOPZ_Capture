@@ -32,7 +32,8 @@ def located(where: str, function, *args, **kwargs):
 
 def _object(value: Any, keys: set[str], code: str) -> dict:
     if not isinstance(value, dict) or set(value) != keys:
-        raise DigestValidationError(code + ":fields")
+        got = set(value) if isinstance(value, dict) else set()
+        raise DigestValidationError(f"{code}:fields extra={sorted(got - keys)} missing={sorted(keys - got)}")
     return value
 
 def _mask(value: str, names: tuple[str, ...]) -> str:
@@ -63,6 +64,14 @@ def validate_content(content: Any, bundle: dict) -> dict:
     section = _object(content["content"], {"summary", "odd_topic", "topics", "moments", "next_hooks"}, "content")
     people = _object(content["people"], {"profiles"}, "people")
     evidence = {e["id"]: e for e in bundle["evidence"]}
+    errors: list[str] = []
+
+    def collect(where, function, *args, **kwargs):
+        """Check one entry; remember its failure so that every faulty entry is reported at once."""
+        try:
+            function(*args, **kwargs)
+        except DigestValidationError as error:
+            errors.append(str(error) if "@" in str(error) else f"{error}@{where}")
     roster = {p["speaker_id"]: p for p in bundle["people"]}
     names = tuple(sorted({p["nickname"] for p in roster.values() if len(p["nickname"]) >= 2}, key=len, reverse=True))
     total_chars = 0
@@ -85,17 +94,19 @@ def validate_content(content: Any, bundle: dict) -> dict:
         _text(value["text"], 1600 if summary else 1200, "text", names)
         refs = value["evidence_ids"]
         if not isinstance(refs, list) or not 1 <= len(refs) <= 6 or any(not isinstance(r, str) for r in refs):
-            raise DigestValidationError("evidence:count")
+            raise DigestValidationError(f"evidence:count must be 1 to 6, got {len(refs) if isinstance(refs, list) else refs!r}")
         if len(set(refs)) != len(refs) or any(r not in evidence for r in refs):
             raise DigestValidationError("evidence:unknown_or_duplicate")
         cited_text = " ".join(evidence[r]["text"] for r in refs)
         source_numbers = set(re.findall(r"\d+(?:\.\d+)?", cited_text))
         claimed = _mask(value["title"] + " " + value["text"], names)
-        if any(number not in source_numbers for number in re.findall(r"\d+(?:\.\d+)?", claimed)):
-            raise DigestValidationError("item:unsupported_numeric_claim")
+        unsupported = [n for n in re.findall(r"\d+(?:\.\d+)?", claimed) if n not in source_numbers]
+        if unsupported:
+            raise DigestValidationError(f"item:unsupported_numeric_claim numbers={sorted(set(unsupported))} (remove them or cite evidence that contains them)")
         anchor = value["anchor"]
         if not isinstance(anchor, str) or not 4 <= len(anchor) <= 80 or not any(anchor in evidence[r]["text"] for r in refs):
-            raise DigestValidationError("anchor:not_verbatim_source")
+            raise DigestValidationError(f"anchor:not_verbatim_source your anchor {str(anchor)[:60]!r} is not a verbatim part of the "
+                                        "text of any cited evidence item (copy 4 to 80 characters exactly)")
         if person:
             uid = value["speaker_id"]
             if (not isinstance(uid, str) or uid not in roster or not isinstance(value["nickname"], str)
@@ -117,7 +128,7 @@ def validate_content(content: Any, bundle: dict) -> dict:
                     pattern = (r"(?<![A-Za-z0-9_])" + re.escape(name) + r"(?![A-Za-z0-9_])"
                                if name.isascii() else re.escape(name))
                     if re.search(pattern, public_text, re.I):
-                        raise DigestValidationError("odd_topic:public_attribution")
+                        raise DigestValidationError(f"odd_topic:public_attribution the name {name!r} must not appear in the odd topic")
             participants = value["participant_ids"]
             if (value["status"] != "supported" or not isinstance(participants, list)
                     or len(participants) > 6 or any(not isinstance(uid, str) or uid not in roster for uid in participants)
@@ -141,24 +152,26 @@ def validate_content(content: Any, bundle: dict) -> dict:
                     raise DigestValidationError("stages:unsupported_order")
                 previous = start
 
-    located("summary", item, section["summary"], summary=True)
+    collect("summary", item, section["summary"], summary=True)
     odd_topic = section["odd_topic"]
     if isinstance(odd_topic, dict) and odd_topic.get("status") == "none":
         if odd_topic != no_odd_topic():
             raise DigestValidationError("odd_topic:invalid_absence")
     else:
-        located("odd_topic", item, odd_topic, odd=True)
+        collect("odd_topic", item, odd_topic, odd=True)
     for field, limit in (("topics", 3), ("moments", 2), ("next_hooks", 2)):
         items = section[field]
         if not isinstance(items, list) or len(items) > limit:
             raise DigestValidationError(field + ":count")
         for index, entry in enumerate(items):
-            located(f"{field}[{index}]", item, entry, allows_stages=field == "moments")
+            collect(f"{field}[{index}]", item, entry, allows_stages=field == "moments")
     profiles = people["profiles"]
     if not isinstance(profiles, list) or len(profiles) > 7:
         raise DigestValidationError("profiles:count")
     for index, profile in enumerate(profiles):
-        located(f"profiles[{index}]", item, profile, person=True)
+        collect(f"profiles[{index}]", item, profile, person=True)
+    if errors:
+        raise DigestValidationError(" | ".join(errors))
     if len({(p["speaker_id"], p["title"]) for p in profiles}) != len(profiles):
         raise DigestValidationError("profiles:duplicate_category")
     if total_chars > MAX_CARD_CHARS:

@@ -17,13 +17,14 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
-from ..digest.contract import validate_content
+from ..digest.contract import no_odd_topic, validate_content
 from . import prompts
 from .backend import BackendError, parse_json_object
 from .transcript import Session, clock
 from .windows import Window, split_windows
 
-ATTEMPTS = 3          # model answers tried per call before giving up
+ATTEMPTS = 4          # model answers tried per call before giving up
+MAX_PROFILES = 2      # the card shows at most two people; none is fine when nobody stood out
 MERGE_ABOVE = 12      # more windows than this are merged in groups before the final digest
 MERGE_GROUP = 8
 
@@ -43,6 +44,7 @@ class Analysis:
     units: list[dict]    # one entry per window: id, time, notes (or None), error
     coverage: dict
     calls: list[dict]
+    flow: list[dict]     # "how the session went": one {"time", "text"} per final-level unit
 
 
 class Aliases:
@@ -77,6 +79,38 @@ class Aliases:
         return json.loads(text)
 
 
+def normalize(content: dict) -> dict:
+    """Settle details that never change what the card says: the fixed "no odd topic" block, the
+    icon_category that only topics and moments may carry, duplicate or surplus evidence ids."""
+    section = content.get("content", {})
+    if isinstance(section.get("odd_topic"), dict) and section["odd_topic"].get("status") == "none":
+        section["odd_topic"] = no_odd_topic()
+    for profile in content.get("people", {}).get("profiles", []):
+        if isinstance(profile, dict):
+            profile.pop("icon_category", None)
+    for entry in _entries(content):
+        refs = entry.get("evidence_ids")
+        if isinstance(refs, list) and all(isinstance(r, str) for r in refs):
+            entry["evidence_ids"] = list(dict.fromkeys(refs))[:6]
+    return content
+
+
+def _entries(content: dict):
+    section = content.get("content", {})
+    found = [section.get("summary"), section.get("odd_topic")]
+    for field in ("topics", "moments", "next_hooks"):
+        found += section.get(field) if isinstance(section.get(field), list) else []
+    found += content.get("people", {}).get("profiles", []) if isinstance(content.get("people"), dict) else []
+    return [e for e in found if isinstance(e, dict)]
+
+
+def check_style(content: dict) -> None:
+    count = len(content["people"]["profiles"])
+    if count > MAX_PROFILES:
+        raise ValueError(f"style:people.profiles has {count} entries but at most {MAX_PROFILES} are wanted; "
+                         "keep only the people with the most notable contribution")
+
+
 def _strip(value):
     if isinstance(value, str):
         return value.strip()
@@ -96,11 +130,11 @@ class Recorder:
         with self._lock:
             self.calls.append(entry)
             print(f"[{entry['stage']} {entry['unit']}] attempt {entry['attempt']}: {entry['seconds']}s, "
-                  f"{entry['input_chars']} chars in, {entry['error'] or 'accepted'}", flush=True)
+                  f"{entry['input_chars']} chars in, {(entry['error'] or 'accepted')[:160]}", flush=True)
 
 
 def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, recorder: Recorder, *,
-        stage: str, unit: str) -> dict:
+        stage: str, unit: str, extra=None) -> dict:
     """Ask until the answer passes the validator (at most ATTEMPTS times); returns content with real ids."""
     body = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
     note, last = "", ""
@@ -108,12 +142,15 @@ def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, rec
         started = time.monotonic()
         reply = backend.complete(system, body + note)
         try:
-            content = aliases.to_real(_strip(parse_json_object(reply)))
+            content = normalize(aliases.to_real(_strip(parse_json_object(reply))))
             validate_content(content, bundle)
+            check_style(content)
+            if extra:
+                extra(content)
         except ValueError as error:          # bad JSON or DigestValidationError
             last = str(error)
             recorder.add(stage=stage, unit=unit, attempt=attempt, seconds=round(time.monotonic() - started, 1),
-                         input_chars=len(body), error=last)
+                         input_chars=len(body), error=last, reply=reply)
             note = ("\n\n【上一次输出被程序拒绝】原因：" + last + "（@ 后面是出错位置）。上一次的输出如下，"
                     "请只修正出错的位置，重新输出完整的JSON：\n" + reply)
             continue
@@ -178,10 +215,11 @@ def synthesis_request(mode: str, units: list[dict], pool: dict, aliases: Aliases
                 "odd_topic": None if odd["status"] == "none" else brief(odd),
                 "people": [brief(p) | {"speaker_id": p["speaker_id"]} for p in notes["people"]["profiles"]]}
 
+    ordered = sorted(evidence.values(), key=lambda e: (e["start_ms"], e["id"]))
     request = {"mode": mode, "people": aliases.people(), "coverage": coverage,
                "windows": aliases.to_alias([view(u) for u in units]),
-               "evidence": [aliases.evidence(e) for e in evidence.values()]}
-    return request, {"people": aliases.roster, "evidence": list(evidence.values())}
+               "evidence": [aliases.evidence(e) for e in ordered]}
+    return request, {"people": aliases.roster, "evidence": ordered}
 
 
 def merge_group(backend, group: list[dict], number: int, pool: dict, aliases: Aliases, coverage: dict,
@@ -197,7 +235,8 @@ def merge_group(backend, group: list[dict], number: int, pool: dict, aliases: Al
 
 
 def analyze_session(session: Session, backend, *, parallelism: int = 3,
-                    windows: list[Window] | None = None) -> Analysis:
+                    windows: list[Window] | None = None, fit=None) -> Analysis:
+    """``fit(content, bundle, coverage, flow)`` may raise ValueError (e.g. card too tall) to send the final digest back."""
     windows = windows if windows is not None else split_windows(session.runs)
     aliases, recorder = Aliases(session.roster), Recorder()
     pool = {run.id: run.as_evidence() for run in session.runs}
@@ -219,9 +258,11 @@ def analyze_session(session: Session, backend, *, parallelism: int = 3,
             level = list(executor.map(
                 lambda pair: merge_group(backend, pair[1], pair[0], pool, aliases, coverage, recorder), numbered))
     request, bundle = synthesis_request("final", level, pool, aliases, coverage)
+    flow = [{"time": u["time"], "text": u["notes"]["content"]["summary"]["title"]} for u in level]
     try:
         content = ask(backend, prompts.system_prompt("final"), request, aliases, bundle, recorder,
-                      stage="final", unit="all")
+                      stage="final", unit="all",
+                      extra=(lambda c: fit(c, bundle, coverage, flow)) if fit else None)
     except AnalysisError as error:
         raise AnalysisError(str(error), units, recorder.calls) from None
-    return Analysis(content, bundle, units, coverage, recorder.calls)
+    return Analysis(content, bundle, units, coverage, recorder.calls, flow)

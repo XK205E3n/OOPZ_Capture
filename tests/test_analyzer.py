@@ -152,7 +152,7 @@ def test_rejected_answer_is_retried_with_the_located_error(tmp_path):
     model = FakeModel(bad_first=True)
     analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=100_000))
     assert analysis.coverage["missing"] == []
-    assert any("anchor:not_verbatim_source@summary" in feedback for _, feedback in model.requests)
+    assert any("anchor:not_verbatim_source" in feedback and feedback.count("@summary") >= 1 for _, feedback in model.requests)
     assert [c["error"] is not None for c in analysis.calls].count(True) == 2     # window and final were each rejected once
 
 
@@ -231,3 +231,68 @@ def test_analysis_saves_and_renders_a_card(tmp_path):
     meta = json.loads((tmp_path / "out" / "meta.json").read_text(encoding="utf-8"))
     assert meta["session"] == {"date_label": "2026.10.03", "time_label": "14:00 — 15:00"} and manifest["width"] > 0
     assert json.loads((tmp_path / "out" / "stats.json").read_text(encoding="utf-8"))["status"] == "unavailable"
+
+
+def test_normalize_settles_harmless_details_only():
+    from oopz_capture.analyzer.pipeline import normalize
+    content = {"content": {"summary": {"evidence_ids": ["a", "a", "b", "c", "d", "e", "f", "g"]},
+                           "odd_topic": {"status": "none", "title": "别的写法"}, "topics": [], "moments": [], "next_hooks": []},
+               "people": {"profiles": [{"icon_category": "gaming", "evidence_ids": ["r1"]}]}}
+    result = normalize(content)
+    assert result["content"]["summary"]["evidence_ids"] == ["a", "b", "c", "d", "e", "f"]
+    assert result["content"]["odd_topic"]["title"] == "没有明显候选"
+    assert "icon_category" not in result["people"]["profiles"][0]
+
+
+@pytest.mark.needs_fonts
+def test_a_card_that_is_too_tall_is_sent_back_with_the_height(tmp_path):
+    import copy
+    from oopz_capture.analyzer.outputs import card_fit_check
+    from digest_support import base_case
+    (tmp_path / "s").mkdir()
+    session = make_session(tmp_path / "s")
+    content, bundle, _ = base_case()
+    long_text = ("这一段在聊设备调试和游戏路线的安排" * 30)[:450]
+    tall = copy.deepcopy(content)
+    for item in (*tall["content"]["topics"], *tall["content"]["moments"], *tall["people"]["profiles"]):
+        item["text"] = long_text
+    tall["content"]["summary"]["text"] = long_text
+    check = card_fit_check(session, tmp_path / "s")
+    check(content, bundle, {"missing": []}, [])                    # the normal card fits
+    with pytest.raises(ValueError, match=r"card:too_tall.*px high"):
+        check(tall, bundle, {"missing": []}, [])
+
+
+def test_more_than_two_people_are_sent_back(tmp_path):
+    session = make_session(tmp_path, count=12)
+
+    class ThreePeople(FakeModel):
+        def _digest(self, request, anchor=None):
+            content = json.loads(super()._digest(request, anchor))
+            if request["mode"] == "final" and not self.requests[-1][1]:
+                content["people"]["profiles"] = [dict(content["people"]["profiles"][0], title=t) for t in ("称号甲", "称号乙", "称号丙")]
+            return json.dumps(content, ensure_ascii=False)
+
+    model = ThreePeople()
+    analyze_session(session, model, windows=split_windows(session.runs, max_chars=100_000))
+    assert any("style:people.profiles" in feedback for _, feedback in model.requests)
+
+
+def test_flow_becomes_the_timeline_of_the_card(tmp_path):
+    from oopz_capture.analyzer.outputs import build_metadata
+    session = make_session(tmp_path)
+    analysis = analyze_session(session, FakeModel(), windows=split_windows(session.runs, max_chars=600))
+    meta = build_metadata(session, analysis.coverage, analysis.flow)
+    assert [t["title"] for t in meta["timeline"]][0].startswith("14:00") and len(meta["timeline"]) == len(analysis.flow)
+    assert all(t["text"] == "这一段的标题" for t in meta["timeline"])
+
+
+def test_every_faulty_entry_is_reported_at_once():
+    from digest_support import base_case
+    content, bundle, _ = base_case()
+    content["content"]["summary"]["anchor"] = "这句话不在任何证据里"
+    content["content"]["topics"][0]["anchor"] = "另一句也不在证据里"
+    with pytest.raises(ValueError) as caught:
+        validate_content(content, bundle)
+    message = str(caught.value)
+    assert "@summary" in message and "@topics[0]" in message and "这句话不在任何证据里" in message
