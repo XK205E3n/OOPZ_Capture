@@ -63,7 +63,7 @@ class FakeModel:
         """Rewrites every title and text, keeps evidence, and tags what it was given."""
         draft = request["draft"]
         section = draft["content"]
-        entries = [section["summary"], section["odd_topic"], *section["topics"], *section["moments"],
+        entries = [section["odd_topic"], *section["topics"], *section["moments"],
                    *section["next_hooks"], *draft["people"]["profiles"]]
         for entry in entries:
             if entry["evidence_ids"]:
@@ -93,7 +93,7 @@ class FakeModel:
                 first_run = runs[0]
                 own = [e for e in runs if e["speaker_id"] == first_run["speaker_id"]][:4]
                 person = {"title": "先把设备调好", "text": "整场里，这位朋友多次处理设备问题",
-                          "evidence_ids": [e["id"] for e in own], "anchor": own[0]["text"][:8],
+                          "evidence_ids": [e["id"] for e in own], "anchor": anchor or own[0]["text"][:8],
                           "speaker_id": first_run["speaker_id"],
                           "nickname": next(p["nickname"] for p in request["people"]
                                            if p["speaker_id"] == first_run["speaker_id"])}
@@ -102,6 +102,8 @@ class FakeModel:
                                  "text": "本次可用记录中，没有可确认的明显离奇话题或概念。",
                                  "evidence_ids": [], "anchor": "", "participant_ids": []},
                    "topics": [], "moments": [], "next_hooks": []}
+        if request["mode"] == "final":
+            del content["summary"]            # the poster has no overview block
         return json.dumps({"content": content, "people": {"profiles": [person] if person else []}},
                           ensure_ascii=False)
 
@@ -317,8 +319,8 @@ def test_editor_rewrites_text_keeps_evidence_and_supplies_tags(tmp_path):
     from oopz_capture.analyzer.outputs import build_metadata
     session = make_session(tmp_path)
     analysis = analyze_session(session, FakeModel(), windows=split_windows(session.runs, max_chars=100_000))
-    assert analysis.edited and analysis.content["content"]["summary"]["title"] == "改写后的标题"
-    assert analysis.content["content"]["summary"]["evidence_ids"]          # evidence untouched and revalidated
+    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"] == "改写后的标题"
+    assert "summary" not in analysis.content["content"] and analysis.content["people"]["profiles"][0]["evidence_ids"]  # evidence untouched and revalidated
     assert analysis.labels["timeline"] == ["小标题"] * len(analysis.flow)
     assert build_metadata(session, analysis.coverage, analysis.flow, analysis.labels).get("topic_labels", []) == []
 
@@ -332,7 +334,7 @@ def test_editor_with_wrong_tag_count_is_sent_back_then_falls_back_to_the_draft(t
     session = make_session(tmp_path)
     analysis = analyze_session(session, BadEditor(), windows=split_windows(session.runs, max_chars=100_000))
     assert not analysis.edited and analysis.labels == {}
-    assert analysis.content["content"]["summary"]["title"] == "整场的标题"       # the checked draft is kept
+    assert analysis.content["people"]["profiles"][0]["title"] == "先把设备调好"       # the checked draft is kept
     assert "EDITOR FAILED" in capsys.readouterr().out
 
 
@@ -352,7 +354,7 @@ def test_window_results_of_an_earlier_run_can_be_reused(tmp_path):
     first = analyze_session(session, FakeModel(), windows=windows)
     model = FakeModel()
     again = analyze_session(session, model, windows=windows, units=first.units)
-    assert "window" not in {mode for mode, _ in model.requests} and again.content["content"]["summary"]["title"]
+    assert "window" not in {mode for mode, _ in model.requests} and again.content["people"]["profiles"]
 
 
 def test_long_text_without_punctuation_is_refused():

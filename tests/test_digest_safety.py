@@ -286,8 +286,8 @@ class ModuleOrder(unittest.TestCase):
         base = {"modules": [{"kind": "summary"}, {"kind": "odd_topic"}, {"kind": "topic"}]}
         check_module_order(base)
         check_module_order({"modules": [{"kind": "summary"}, {"kind": "topic"}, {"kind": "odd_topic"}]})
-        for bad in ([{"kind": "odd_topic"}, {"kind": "summary"}],
-                    [{"kind": "summary"}, {"kind": "topic"}, {"kind": "topic"}, {"kind": "odd_topic"}],
+        check_module_order({"modules": [{"kind": "odd_topic"}, {"kind": "topic"}]})     # the poster has no overview
+        for bad in ([{"kind": "summary"}, {"kind": "topic"}, {"kind": "topic"}, {"kind": "odd_topic"}],
                     [{"kind": "summary"}, {"kind": "topic"}]):
             with self.assertRaises(RenderError):
                 check_module_order({"modules": bad})

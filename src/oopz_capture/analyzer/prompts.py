@@ -43,8 +43,7 @@ SECTION_MODE = """【合并模式】输入 windows 是同一场录音中相邻�
 - 同一件事跨段出现时合并，不要逐段罗列。
 - evidence_ids 和 anchor 只能取自输入 evidence。summary 与 topics 可以引用 window_summary；人物条目只能引用该人自己的 asr_excerpt。"""
 
-FINAL_MODE = """【汇总模式】输入 windows 是同一场录音按时间顺序的分段分析结果（每条都已由程序核对过证据），evidence 是它们引用的原始发言片段（kind 为 asr_excerpt）和各段概述（kind 为 window_summary），已按时间顺序排列；coverage 说明哪些时间没有分析到。请从中挑出整场最有梗的几个点，输出完整的 content/people 结构。这是海报，整张图的正文要非常少：
-- summary.title：本场最特别的一件事或一个反差，12到16个字，不要“某某连麦马拉松”这种空泛标题。summary.text：只写一句话（30到60字）点出这场的味道，不交代经过，不列游戏清单。
+FINAL_MODE = """【汇总模式】输入 windows 是同一场录音按时间顺序的分段分析结果（每条都已由程序核对过证据），evidence 是它们引用的原始发言片段（kind 为 asr_excerpt）和各段概述（kind 为 window_summary），已按时间顺序排列；coverage 说明哪些时间没有分析到。请从中挑出整场最有梗的几个点，输出 content/people 结构。这是海报，整张图的正文要非常少。海报不展示总览：JSON 的 content 里不要输出 summary 字段（只有 odd_topic、topics、moments、next_hooks 四项），上面编辑规则里关于 summary 的要求在本模式下全部不适用：
 - odd_topic：整场最离奇的一个话题或概念，title 12个字左右，text 一句话（30到50字）说它为什么离谱；只是玩笑或比喻要写明。
 - topics：最多3项，只选最有梗的；title 是一句把画面写出来的标题（12到20个字），text 是一句短吐槽（20到45字），不是事实陈述。
 - moments：最多2项，写话题是怎么一路跑偏的。必须写 stages：3到4个（不要超过4个），label 是不超过6个字的短词，按时间顺序，evidence_ids 和 anchor 取自 evidence，顺序和 evidence 的时间顺序一致；moment 自己的 title 是这一路跑偏的标题，text 一句短吐槽（20到40字）。一个 moment 能讲清就只写一个。
@@ -52,7 +51,7 @@ FINAL_MODE = """【汇总模式】输入 windows 是同一场录音按时间顺�
 - people.profiles：写 3到4 条，和 topics 的体量大致相当（人物板块不能比聊天内容板块更少）。title 是给这个人的口语称号或标签（8到14个字，贴合当场发生的事，不是通用奖项），text 一句短吐槽（20到45字）说这个人做了什么好玩的事。真的只有少数人有亮点才可以少于3条，没有亮点才留空，不要编造。
 - 同一件事（同一个情节）只在一个模块里写，其他模块不要重复提它。
 - 整张图正文合计 400到700 字，是硬指望：宁可少写，也不要写满。
-- evidence_ids 和 anchor 只能取自输入 evidence。summary、topics、moments、next_hooks、odd_topic 可以引用 window_summary；人物条目只能引用该人自己的 asr_excerpt。
+- evidence_ids 和 anchor 只能取自输入 evidence。topics、moments、next_hooks、odd_topic 可以引用 window_summary；人物条目只能引用该人自己的 asr_excerpt。
 - coverage 里有缺失的时间段时，措辞要谨慎，不要把缺失的时间当作什么都没发生。"""
 
 EDITOR_MODE = """【编辑改写模式】输入 draft 是一份已经核对过证据的海报草稿（事实都对，但读起来像总结，不够抓人），evidence 是它引用的原始发言片段，flow 是时间线的各段小标题。你现在是海报的文案编辑，任务只有一个：把草稿改写成让人一眼想点开听的宣传文案。
@@ -60,10 +59,10 @@ EDITOR_MODE = """【编辑改写模式】输入 draft 是一份已经核对过�
 - title：写成一句有画面、有反差的标题或宣传语，像短视频标题，8到20个字，不写成“某某讲了某事”的陈述。风格示例（只学风格，不要照抄）：从飞行世界吐槽到两个游戏同时开打；种胡萝卜研究食谱还要跟耗牛对线。人物条目的 title 是给这个人起的口语称号。
 - text：一句吐槽或点评，15到40个字，口语、有态度，不复述经过、不交代背景、不用“讲了”“聊了”“提到”这类转述腔。可以夸张，但事实不能编：只能用草稿和 evidence 里已有的人、事、物，不加新事实。
 - 每个 topics 和 moments 的 title 或 text 里必须出现这件事的主人公的昵称（从 people 里原样复制，不要改写；不要用“未识别成员”开头的昵称），让人一眼知道是谁干了什么；多人的事写出主要的一两位即可。人物条目（profiles）的 text 不要再重复这个人自己的昵称，卡片上已经显示了名字。odd_topic 里不要出现昵称（程序规则）。
-- 读不通、像语音识别错字、或者事实模糊的条目：直接删掉（topics、moments、next_hooks、profiles 都可以删，summary 和 odd_topic 必须保留并改成通顺的）。宁可少一条，也不要留一条看不懂的。删完之后 topics 至少保留3条，profiles 至少保留3条（除非草稿里本来就更少）；条目读不通时优先把它改写成你确定的内容，而不是删除，程序会拒绝条数不够的结果。
-- summary.title 是整张图的大标题，要最抓人；summary.text 一句话，30到50字。
+- 读不通、像语音识别错字、或者事实模糊的条目：直接删掉（topics、moments、next_hooks、profiles 都可以删，odd_topic 必须保留并改成通顺的）。宁可少一条，也不要留一条看不懂的。删完之后 topics 至少保留3条，profiles 至少保留3条（除非草稿里本来就更少）；条目读不通时优先把它改写成你确定的内容，而不是删除，程序会拒绝条数不够的结果。
+- draft 里没有 summary，输出里也不要加 summary 字段。
 - 另外输出 labels：odd 是对 odd_topic 的一句短评价（2到6个字，例如：离谱至极、荒诞拉满、细思极恐，不要重复这些例子，要贴合内容），海报上会显示为今日之最：评价；topics 是每个话题一个角标（2到6个字，如：笑出声、跑偏现场、名场面，必须和改写后的 topics 条数相同、顺序一致）；moments 同理，每个转场一个角标；timeline 是 flow 里每一段改写成不超过14个字的口语小标题，条数和 flow 一致。角标里不要出现“最”字、数字和引号。
-- 输出格式：在草稿的JSON结构外加一个 labels 字段：{content:..., people:..., labels:{odd:..., topics:[...], moments:[...], timeline:[...]}}，只输出JSON。"""
+- 输出格式：根对象有三个并列的字段 content、people、labels（labels 不在 people 里面），形如 {"content":{...},"people":{"profiles":[...]},"labels":{"odd":"...","topics":[...],"moments":[...],"timeline":[...]}}，注意括号配对，只输出这一个JSON。"""
 
 MODES = {"window": WINDOW_MODE, "section": SECTION_MODE, "final": FINAL_MODE, "editor": EDITOR_MODE}
 

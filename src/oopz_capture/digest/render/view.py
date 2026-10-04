@@ -95,11 +95,12 @@ def build_view(content: Mapping, metadata: Mapping, *, stats_view: Mapping | Non
         raise RenderError("view:content_shape")
     synthetic = bool(metadata.get("synthetic", False))
 
-    _title, summary_text = _item_text(section.get("summary"), "summary", limit=2000)
-    headline = labels["slogan"]       # fixed slogan; the model-written title is not shown on the card
+    headline = labels["slogan"]       # fixed slogan; the card has no overview block
     modules: list[dict] = []
-    summary_kicker = sanitize_text(metadata.get("summary_label") or "") or labels["summary_label"]
-    modules.append({"kind": "summary", "kicker": summary_kicker, "text": summary_text})
+    if section.get("summary") is not None:      # optional, and not drawn by the layout (it would repeat the headline)
+        _title, summary_text = _item_text(section["summary"], "summary", limit=2000)
+        summary_kicker = sanitize_text(metadata.get("summary_label") or "") or labels["summary_label"]
+        modules.append({"kind": "summary", "kicker": summary_kicker, "text": summary_text})
 
     odd = section.get("odd_topic")
     odd_label = sanitize_text(metadata.get("odd_label") or "")
@@ -202,6 +203,6 @@ def content_module_kinds(view: Mapping) -> list[str]:
 
 def check_module_order(view: Mapping) -> None:
     kinds = content_module_kinds(view)
-    if "odd_topic" not in kinds or kinds.index("odd_topic") not in (1, 2):
-        raise RenderError("view:odd_topic_position", "odd topic must be the 2nd or 3rd content module",
+    if "odd_topic" not in kinds or kinds.index("odd_topic") not in (0, 1, 2):
+        raise RenderError("view:odd_topic_position", "odd topic must be one of the first three content modules",
                           kinds=kinds)

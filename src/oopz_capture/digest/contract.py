@@ -61,7 +61,10 @@ def validate_content(content: Any, bundle: dict) -> dict:
     mechanical gate plus a strict authoring contract, not a quality guarantee.
     """
     _object(content, {"content", "people"}, "root")
-    section = _object(content["content"], {"summary", "odd_topic", "topics", "moments", "next_hooks"}, "content")
+    keys = {"odd_topic", "topics", "moments", "next_hooks"}
+    if isinstance(content.get("content"), dict) and "summary" in content["content"]:
+        keys.add("summary")      # optional: the poster does not show an overview, only intermediate notes carry one
+    section = _object(content["content"], keys, "content")
     people = _object(content["people"], {"profiles"}, "people")
     evidence = {e["id"]: e for e in bundle["evidence"]}
     errors: list[str] = []
@@ -152,7 +155,8 @@ def validate_content(content: Any, bundle: dict) -> dict:
                     raise DigestValidationError("stages:unsupported_order")
                 previous = start
 
-    collect("summary", item, section["summary"], summary=True)
+    if "summary" in section:
+        collect("summary", item, section["summary"], summary=True)
     odd_topic = section["odd_topic"]
     if isinstance(odd_topic, dict) and odd_topic.get("status") == "none":
         if odd_topic != no_odd_topic():
