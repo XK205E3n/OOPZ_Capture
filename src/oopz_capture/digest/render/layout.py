@@ -170,9 +170,9 @@ class Builder:
         self.equalizer(y + 40, 80, col["mint"], col["violet"], 0.85)
         y += 80 + 56
 
-        # --- opening: the one-line verdict and the "today's best" block, then the people, then the rest
+        # --- opening: the "today's best" block, then the people, then the rest
         mods = v["modules"]
-        opening = [m for m in mods if m["kind"] in ("summary", "odd_topic")]
+        opening = [m for m in mods if m["kind"] == "odd_topic"]      # the summary repeats the headline: not drawn
         body = [m for m in mods if m["kind"] in ("moment", "topic", "next_hook")]
         closing = [m for m in mods if m["kind"] == "flow"]
         y = self.run_modules(opening, y)
@@ -259,6 +259,11 @@ class Builder:
                          alpha_r=1.0, outline=None, ow=0, oalpha=0)
         return bottom + self.sp["after_section_heading"]
 
+    def badge_mark(self, cx, cy, size, color) -> None:
+        """A fixed mark in a badge (ring + dot); replaces the per-topic category icons, which said nothing."""
+        self.add(op="rings", cx=cx, cy=cy, radii=[size * 0.2], color=color, alpha=0.9, w=3)
+        self.add(op="disc", cx=cx, cy=cy, r=size * 0.07, fill=color, alpha=1.0)
+
     def kicker(self, text, x, y, w, color, role="kicker") -> float:
         return self.text(role, text, "kicker", x, y, w, color, md="p") + self.sp["kicker_gap"]
 
@@ -335,7 +340,7 @@ class Builder:
                     self.add(op="shape", parts=[("poly", hexagon(cxm, cy, ic / 2 + 4))], fill=col["mint"],
                              alpha=self.t["decor"]["disc_alpha"], alpha_r=self.t["decor"]["disc_alpha"],
                              outline=col["mint"], ow=3, oalpha=0.8)
-                    self.add(op="icon", x=cxm - ic * 0.27, y=cy - ic * 0.27, size=ic * 0.54, cat=st["icon"], color=col["mint"])
+                    self.badge_mark(cxm, cy, ic, col["mint"])
                     self.put("stage", lays[j], y + ic + sp["stage_icon_gap"] + 6, col["ink"], md="p")
                 y += ic + sp["stage_icon_gap"] + 6 + label_h + sp["stage_row_gap"]
         return self.text("moment_text", m["text"], "body", mx, y, cw, col["body"], md="p")
@@ -354,7 +359,7 @@ class Builder:
         else:
             self.add(op="shape", parts=[part], fill=accent, alpha=self.t["decor"]["disc_alpha"],
                      alpha_r=self.t["decor"]["disc_alpha"], outline=accent, ow=3, oalpha=0.8)
-        self.add(op="icon", x=mx + ic * 0.25, y=y + ic * 0.25, size=ic * 0.5, cat=m["icon"], color=accent)
+        self.badge_mark(cx, cy, ic, accent)
         self.gutter[i] = (y, y + ic)
         yy = self.kicker(m["kicker"], x, y, w, accent)
         yy = self.text(role_prefix + "_title", m["title"], "topic_title", x, yy, w, col["ink"], md="h3") + sp["title_gap"]
@@ -370,27 +375,33 @@ class Builder:
         return self._gutter_item(m, y, i, "amber", "hook", shape="diamond")
 
     def module_flow(self, m, y, i):
+        """The session at a glance: time-stamped cards, two per row; an odd last card spans the full width."""
         sp, col, mx, cw = self.sp, self.col, self.mx, self.cw
         y = self.text("flow_head", m["heading"], "flow_head", mx, y, cw, col["mint"], md="h3") + sp["title_gap"] + 8
-        x = mx + sp["flow_dot_col"]
-        w = self.W - mx - x
-        dots = []
-        for k, it in enumerate(m["items"]):
-            t1 = self.measure(it["title"], "flow_title", x, w)
-            dots.append(y + t1.lh / 2)
-            y = self.put("flow_title", t1, y, col["ink"], md="p")
-            y = self.text("flow_text", it["text"], "flow_text", x, y + 4, w, col["muted"], md="p")
-            if k < len(m["items"]) - 1:
-                y += sp["flow_item_gap"]
-        dx = mx + 14
-        if len(dots) > 1:
-            self.add(op="line", pts=[[dx, dots[0]], [dx, dots[-1]]], color=col["mint"], alpha=0.45, w=3, dash=[2, 9],
-                     cap="round")
-        for dy in dots:
-            self.add(op="shape", parts=[("poly", diamond(dx, dy, 12))], fill=col["background"], alpha=1.0,
-                     alpha_r=1.0, outline=col["mint"], ow=3, oalpha=0.95)
-            self.add(op="disc", cx=dx, cy=dy, r=4, fill=col["mint"], alpha=1.0)
-        return y
+        gap, pad, cut = sp["stat_gap"], 28, 22
+        colw = (cw - gap) / 2
+        items = m["items"]
+        accents = [col["mint"], col["sky"], col["amber"], col["violet"]]
+        for r0 in range(0, len(items), 2):
+            row = items[r0:r0 + 2]
+            w = cw if len(row) == 1 and len(items) > 1 else colw
+            cells = []
+            for j, it in enumerate(row):
+                x = mx + j * (colw + gap)
+                head = self.measure(it["title"], "flow_title", x + pad, w - 2 * pad)
+                body = self.measure(it["text"], "flow_text", x + pad, w - 2 * pad)
+                cells.append((x, head, body))
+            h = 2 * pad + max(c[1].height + 8 + c[2].height for c in cells)
+            for j, (x, head, body) in enumerate(cells):
+                accent = accents[(r0 + j) % len(accents)]
+                x1, y1 = x + w, y + h
+                poly = ([[x, y], [x1 - cut, y], [x1, y + cut], [x1, y1], [x + cut, y1], [x, y1 - cut]] if (r0 // 2 + j) % 2 == 0
+                        else [[x + cut, y], [x1, y], [x1, y1 - cut], [x1 - cut, y1], [x, y1], [x, y + cut]])
+                self.shape([("poly", poly)], fill=accent, alpha=0.08, alpha_r=0.03, outline=accent, ow=2, oalpha=0.45)
+                yy = self.put("flow_title", head, y + pad, accent, md="p") + 8
+                self.put("flow_text", body, yy, col["ink"], md="p")
+            y += h + gap
+        return y - gap
 
     # ------------------------------------------------------------------ people
     def people(self, y) -> float:

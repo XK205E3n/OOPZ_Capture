@@ -75,9 +75,9 @@ class CaseTests(unittest.TestCase):
                        "段/分钟", "这场聊了什么", "大家的表现", "全部人物、时间和情节均为虚构合成示例", "OOPZ"):
             self.assertIn(needle, md.replace("\\", ""))
 
-    def test_odd_topic_is_second_or_third_content_module(self):
+    def test_odd_topic_is_the_first_drawn_module(self):
         for c, m in self.manifest.items():
-            self.assertIn(m["odd_topic_position"], (2, 3), c)
+            self.assertEqual(m["odd_topic_position"], 1, c)  # the summary repeats the headline and is not drawn
             self.assertEqual(m["content_modules"][m["odd_topic_position"] - 1], "odd_topic")
 
     def test_two_major_sections_exist_in_order(self):

@@ -25,6 +25,7 @@ from .windows import Window, split_windows
 
 ATTEMPTS = 4          # model answers tried per call before giving up
 MAX_PROFILES = 4      # people block is about as big as the topics block; none is fine when nobody stood out
+MAX_STAGES = 4        # the stage track is one row of at most this many
 MERGE_ABOVE = 12      # more windows than this are merged in groups before the final digest
 MERGE_GROUP = 8
 
@@ -107,6 +108,10 @@ def _entries(content: dict):
 
 
 def check_style(content: dict) -> None:
+    for moment in content["content"]["moments"]:
+        if len(moment.get("stages", [])) > MAX_STAGES:
+            raise ValueError(f"style:moment has {len(moment['stages'])} stages but at most {MAX_STAGES} fit in one row; "
+                             "keep the most important ones")
     for profile in content["people"]["profiles"]:
         if profile["nickname"].startswith(UNKNOWN_MEMBER):
             raise ValueError(f"style:profiles must not feature {UNKNOWN_MEMBER} (an audio track not matched to a member); "
@@ -115,6 +120,16 @@ def check_style(content: dict) -> None:
     if count > MAX_PROFILES:
         raise ValueError(f"style:people.profiles has {count} entries but at most {MAX_PROFILES} are wanted; "
                          "keep only the people with the most notable contribution")
+
+
+def check_named(content: dict, roster: list[dict]) -> None:
+    """Topics and moments must say who did it: a roster nickname appears in the title or text."""
+    names = [p["nickname"] for p in roster if not p["nickname"].startswith(UNKNOWN_MEMBER)]
+    for field in ("topics", "moments"):
+        for index, entry in enumerate(content["content"][field]):
+            if not any(name in entry["title"] + entry["text"] for name in names):
+                raise ValueError(f"style:{field}[{index}] names nobody; write who did it with a nickname copied "
+                                 "exactly from people (not an unidentified member)")
 
 
 def _strip(value):
@@ -278,6 +293,7 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
         return parsed
 
     def extra(edited: dict) -> None:
+        check_named(edited, aliases.roster)
         held["checked"] = check_labels(held["labels"], edited, flow)
         if fit:
             fit(edited, bundle, coverage or {"missing": []}, [{"time": f["time"], "text": t}
@@ -289,13 +305,14 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
 
 
 def analyze_session(session: Session, backend, *, parallelism: int = 3,
-                    windows: list[Window] | None = None, fit=None) -> Analysis:
-    """``fit(content, bundle, coverage, flow)`` may raise ValueError (e.g. card too tall) to send the final digest back."""
+                    windows: list[Window] | None = None, fit=None, units: list[dict] | None = None) -> Analysis:
+    """``units`` (window results saved by an earlier run) skips the window stage.
+    ``fit(content, bundle, coverage, flow)`` may raise ValueError (e.g. card too tall) to send the final digest back."""
     windows = windows if windows is not None else split_windows(session.runs)
     aliases, recorder = Aliases(session.roster), Recorder()
     pool = {run.id: run.as_evidence() for run in session.runs}
     with ThreadPoolExecutor(max_workers=parallelism) as executor:
-        units = list(executor.map(
+        units = units if units is not None else list(executor.map(
             lambda w: analyze_window(backend, session, w, len(windows), aliases, recorder), windows))
         done = [u for u in units if u["notes"]]
         coverage = {"windows_total": len(units), "windows_analyzed": len(done),

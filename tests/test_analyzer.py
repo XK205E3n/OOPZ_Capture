@@ -334,3 +334,22 @@ def test_editor_with_wrong_tag_count_is_sent_back_then_falls_back_to_the_draft(t
     assert not analysis.edited and analysis.labels == {}
     assert analysis.content["content"]["summary"]["title"] == "整场的标题"       # the checked draft is kept
     assert "EDITOR FAILED" in capsys.readouterr().out
+
+
+def test_topics_must_name_who_did_it():
+    from oopz_capture.analyzer.pipeline import check_named
+    roster = [{"speaker_id": "a" * 32, "nickname": "问夏"}, {"speaker_id": "b" * 32, "nickname": "未识别成员"}]
+    content = {"content": {"topics": [{"title": "萝卜惨案", "text": "问夏数萝卜数到崩溃"}], "moments": []}}
+    check_named(content, roster)
+    content["content"]["topics"][0]["text"] = "有人数萝卜数到崩溃"
+    with pytest.raises(ValueError, match="topics.0. names nobody"):
+        check_named(content, roster)
+
+
+def test_window_results_of_an_earlier_run_can_be_reused(tmp_path):
+    session = make_session(tmp_path)
+    windows = split_windows(session.runs, max_chars=600)
+    first = analyze_session(session, FakeModel(), windows=windows)
+    model = FakeModel()
+    again = analyze_session(session, model, windows=windows, units=first.units)
+    assert "window" not in {mode for mode, _ in model.requests} and again.content["content"]["summary"]["title"]

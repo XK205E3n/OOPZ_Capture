@@ -22,6 +22,7 @@ def main(argv=None) -> int:
     run.add_argument("session_dir", type=Path)
     run.add_argument("--out", type=Path, required=True)
     run.add_argument("--parallelism", type=int, default=3)
+    run.add_argument("--reuse", type=Path, help="analysis directory of an earlier run whose window results are reused")
     run.add_argument("--plan", action="store_true", help="only print the windows, call no model")
     run.add_argument("--no-fit-check", action="store_true", help="do not render the final digest to check that it fits")
     draw = sub.add_parser("render", help="render digest.png and digest.md from an analysis directory")
@@ -41,7 +42,9 @@ def main(argv=None) -> int:
         return 0
     try:
         fit = None if args.no_fit_check else card_fit_check(session, args.session_dir)
-        analysis = analyze_session(session, QoderCli.from_env(), parallelism=args.parallelism, windows=windows, fit=fit)
+        units = json.loads((args.reuse / "windows.json").read_text(encoding="utf-8")) if args.reuse else None
+        analysis = analyze_session(session, QoderCli.from_env(), parallelism=args.parallelism, windows=windows, fit=fit,
+                                   units=units)
     except AnalysisError as error:
         save_failure(args.out, error)
         print(f"FAILED: {error}", file=sys.stderr)
