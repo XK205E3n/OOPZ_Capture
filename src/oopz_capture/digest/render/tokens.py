@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parent
 # Fonts are not stored in Git (scripts/download_fonts.py fetches them); OOPZ_FONT_DIR overrides.
 FONT_DIR = Path(os.environ.get("OOPZ_FONT_DIR") or Path(__file__).resolve().parents[4] / "assets" / "fonts")
 _HEX = re.compile(r"#[0-9A-Fa-f]{6}\Z")
-_REQUIRED_TYPE = ("brand", "badge", "headline", "meta", "section", "kicker", "lede", "body", "odd_title",
+_REQUIRED_TYPE = ("brand", "badge", "headline", "slogan", "meta", "section", "kicker", "lede", "body", "odd_title",
                   "topic_title", "stage_label", "flow_head", "flow_title", "flow_text", "person_name",
                   "person_title", "stat_name", "stat_value", "note", "empty")
 

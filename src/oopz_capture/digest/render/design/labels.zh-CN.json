@@ -2,6 +2,7 @@
   "schema_version": "oopz.design.labels.v1",
   "_doc": "Display strings owned by the template, not by the model. Renaming them never changes a schema field. metadata may override any key listed in metadata_overridable.",
   "brand": "OOPZ 语音回顾",
+  "slogan": "这场语音的精华，一眼看完",
   "badge_synthetic": "虚构演示",
   "section_content": "这场聊了什么",
   "section_people": "大家的表现",
@@ -20,6 +21,7 @@
   "stats_unit": "段/分钟",
   "stats_simulated_tag": "模拟数据",
   "metadata_overridable": [
+    "slogan",
     "brand",
     "section_content",
     "section_people",

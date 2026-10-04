@@ -84,7 +84,7 @@ class Builder:
         self.blocks: list[dict] = []
         self.modules: list[dict] = []
         self.min_font = 1e9
-        self.seed = int(hashlib.sha256(str(view.get("headline", "")).encode("utf-8")).hexdigest()[:8], 16)
+        self.seed = int(hashlib.sha256((str(view.get("headline", "")) + str(view.get("meta", ""))).encode("utf-8")).hexdigest()[:8], 16)
         self.gutter: dict[int, tuple[float, float]] = {}   # module index -> (icon_top, icon_bottom)
 
     # ------------------------------------------------------------------ primitives
@@ -160,12 +160,12 @@ class Builder:
             bl2 = self.measure(v["badge"], "badge", x1 - pw, pw, "center")
             self.put("badge", bl2, y + (mark - bl2.height) / 2, col["violet"], md="p")
         y += mark + sp["after_brand"]
-        hl = self.measure(v["headline"], "headline", mx, cw)
+        hl = self.measure(v["headline"], "slogan", mx, cw)
         y = self.put("headline", hl, y, col["ink"], md="h1")
         y += sp["after_headline"]
         y = self.text("meta", v["meta"], "meta", mx, y, cw, col["muted"], md="p")
         self.header_height = int(y)
-        # signature element: a voice equalizer strip (pure decoration, seeded by the headline)
+        # signature element: a voice equalizer strip (pure decoration, seeded by the headline and date line)
         y += 44
         self.equalizer(y + 40, 80, col["mint"], col["violet"], 0.85)
         y += 80 + 56

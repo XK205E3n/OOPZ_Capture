@@ -95,7 +95,8 @@ def build_view(content: Mapping, metadata: Mapping, *, stats_view: Mapping | Non
         raise RenderError("view:content_shape")
     synthetic = bool(metadata.get("synthetic", False))
 
-    headline, summary_text = _item_text(section.get("summary"), "summary", limit=2000)
+    _title, summary_text = _item_text(section.get("summary"), "summary", limit=2000)
+    headline = labels["slogan"]       # fixed slogan; the model-written title is not shown on the card
     modules: list[dict] = []
     summary_kicker = sanitize_text(metadata.get("summary_label") or "") or labels["summary_label"]
     modules.append({"kind": "summary", "kicker": summary_kicker, "text": summary_text})
