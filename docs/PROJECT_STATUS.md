@@ -29,7 +29,7 @@
 | 报告与 PDF<br>`reports`、`pdf_reports`、`weasy_pdf`、`tools/md_to_pdf.*` | 内部 Markdown、候选公开 PDF | Chromium 路径 Windows 验证；Linux WeasyPrint 后端为新增 | 离线与真实中文 PDF 测试通过；待用真实报告在服务器验证 |
 | 发布/撤回/删除<br>`feishu_publisher` | 公开飞书文档、Base 索引、远程优先删除 | Windows 生产验证；**Ubuntu 未验证** | 依赖分析链路先打通 |
 | 部署工具<br>`scripts/linux/*`、`build_release.ps1` | 发布包构建；安装、更新、回滚、任务锁、事务恢复 | 隔离测试通过；**未在服务器激活** | 待建立 `current`、systemd 单元，做重启与回滚演练 |
-| 手动调试入口<br>`main`、`worker_cli`、`continuous_cli`、`analyzer_cli`、`analysis`、`pipeline` | 手动探测、录音、分析 | 生产路径不依赖（`speech_cli` 除外，它由工作流子进程调用） | 可在后续结构整理时评估是否保留 |
+| 手动调试入口<br>`main`、`worker_cli`、`continuous_cli`、`analyzer_cli`、`analysis` | 手动探测、录音、分析接口诊断 | 生产路径基本不依赖；例外：控制器从 `main` 导入 `_config` | 可在后续结构整理时评估；`analyzer_cli` 的 API 诊断对排障有用 |
 
 ## 测试
 
