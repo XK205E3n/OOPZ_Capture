@@ -6,6 +6,12 @@
 
 ## 未发布
 
+### 2026-10-04 — 新增：出入频道记录、头像下载、音轨身份修复
+
+- `continuous.py`：录音时把每次成功的成员刷新写入 `presence_observations.json`（V7 `PresenceObservationRecorder`），断线、连接不健康、刷新失败记为间断，结束时写入时长；成员刷新得到的头像地址经 `AvatarCache` 后台下载到 `<会话>/avatars/`（失败不影响录音）；本场见过的 OOPZ 数据流 `uid/cid` 累积用于身份映射（`identity.build_identity_mappings(known_states=…)`）。`OopzParticipant` 新增 `avatar_url`。
+- 分析器：`infer_unmapped_speaker`——恰好一条音轨未映射、且恰好一个成员只有 person id 猜测时按排除法归属，写入 `analysis/identity.json`；出图时带上名单上成员的头像（`avatars.json`）；发言频率统计读录音写下的出入记录。服务器旧会话上该规则把未映射音轨归给 `rola`。
+- 验证：`python -m pytest` 293 通过、12 跳过；含一次完整的假后端录音（出入记录经 `observed_presence_intervals` 解析、头像索引）。**真实 OOPZ 的头像地址与下载未验证**，部署后须看一次真实录音的 `avatars/` 与出入记录。影响：会话目录多 `presence_observations.json` 与 `avatars/`；无迁移，旧会话仍可分析（频率区块如实写"缺少足够记录"）；回滚去掉即可。
+
 ### 2026-10-04 — 新增：录音后自动分析并把精华图发到群里；移除审核/发布/PDF 流程
 
 - 新增分析器（`analyzer/`，Qoder CN CLI + Qwen3.8-Flash）：整场转写按说话人合并、分窗口、逐窗口出带证据的笔记，再汇总并由"编辑改写"一步写成"标题 + 一句吐槽"；所有输出走 `digest/contract.py` 校验（证据 id、逐字锚点、人物只能引用自己的发言、数字须出现在证据里等），被拒绝时带具体错误重试，渲染时超高则退回缩写。新增 `digest/`（V7 契约、统计、头像、离线 Pillow 渲染器，字体由 `scripts/download_fonts.py` 下载、不入 Git）。
@@ -15,7 +21,7 @@
 - 配置：删除全部 `ANALYZER_*`、`OOPZ_ANALYSIS_MAX_PARALLELISM`、`OOPZ_FEISHU_PUBLIC_*`/`BASE_*`、`OOPZ_PDF_BACKEND`；新增 `OOPZ_ANALYZER_CLI`、`OOPZ_ANALYZER_HOME`（必填，缺失则网关拒绝启动）、`OOPZ_ANALYZER_MODEL`、`OOPZ_ANALYZER_TIMEOUT_SECONDS`、`OOPZ_FONT_DIR`。服务器 `.env` 里遗留的旧键无害，可手动清理。
 - 验证：`python -m pytest` 257 通过、12 跳过（本机 Windows）；分析器与渲染在服务器会话 `2026-10-03_14-32-31_BJT`（12.9 小时、7834 段）上整场实跑多轮，成品图经用户验收。**真实飞书发图与整条链路尚未在服务器验证**。影响部署与配置：部署前须在服务器配置分析器与字体；回滚到上一个发布包即可（旧版本忽略新键）。
 - 同日补充：飞书指令改为更符合中文习惯的词表（`开始录音`/`录音`、`结束录音`/`结束`/`停止`、`状态`/`进度`、`重新出图`/`待分析`、`重发图片`/`最近图片`、`删除录音`/`删除会话`、`设置`、`帮助`），帮助文本缩短到 8 行以内，控制器回复直接用中文（删除 `adapt_controller_reply_for_feishu` 改写层与启动时的重复帮助）；成功出图后在图片之后再发 `digest.md`（图片上的文字稿）；删除 capture-only 模式里"已告知参与者并开始录音"的确认卡片和 `ControllerConfig.consent_confirmed`（点选频道后直接开始录音；底层 `ContinuousRequest.consent_confirmed` 字段与手动调试 CLI 的同名参数保持不变）。
-- 未做：出入频道记录与头像下载（图上的发言频率目前显示"缺少足够记录"）、MaiBot 联动。
+- 未做：MaiBot 联动。
 
 ### 2026-10-04 — 部署：服务账号改为 `ubuntu`，退役原专用账号
 

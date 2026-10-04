@@ -22,6 +22,7 @@ def build_identity_mappings(
     *,
     self_oopz_uid: str = "",
     self_agora_uid: Any = None,
+    known_states: dict[str, int] | None = None,
 ) -> list[IdentityMapping]:
     """Merge OOPZ membership/person data with observations from Agora."""
 
@@ -32,7 +33,9 @@ def build_identity_mappings(
         is not None
     }
 
-    states_by_oopz: dict[str, int] = {}
+    # data_stream uid/cid pairs seen earlier in the session count too: a member who has left the
+    # channel is no longer in the current snapshot but their audio track still needs a name.
+    states_by_oopz: dict[str, int] = dict(known_states or {})
     for item in snapshot.voice_states:
         if not isinstance(item, dict):
             continue

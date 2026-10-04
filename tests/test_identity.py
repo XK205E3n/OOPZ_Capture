@@ -72,3 +72,14 @@ class IdentityMappingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+def test_voice_states_seen_earlier_in_the_session_still_name_a_member_who_has_left() -> None:
+    from oopz_capture.identity import build_identity_mappings
+    from oopz_capture.models import OopzParticipant, ProbeSnapshot
+    left = OopzParticipant("u9", "Gone", pid="111")
+    snapshot = ProbeSnapshot(voice_states=[], remote_users=[], connection_state="CONNECTED")
+    plain = build_identity_mappings([left], snapshot)[0]
+    assert plain.agora_uid == 111 and plain.status == "inferred_person_pid"          # only the person-id guess
+    known = build_identity_mappings([left], snapshot, known_states={"u9": 222})[0]
+    assert known.agora_uid == 222 and any("data_stream" in note for note in known.evidence)

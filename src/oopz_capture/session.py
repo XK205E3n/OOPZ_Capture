@@ -62,6 +62,7 @@ async def _resolve_participants(bot: Any, area: str, channel: str) -> list[OopzP
             nickname=str(getattr(person, "name", "") or ""),
             pid=str(getattr(person, "pid", "") or ""),
             is_bot=bool(getattr(member, "is_bot", False)),
+            avatar_url=str(getattr(person, "avatar", "") or ""),
         ))
     return participants
 

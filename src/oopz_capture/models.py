@@ -17,6 +17,7 @@ class OopzParticipant:
     nickname: str = ""
     pid: str = ""
     is_bot: bool = False
+    avatar_url: str = ""
 
 
 @dataclass(slots=True)

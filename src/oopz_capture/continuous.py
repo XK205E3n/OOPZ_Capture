@@ -3,7 +3,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from dataclasses import asdict, dataclass
 from datetime import datetime, time, timedelta, timezone
 from pathlib import Path
@@ -18,6 +17,8 @@ from .identifiers import new_session_id, validate_session_id
 from .jsonio import iso_utc as _iso
 from .recorder import CaptureRecorder
 from .session import _resolve_participants
+from .digest.avatars import AvatarCache
+from .digest.stats import PresenceObservationRecorder
 from .transcript import render_transcript_markdown
 from .vad import VADConfig
 from .workflow import (
@@ -769,6 +770,13 @@ async def run_continuous_capture(
     current_base_offset_ms = 0.0
     browser_clock_origin_ms: float | None = None
     participants_by_uid: dict[str, Any] = {}
+    seen_voice_states: dict[str, int] = {}       # oopz uid -> Agora cid, from every probe snapshot of the session
+    presence: PresenceObservationRecorder | None = None
+    membership_started_ms = 0
+    avatar_cache = AvatarCache(session_dir / "avatars")
+    avatar_files: dict[str, str] = {}
+    avatar_attempted: set[tuple[str, str]] = set()
+    avatar_tasks: set[asyncio.Task[None]] = set()
     joined = False
     capture_started = False
     connected = False
@@ -828,6 +836,9 @@ async def run_continuous_capture(
     def remember_snapshot(snapshot: ProbeSnapshot) -> None:
         nonlocal final_snapshot
         final_snapshot = snapshot
+        for state in snapshot.voice_states:
+            if isinstance(state, dict) and str(state.get("uid") or "").strip() and str(state.get("cid") or "").isdecimal():
+                seen_voice_states[str(state["uid"]).strip()] = int(state["cid"])
         for event in snapshot.events:
             key = json.dumps(event, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
             if key in debug_event_keys:
@@ -859,6 +870,33 @@ async def run_continuous_capture(
             probe.snapshot(), timeout=request.browser_operation_timeout_seconds,
         )
 
+    def session_ms(loop_time: float) -> int:
+        return round(max(0.0, loop_time - capture_started_monotonic) * 1000)
+
+    def presence_gap(loop_time: float, reason: str) -> None:
+        if presence is not None:
+            presence.gap(at_ms=session_ms(loop_time), reason=reason)
+
+    async def fetch_avatar(oopz_uid: str, url: str) -> None:
+        """Best effort: a failed or refused download just leaves the placeholder avatar."""
+        try:
+            path = await asyncio.to_thread(avatar_cache.get, oopz_uid, url)
+            if path is not None:
+                avatar_files[oopz_uid] = path.name
+                write_json(session_dir / "avatars" / "index.json", avatar_files)
+        except Exception:
+            LOGGER.debug("avatar download failed", exc_info=True)
+
+    def request_avatars() -> None:
+        for person in current_membership:
+            key = (person.oopz_uid, person.avatar_url)
+            if not person.avatar_url or key in avatar_attempted or getattr(person, "is_bot", False):
+                continue
+            avatar_attempted.add(key)
+            task = asyncio.create_task(fetch_avatar(*key), name="oopz_avatar")
+            avatar_tasks.add(task)
+            task.add_done_callback(avatar_tasks.discard)
+
     async def close_chunk(
         closed_at: datetime,
         elapsed_session_ms: int,
@@ -872,7 +910,7 @@ async def run_continuous_capture(
         mappings = build_identity_mappings(
             list(participants_by_uid.values()), snapshot,
             self_oopz_uid=str(getattr(config, "person_uid", "") or ""),
-            self_agora_uid=self_agora_uid,
+            self_agora_uid=self_agora_uid, known_states=seen_voice_states,
         )
         duration = max(0.0, (closed_at - current_chunk_started_at).total_seconds())
         chunk_session = {
@@ -1156,6 +1194,9 @@ async def run_continuous_capture(
                     capture_started_monotonic = loop.time()
                     capture_started_wall = connected_at
                     ever_connected = True
+                    presence = PresenceObservationRecorder(
+                        session_dir, session_id=session_id, self_oopz_uid=str(getattr(config, "person_uid", "") or ""),
+                        max_snapshot_gap_ms=round((request.membership_refresh_seconds + request.membership_timeout_seconds + 5) * 1000))
                     session_metadata = json.loads((session_dir / "session.json").read_text(encoding="utf-8"))
                     session_metadata["capture_clock_started_at"] = _iso(capture_started_wall)
                     session_metadata["connected_at"] = _iso(capture_started_wall)
@@ -1243,6 +1284,11 @@ async def run_continuous_capture(
                     membership_refresh_successes += 1
                     membership_consecutive_failures = 0
                     next_membership_refresh = loop.time() + request.membership_refresh_seconds
+                    if presence is not None:
+                        presence.snapshot(
+                            request_started_ms=membership_started_ms, observed_ms=session_ms(loop.time()),
+                            connection_episode=current_connection_episode, participants=current_membership)
+                    request_avatars()
                     _append_connectivity_event(
                         session_dir,
                         "membership_refreshed",
@@ -1257,6 +1303,7 @@ async def run_continuous_capture(
                 else:
                     membership_refresh_failures += 1
                     membership_consecutive_failures += 1
+                    presence_gap(loop.time(), "membership_refresh_failed")
                     # A failed refresh is not evidence that the channel is empty.
                     # Restart the verified-empty clock after the next successful refresh.
                     empty_channel_since = None
@@ -1280,6 +1327,7 @@ async def run_continuous_capture(
                     )
             if membership_task is None and loop_time >= next_membership_refresh:
                 _append_connectivity_event(session_dir, "membership_refresh_started")
+                membership_started_ms = session_ms(loop.time())
                 membership_task = asyncio.create_task(
                     refresh_participants_safely(
                         bot, request, participants_by_uid, current_membership,
@@ -1323,6 +1371,7 @@ async def run_continuous_capture(
                 else:
                     if unhealthy_since is None:
                         unhealthy_since = loop.time()
+                        presence_gap(unhealthy_since, "connection_unhealthy")
                         _append_connectivity_event(session_dir, "connection_unhealthy", state=state)
                     elif loop.time() - unhealthy_since >= request.disconnect_grace_seconds:
                         disconnect_error = VoiceConnectionLost(
@@ -1337,6 +1386,7 @@ async def run_continuous_capture(
                 )
 
             if disconnect_error is not None:
+                presence_gap(loop.time(), "connection_lost")
                 _append_connectivity_event(
                     session_dir, "connection_lost",
                     connection_episode=current_connection_episode,
@@ -1401,6 +1451,13 @@ async def run_continuous_capture(
         except Exception as error:
             if failure is None:
                 failure = error
+        if presence is not None:
+            presence.finish(
+                duration_ms=round(max(0.0, (capture_stopped_at - capture_started_wall).total_seconds()) * 1000),
+                monotonic_duration_ms=session_ms(loop.time()))
+        if avatar_tasks:
+            await asyncio.wait(avatar_tasks, timeout=10)      # downloads still running are given up on
+        avatar_cache.close()
         try:
             await bot.stop()
         except Exception:
@@ -1415,7 +1472,7 @@ async def run_continuous_capture(
         mappings = build_identity_mappings(
             list(participants_by_uid.values()), final_snapshot,
             self_oopz_uid=str(getattr(config, "person_uid", "") or ""),
-            self_agora_uid=self_agora_uid,
+            self_agora_uid=self_agora_uid, known_states=seen_voice_states,
         )
         write_json(session_dir / "users.json", [item.to_dict() for item in mappings])
     segment_count, markdown = _merge_transcripts(session_dir, results)

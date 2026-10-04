@@ -245,3 +245,47 @@ def test_empty_channel_timeout_finishes_session(tmp_path: Path, monkeypatch) -> 
     ]
     assert any(item["event"] == "empty_channel_started" for item in events)
     assert any(item["event"] == "empty_channel_timeout" for item in events)
+
+
+def test_presence_and_avatars_are_recorded_while_capturing(tmp_path: Path, monkeypatch) -> None:
+    from oopz_capture.digest.stats import observed_presence_intervals
+
+    async def members(*_args, **_kwargs):
+        return [OopzParticipant("self", "bot-me"), OopzParticipant("u1", "Alice", avatar_url="https://cdn.example/a.png")]
+
+    class StableProbe(FakeProbe):
+        async def drain_audio(self, _max_chunks: int = 128) -> list[dict]:
+            return []
+
+    class FakeAvatars:
+        def __init__(self, directory) -> None:
+            self.directory = Path(directory)
+            self.requested = []
+
+        def get(self, uid, url):
+            self.requested.append((uid, url))
+            self.directory.mkdir(parents=True, exist_ok=True)
+            path = self.directory / "avatar-x.png"
+            path.write_bytes(b"png")
+            return path
+
+        def close(self) -> None:
+            return None
+
+    FakeBot.instances.clear()
+    monkeypatch.setattr("oopz_sdk.OopzBot", FakeBot)
+    monkeypatch.setattr(continuous, "AgoraBrowserProbe", StableProbe)
+    monkeypatch.setattr(continuous, "_resolve_participants", members)
+    monkeypatch.setattr(continuous, "AvatarCache", FakeAvatars)
+    session_id = str(uuid4())
+    value = request(chunk_seconds=30, poll_interval_seconds=0.05, connection_check_seconds=0.5,
+                    browser_operation_timeout_seconds=0.5, membership_refresh_seconds=5, max_runtime_seconds=11)
+    session = asyncio.run(run_continuous_capture(SimpleNamespace(person_uid="self"), value,
+                                                 output_root=tmp_path, session_id=session_id))
+
+    data = json.loads((session / "presence_observations.json").read_text(encoding="utf-8"))
+    assert data["finalized"] and data["self_oopz_uid"] == "self"
+    assert len([o for o in data["observations"] if o["kind"] == "snapshot"]) >= 2
+    intervals, names = observed_presence_intervals(data, data["monotonic_duration_ms"])
+    assert names == {"u1": "Alice"} and intervals["u1"] and "self" not in intervals     # the recorder itself is not counted
+    assert json.loads((session / "avatars" / "index.json").read_text(encoding="utf-8")) == {"u1": "avatar-x.png"}

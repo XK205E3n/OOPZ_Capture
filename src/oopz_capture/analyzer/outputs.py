@@ -38,6 +38,18 @@ def _write(path: Path, value) -> None:
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
+def avatar_paths(session: Session, session_dir: Path) -> dict[str, str]:
+    """speaker_id -> avatar file the recorder downloaded (only for people on the roster; the renderer re-checks every file)."""
+    try:
+        index = json.loads((Path(session_dir) / "avatars" / "index.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    wanted = {p["speaker_id"] for p in session.roster}
+    found = {uid: Path(session_dir) / "avatars" / name for uid, name in index.items()
+             if uid in wanted and isinstance(name, str) and (Path(session_dir) / "avatars" / name).is_file()}
+    return {uid: str(path) for uid, path in found.items()}
+
+
 def save(session: Session, session_dir: Path, analysis: Analysis, out_dir: Path) -> None:
     """Everything the renderer needs plus the audit trail (what was asked, what was answered)."""
     out_dir = Path(out_dir)
@@ -48,6 +60,8 @@ def save(session: Session, session_dir: Path, analysis: Analysis, out_dir: Path)
     _write(out_dir / "stats.json", compute_stats(session, session_dir, analysis))
     _write(out_dir / "windows.json", analysis.units)
     _write(out_dir / "coverage.json", analysis.coverage)
+    _write(out_dir / "avatars.json", avatar_paths(session, session_dir))
+    _write(out_dir / "identity.json", {"inferred": session.identity_inferred})
     with (out_dir / "calls.jsonl").open("w", encoding="utf-8") as stream:
         for call in analysis.calls:
             stream.write(json.dumps(call, ensure_ascii=False) + "\n")
@@ -93,5 +107,7 @@ def render(out_dir: Path, avatars: dict | None = None) -> dict:
 
     out_dir = Path(out_dir)
     load = lambda name: json.loads((out_dir / name).read_text(encoding="utf-8"))  # noqa: E731
+    if avatars is None and (out_dir / "avatars.json").is_file():
+        avatars = load("avatars.json")
     return generate(load("content.json"), load("bundle.json"), load("meta.json"), load("stats.json"),
                     out_dir / "digest", avatars=avatars)

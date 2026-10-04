@@ -71,5 +71,5 @@ transcript.jsonl → 按说话人合并成连续发言（run，证据 id r0001�
 ## 已知限制与待办
 
 - 语音识别错字使挑选不稳定；需要稳定性时可考虑转写清洗，目前按用户决定不做。
-- 出入频道记录（`oopz.presence.observations.v1`）与头像下载未实现；有一条音轨没映射到成员。
+- 出入记录、头像下载和身份映射见 [架构](CURRENT_ARCHITECTURE.md)；头像下载尚未在真实 OOPZ 上验证。
 - 见 [项目状态](PROJECT_STATUS.md) 的待办顺序。

@@ -365,3 +365,51 @@ def test_long_text_without_punctuation_is_refused():
         check_style(content)
     content["content"]["summary"]["text"] = "一" * 10 + "，" + "二" * 10
     check_style(content)
+
+
+def _user(uid, nickname, status="inferred_person_pid", evidence=("Person PID has not yet appeared",), is_bot=False):
+    return {"oopz_uid": uid, "nickname": nickname, "status": status, "evidence": list(evidence), "is_bot": is_bot}
+
+
+def _segments():
+    return [{"oopz_uid": "u1", "speaker": "Alice", "agora_uid": 11, "start_ms": 0, "end_ms": 1000, "text": "hello"},
+            {"oopz_uid": "", "speaker": "nickname-unavailable", "agora_uid": 99, "start_ms": 2000, "end_ms": 3000, "text": "hi there"}]
+
+
+def test_the_one_unmapped_track_goes_to_the_one_member_left_by_elimination():
+    from oopz_capture.analyzer.transcript import infer_unmapped_speaker
+    users = {"u1": _user("u1", "Alice", evidence=("OOPZ data_stream contained matching uid/cid",)),
+             "u2": _user("u2", "Rola"),                                                    # only a person-id guess, never spoke
+             "u3": _user("u3", "Cold", evidence=("OOPZ data_stream contained matching uid/cid",)),
+             "bot": _user("bot", "Bot", is_bot=True)}
+    segments = _segments()
+    assert infer_unmapped_speaker(segments, users) == [{"agora_uid": 99, "oopz_uid": "u2", "nickname": "Rola", "method": "elimination"}]
+    assert segments[1]["oopz_uid"] == "u2" and segments[1]["speaker"] == "Rola"
+
+
+def test_elimination_changes_nothing_when_it_is_not_unique():
+    from oopz_capture.analyzer.transcript import infer_unmapped_speaker
+    two_guesses = {"u1": _user("u1", "Alice"), "u2": _user("u2", "Rola"), "u3": _user("u3", "Third")}
+    segments = _segments()
+    assert infer_unmapped_speaker(segments, two_guesses) == [] and segments[1]["oopz_uid"] == ""
+    two_tracks = _segments() + [{"oopz_uid": "", "speaker": "x", "agora_uid": 77, "start_ms": 5000, "end_ms": 6000, "text": "yo"}]
+    assert infer_unmapped_speaker(two_tracks, {"u2": _user("u2", "Rola")}) == []
+
+
+def test_load_session_applies_the_inference_and_avatars_follow_the_roster(tmp_path):
+    from oopz_capture.analyzer.outputs import avatar_paths
+    from oopz_capture.analyzer.transcript import load_session
+    (tmp_path / "session.json").write_text(json.dumps({"session_id": "s", "started_at": "2026-10-03T06:00:00+00:00"}), encoding="utf-8")
+    (tmp_path / "lifecycle.json").write_text(json.dumps({"stopped_at": "2026-10-03T07:00:00+00:00"}), encoding="utf-8")
+    users = [_user("u1", "Alice", evidence=("data_stream",)), _user("u2", "Rola")]
+    (tmp_path / "users.json").write_text(json.dumps(users), encoding="utf-8")
+    (tmp_path / "transcript.jsonl").write_text("\n".join(json.dumps(s) for s in _segments()), encoding="utf-8")
+    (tmp_path / "avatars").mkdir()
+    (tmp_path / "avatars" / "a.png").write_bytes(b"png")
+    (tmp_path / "avatars" / "index.json").write_text(json.dumps({"u1": "a.png", "u2": "missing.png", "stranger": "a.png"}), encoding="utf-8")
+
+    session = load_session(tmp_path)
+
+    assert {p["nickname"] for p in session.roster} == {"Alice", "Rola"}
+    assert session.identity_inferred[0]["oopz_uid"] == "u2"
+    assert avatar_paths(session, tmp_path) == {"u1": str(tmp_path / "avatars" / "a.png")}      # only people on the roster, only files that exist
