@@ -1,0 +1,1652 @@
+{
+  "schema_version": "oopz.presence.observations.v1",
+  "source": "successful_membership_snapshot_pairs",
+  "clock": "monotonic_session_elapsed_ms",
+  "session_id": "synthetic-session",
+  "self_oopz_uid": "synthetic-recorder",
+  "max_snapshot_gap_ms": 60000,
+  "finalized": true,
+  "duration_ms": 3600000,
+  "monotonic_duration_ms": 3600000,
+  "observations": [
+    {
+      "kind": "snapshot",
+      "request_started_ms": 0,
+      "observed_ms": 0,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 60000,
+      "observed_ms": 60000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 120000,
+      "observed_ms": 120000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 180000,
+      "observed_ms": 180000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 240000,
+      "observed_ms": 240000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 300000,
+      "observed_ms": 300000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 360000,
+      "observed_ms": 360000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 420000,
+      "observed_ms": 420000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 480000,
+      "observed_ms": 480000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 540000,
+      "observed_ms": 540000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 600000,
+      "observed_ms": 600000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 660000,
+      "observed_ms": 660000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 720000,
+      "observed_ms": 720000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 780000,
+      "observed_ms": 780000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 840000,
+      "observed_ms": 840000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 900000,
+      "observed_ms": 900000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 960000,
+      "observed_ms": 960000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1020000,
+      "observed_ms": 1020000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1080000,
+      "observed_ms": 1080000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1140000,
+      "observed_ms": 1140000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1200000,
+      "observed_ms": 1200000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1260000,
+      "observed_ms": 1260000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1320000,
+      "observed_ms": 1320000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1380000,
+      "observed_ms": 1380000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1440000,
+      "observed_ms": 1440000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1500000,
+      "observed_ms": 1500000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1560000,
+      "observed_ms": 1560000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1620000,
+      "observed_ms": 1620000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1680000,
+      "observed_ms": 1680000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1740000,
+      "observed_ms": 1740000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1800000,
+      "observed_ms": 1800000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-d",
+          "nickname": "演示丁",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1860000,
+      "observed_ms": 1860000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1920000,
+      "observed_ms": 1920000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 1980000,
+      "observed_ms": 1980000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2040000,
+      "observed_ms": 2040000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2100000,
+      "observed_ms": 2100000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2160000,
+      "observed_ms": 2160000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2220000,
+      "observed_ms": 2220000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2280000,
+      "observed_ms": 2280000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2340000,
+      "observed_ms": 2340000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2400000,
+      "observed_ms": 2400000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-e",
+          "nickname": "演示戊",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2460000,
+      "observed_ms": 2460000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2520000,
+      "observed_ms": 2520000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2580000,
+      "observed_ms": 2580000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2640000,
+      "observed_ms": 2640000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2700000,
+      "observed_ms": 2700000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-b",
+          "nickname": "演示乙",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2760000,
+      "observed_ms": 2760000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2820000,
+      "observed_ms": 2820000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2880000,
+      "observed_ms": 2880000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 2940000,
+      "observed_ms": 2940000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3000000,
+      "observed_ms": 3000000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        },
+        {
+          "oopz_uid": "demo-c",
+          "nickname": "演示丙",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3060000,
+      "observed_ms": 3060000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3120000,
+      "observed_ms": 3120000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3180000,
+      "observed_ms": 3180000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3240000,
+      "observed_ms": 3240000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3300000,
+      "observed_ms": 3300000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3360000,
+      "observed_ms": 3360000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3420000,
+      "observed_ms": 3420000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3480000,
+      "observed_ms": 3480000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3540000,
+      "observed_ms": 3540000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    },
+    {
+      "kind": "snapshot",
+      "request_started_ms": 3600000,
+      "observed_ms": 3600000,
+      "connection_episode": 1,
+      "people": [
+        {
+          "oopz_uid": "demo-a",
+          "nickname": "演示甲",
+          "is_bot": false
+        }
+      ]
+    }
+  ],
+  "simulation": true
+}

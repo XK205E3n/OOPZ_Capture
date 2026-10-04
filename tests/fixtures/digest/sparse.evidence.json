@@ -1,0 +1,92 @@
+{
+  "schema_version": "oopz.design.synthetic.evidence.v1",
+  "synthetic": true,
+  "people": [
+    {
+      "speaker_id": "demo-a",
+      "nickname": "演示甲"
+    },
+    {
+      "speaker_id": "demo-b",
+      "nickname": "演示乙"
+    },
+    {
+      "speaker_id": "demo-c",
+      "nickname": "演示丙"
+    },
+    {
+      "speaker_id": "demo-d",
+      "nickname": "演示丁"
+    },
+    {
+      "speaker_id": "demo-e",
+      "nickname": "演示戊"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "demo-e01",
+      "speaker_id": "demo-a",
+      "text": "虚构场景：玩家把游戏背包比作能随身携带的货架，建议先清理用不上的虚拟道具。",
+      "kind": "asr_excerpt",
+      "start_ms": 0,
+      "end_ms": 30000
+    },
+    {
+      "id": "demo-e02",
+      "speaker_id": "demo-b",
+      "text": "虚构场景：聊天先讨论披萨口味，随后转到麦克风音量，最后约好一起玩协作闯关游戏。",
+      "kind": "asr_excerpt",
+      "start_ms": 120000,
+      "end_ms": 150000
+    },
+    {
+      "id": "demo-e03",
+      "speaker_id": "demo-c",
+      "text": "虚构场景：一位玩家解释如何调整麦克风增益，并提醒队友测试声音是否失真。",
+      "kind": "asr_excerpt",
+      "start_ms": 240000,
+      "end_ms": 270000
+    },
+    {
+      "id": "demo-e04",
+      "speaker_id": "demo-b",
+      "text": "虚构场景：玩家比较虚拟装备的移动速度和耐久，决定先试均衡配置。",
+      "kind": "asr_excerpt",
+      "start_ms": 360000,
+      "end_ms": 390000
+    },
+    {
+      "id": "demo-e05",
+      "speaker_id": "demo-d",
+      "text": "虚构场景：闯关时一位玩家走错传送门，返回集合点后继续参与游戏。",
+      "kind": "asr_excerpt",
+      "start_ms": 480000,
+      "end_ms": 510000
+    },
+    {
+      "id": "demo-e06",
+      "speaker_id": "demo-e",
+      "text": "虚构场景：玩家询问虚拟道具为何会在复活后重新出现，队友解释该模式的道具规则。",
+      "kind": "asr_excerpt",
+      "start_ms": 600000,
+      "end_ms": 630000
+    },
+    {
+      "id": "demo-e07",
+      "speaker_id": "demo-a",
+      "text": "虚构场景：队友讲完路线后提醒大家确认准备状态；一小时的模拟会话结束。",
+      "kind": "asr_excerpt",
+      "start_ms": 720000,
+      "end_ms": 750000
+    },
+    {
+      "id": "sparse-e01",
+      "speaker_id": "demo-a",
+      "kind": "asr_excerpt",
+      "start_ms": 0,
+      "end_ms": 2000,
+      "text": "组队通知示例：虚构玩家说已经准备好一起游戏，除此之外没有更多可用记录。"
+    }
+  ]
+}

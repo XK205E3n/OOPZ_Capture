@@ -17,3 +17,6 @@ tmp/
 artifacts/
 .reference/
 .workbuddy/
+
+# downloaded by scripts/download_fonts.py
+assets/fonts/

@@ -1,0 +1,113 @@
+{
+  "schema_version": "oopz.digest.frequency.v1",
+  "status": "available",
+  "reason": null,
+  "session_duration_ms": 3600000,
+  "method": {
+    "presence_source": "successful_membership_snapshot_pairs",
+    "eligibility": "2 * observed_presence_ms > session_duration_ms",
+    "metric": "estimated_merged_utterances_per_observed_in_channel_minute",
+    "merge_gap_ms": 1500,
+    "merge_max_span_ms": 30000,
+    "interval_boundary": "[start_ms,end_ms)",
+    "count_boundary": "original_contiguous_speech_start_in_observed_interval",
+    "presence_is_sampling_estimate": true,
+    "clock_duration_tolerance_ms": 2000
+  },
+  "participants": [
+    {
+      "oopz_uid": "demo-a",
+      "nickname": "演示甲",
+      "observed_presence_ms": 3600000,
+      "observed_presence_minutes": 60.0,
+      "presence_fraction": 1.0,
+      "eligible": true,
+      "merged_utterance_count": 24,
+      "count_is_estimate": true,
+      "utterances_per_minute": 0.4
+    },
+    {
+      "oopz_uid": "demo-b",
+      "nickname": "演示乙",
+      "observed_presence_ms": 2700000,
+      "observed_presence_minutes": 45.0,
+      "presence_fraction": 0.75,
+      "eligible": true,
+      "merged_utterance_count": 8,
+      "count_is_estimate": true,
+      "utterances_per_minute": 0.177778
+    },
+    {
+      "oopz_uid": "demo-c",
+      "nickname": "演示丙",
+      "observed_presence_ms": 3000000,
+      "observed_presence_minutes": 50.0,
+      "presence_fraction": 0.833333,
+      "eligible": true,
+      "merged_utterance_count": 16,
+      "count_is_estimate": true,
+      "utterances_per_minute": 0.32
+    },
+    {
+      "oopz_uid": "demo-d",
+      "nickname": "演示丁",
+      "observed_presence_ms": 1800000,
+      "observed_presence_minutes": 30.0,
+      "presence_fraction": 0.5,
+      "eligible": false,
+      "merged_utterance_count": 100,
+      "count_is_estimate": true,
+      "utterances_per_minute": 3.333333
+    },
+    {
+      "oopz_uid": "demo-e",
+      "nickname": "演示戊",
+      "observed_presence_ms": 2400000,
+      "observed_presence_minutes": 40.0,
+      "presence_fraction": 0.666667,
+      "eligible": true,
+      "merged_utterance_count": 4,
+      "count_is_estimate": true,
+      "utterances_per_minute": 0.1
+    }
+  ],
+  "most_frequent": {
+    "status": "available",
+    "reason": null,
+    "people": [
+      {
+        "oopz_uid": "demo-a",
+        "nickname": "演示甲",
+        "observed_presence_ms": 3600000,
+        "observed_presence_minutes": 60.0,
+        "presence_fraction": 1.0,
+        "eligible": true,
+        "merged_utterance_count": 24,
+        "count_is_estimate": true,
+        "utterances_per_minute": 0.4
+      }
+    ],
+    "tied": false
+  },
+  "least_frequent": {
+    "status": "available",
+    "reason": null,
+    "people": [
+      {
+        "oopz_uid": "demo-e",
+        "nickname": "演示戊",
+        "observed_presence_ms": 2400000,
+        "observed_presence_minutes": 40.0,
+        "presence_fraction": 0.666667,
+        "eligible": true,
+        "merged_utterance_count": 4,
+        "count_is_estimate": true,
+        "utterances_per_minute": 0.1
+      }
+    ],
+    "tied": false
+  },
+  "simulation": true,
+  "simulation_notice": "统计演示：进出时间/发言计数为模拟",
+  "session_id": "synthetic-session"
+}

@@ -1,0 +1,45 @@
+{
+  "synthetic": true,
+  "session_id": "synthetic-session",
+  "duration_ms": 3600000,
+  "session": {
+    "date_label": "2000.01.01 · 合成示例",
+    "time_label": "20:00 — 21:00"
+  },
+  "summary_label": "这是一份全新虚构的排版参考",
+  "topic_labels": [
+    "开场先修一下声音",
+    "装备讨论也很认真"
+  ],
+  "moment_labels": [
+    "这个转场，有点绕"
+  ],
+  "timeline": [
+    {
+      "title": "前段 / 闲聊",
+      "text": "点餐和音量测试",
+      "evidence_ids": [
+        "demo-e02",
+        "demo-e03"
+      ]
+    },
+    {
+      "title": "中段 / 准备",
+      "text": "比较配置，确认路线",
+      "evidence_ids": [
+        "demo-e04",
+        "demo-e07"
+      ]
+    },
+    {
+      "title": "后段 / 合作",
+      "text": "处理失误，继续闯关",
+      "evidence_ids": [
+        "demo-e05",
+        "demo-e06"
+      ]
+    }
+  ],
+  "placeholder_label": "示例占位",
+  "source_note": "全部人物、时间和情节均为虚构合成示例；头像为示例占位。统计仅来自同包模拟事件，不代表任何真实用户。"
+}

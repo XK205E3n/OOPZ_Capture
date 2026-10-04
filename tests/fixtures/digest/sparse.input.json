@@ -1,0 +1,26 @@
+{
+  "content": {
+    "summary": {
+      "title": "合成示例 一则简短组队通知",
+      "text": "这份虚构输入只有一则简短的组队通知，其他内容不足以支持更详细的回顾。",
+      "evidence_ids": [
+        "sparse-e01"
+      ],
+      "anchor": "组队通知示例"
+    },
+    "odd_topic": {
+      "status": "none",
+      "title": "没有明显候选",
+      "text": "本次可用记录中，没有可确认的明显离奇话题或概念。",
+      "evidence_ids": [],
+      "anchor": "",
+      "participant_ids": []
+    },
+    "topics": [],
+    "moments": [],
+    "next_hooks": []
+  },
+  "people": {
+    "profiles": []
+  }
+}

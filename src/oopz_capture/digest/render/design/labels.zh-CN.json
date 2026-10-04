@@ -1,0 +1,30 @@
+{
+  "schema_version": "oopz.design.labels.v1",
+  "_doc": "Display strings owned by the template, not by the model. Renaming them never changes a schema field. metadata may override any key listed in metadata_overridable.",
+  "brand": "OOPZ 语音回顾",
+  "badge_synthetic": "虚构演示",
+  "section_content": "这场聊了什么",
+  "section_people": "大家的表现",
+  "summary_label": "先说结论",
+  "odd_topic": "最离奇的话题 / 概念",
+  "topic": "话题摘要",
+  "moment": "话题片段",
+  "next_hook": "还没聊完的线索",
+  "flow_head": "这场怎么聊下来的",
+  "stats_heading": "发言频率",
+  "people_empty": "本场暂无足够依据的人物评点。",
+  "stats_unavailable": "缺少足够的进出与发言记录，本场不生成频率排名。",
+  "stats_highest": "发言频率最高",
+  "stats_lowest": "发言频率最低",
+  "stats_tied": "并列",
+  "stats_unit": "段/分钟",
+  "stats_simulated_tag": "模拟数据",
+  "metadata_overridable": [
+    "brand",
+    "section_content",
+    "section_people",
+    "summary_label",
+    "people_empty",
+    "stats_unavailable"
+  ]
+}
