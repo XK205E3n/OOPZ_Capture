@@ -25,9 +25,9 @@ Git 对应关系：这四个发布提交来自此前丢失的工作环境（dot�
 
 ### Windows 部署已废弃
 
-用户于 2026-10-03 确认 Windows 生产服务器已废弃。Windows 部署脚本、指南与历史部署记录已从 `main` 移除，保留在分支 `windows-legacy`（停在 `037b988`，发布提交 `3be0c95`）、`v0.11.x` 标签和 GitHub Release 中，不再维护，也不应据此判断 Ubuntu 服务器。
+用户于 2026-10-03 确认 Windows 生产服务器已废弃。Windows 部署线（脚本、从零部署指南、历史部署记录）已在生产验证，流程保持原样，保留在分支 `windows-legacy`（`037b988`，发布提交 `3be0c95`）、`v0.11.x` 标签和 GitHub Release 中；`main` 不再包含它，也不应据此判断 Ubuntu 服务器。Windows 更新脚本读取 GitHub 的 latest Release，Linux 发布须使用 `linux-v*` 标签且不设为 Latest。
 
-本地检出布局（同一个 Git 仓库的两份工作副本）：`D:\AI-Cloud-Linux\OOPZ_Capture` 为 `main`（Linux/Ubuntu 主线），`D:\AI-Cloud-Linux\OOPZ_Capture_Windows` 为 `windows-legacy`（冻结的 Windows 版）。`scripts/build_release.ps1` 仍是发布包构建入口，应用代码保持跨平台。
+本地检出布局（同一个 Git 仓库的两份工作副本）：`D:\AI-Cloud-Linux\OOPZ_Capture` 为 `main`（Linux/Ubuntu 主线），`D:\AI-Cloud-Linux\OOPZ_Capture_Windows` 为 `windows-legacy`（保留的 Windows 部署线）。`scripts/build_release.ps1` 仍是发布包构建入口，应用代码保持跨平台。
 
 2026-10-03隔离录音候选：正式基线归档恢复后独立增加capture-only及发起人确认卡；仅本地验证，无真实部署变更。工作环境重置导致之前未交付的候选丢失，本候选重新验证，不沿用其测试或提交身份。
 

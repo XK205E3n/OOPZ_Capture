@@ -2,7 +2,7 @@
 
 通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，以本地 CPU 模型分片转写，再通过可配置的分析 API 生成会话报告。报告经群内审查后，可发布为飞书文档并写入 Base 索引。
 
-当前主线应用版本 **0.11.15（Linux 主线，尚未发布）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 版已冻结在分支 `windows-legacy`。QQ、NapCat、OneBot 不属于当前运行链路。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前主线应用版本 **0.11.15（Linux 主线，尚未发布）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。QQ、NapCat、OneBot 不属于当前运行链路。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 核心能力
 
@@ -125,7 +125,7 @@ ANALYZER_JSON_MODE=
 
 本项目只通过出站连接访问 OOPZ、飞书与分析 API，**不要求开放业务入站端口**。
 
-发布包只由 `scripts/build_release.ps1` 从干净的已提交 `HEAD` 构建（ZIP + SHA-256），服务器用 `scripts/linux/` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared/`。不要把包含 `.env`、模型或会话数据的开发目录上传，也不要直接修改服务器版本目录。现有 GitHub Release（≤0.11.15）是 Windows 版；Linux 版尚未发布，下一次发布应使用新的版本号（建议 0.12.0），因为已有多个内容不同的构建共用 0.11.15。
+发布包只由 `scripts/build_release.ps1` 从干净的已提交 `HEAD` 构建（ZIP + SHA-256），服务器用 `scripts/linux/` 安装到独立版本目录；配置、模型、输出和状态保存在 `shared/`。不要把包含 `.env`、模型或会话数据的开发目录上传，也不要直接修改服务器版本目录。现有 GitHub Release（≤0.11.15）是 Windows 版；Windows 更新脚本读取 GitHub 的 latest Release，所以 Linux 版本必须使用 `linux-vX.Y.Z` 标签并且不设为 Latest（`gh release create --latest=false`）。Linux 版尚未发布，下一次发布应使用新的版本号（建议 0.12.0），因为已有多个内容不同的构建共用 0.11.15。
 
 ## 开发验证
 

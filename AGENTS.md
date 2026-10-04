@@ -5,7 +5,7 @@
 ## 分支与检出
 
 - `main` 是 Linux（Ubuntu 24.04）主线，也是服务器运行代码的对应版本。
-- `windows-legacy` 是冻结的 Windows 版（Windows 服务器已于 2026-10-03 废弃），不再修改、不再部署。
+- `windows-legacy` 是保留的 Windows 部署线：已在生产验证、流程保持原样；当前重心在 Linux，不随主线更新。原 Windows 生产服务器已于 2026-10-03 退役。
 - `recovery/server-v0.11.15-snapshots` 是服务器早期发布包的原样快照，只读，不在其上开发。
 - 开始修改前阅读 `docs/PROJECT_STATUS.md`（各模块实际进度）和 `docs/DEPLOYMENT_STATE.md`（服务器实测状态）；涉及依赖、环境变量、启动方式、目录、外部服务、数据迁移或发布步骤时，同时阅读 `docs/DEPLOYMENT.md`。
 
@@ -15,7 +15,7 @@
 2. 服务器持久目录（配置、模型、输出、飞书状态、日志）与版本目录分离。部署和回滚不得覆盖或删除持久数据。
 3. 影响部署的修改在同一个提交中同步：`.env.example`（配置契约改变时）、`docs/DEPLOYMENT_STATE.md`（部署基线或本地/服务器差异改变时）、必要时 `docs/DEPLOYMENT.md` 与 `scripts/linux/`。迁移步骤与回滚影响写进对应的 `CHANGELOG.md` 条目。
 4. 正式发布前工作区必须干净且测试通过。发布包只能由 `scripts/build_release.ps1` 从已提交的 `HEAD` 生成，不得复制整个工作目录部署。
-5. 已发布或已部署过的版本号不得复用：同一个版本号对应的构建内容必须唯一。
+5. 已发布或已部署过的版本号不得复用：同一个版本号对应的构建内容必须唯一。Linux 版本发布使用 `linux-vX.Y.Z` 标签，并且不得设为 GitHub 的 Latest（`gh release create --latest=false`）：Windows 更新脚本读取 `releases/latest`，Linux 包会让它失败或装错。
 6. 每次生产部署后，把实际版本、时间、结果和服务器特有差异回填到 `docs/DEPLOYMENT_STATE.md`。
 
 ## 敏感信息
@@ -35,4 +35,4 @@
 
 - 配置项通过环境变量和 `.env.example` 声明，不在代码中写死生产值。
 - 数据格式或状态目录发生不兼容变化时，必须提供迁移与回滚说明，并在部署前备份。
-- Linux 是唯一维护的部署目标；应用代码保持跨平台可运行，但不新增 Windows 部署工具。
+- Linux 是当前维护的部署目标；应用代码保持跨平台可运行。Windows 部署流程保持在 `windows-legacy` 原样，主线不新增也不修改 Windows 部署工具。
