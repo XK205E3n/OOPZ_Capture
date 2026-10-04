@@ -17,25 +17,19 @@ from .continuous import (
 )
 from .identifiers import new_session_id
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none
-from .pdf_reports import render_session_reports
 from .controller_protocol import SenderPolicy, ControllerInboundMessage, make_reply, parse_command
-from .reports import recover_interrupted_analysis_sessions, overall_report_text as report_text, overall_summary_text, split_text
+from .digest_job import run_digest
+from .sessions import digest_png
 from .send_request import enqueue_send_request
 from .settings import SETTABLE_KEYS, apply_setting, canonical_setting_key, setting_status
-from .workflow import _delete_archived_reports, _is_reparse_point, _validate_tree_no_links
+from .workflow import _is_reparse_point, _validate_tree_no_links
 
 
-DECISION_SCHEMA = "oopz.controller.analysis_decision.v1"
 START_FLOW_SCHEMA = "oopz.controller.start_flow.v1"
 START_FLOW_TTL_SECONDS = 600
 
 # Settings that only affect the next analysis run, not the next recording.
-_ANALYSIS_SETTING_KEYS = frozenset({
-    "OOPZ_ANALYSIS_MAX_PARALLELISM", "ANALYZER_PROVIDER", "ANALYZER_API_KEY",
-    "ANALYZER_BASE_URL", "ANALYZER_MODEL", "ANALYZER_TIMEOUT_SECONDS",
-    "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS", "ANALYZER_MAX_TOKENS",
-    "ANALYZER_THINKING_MAX_TOKENS", "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
-})
+_ANALYSIS_SETTING_KEYS = frozenset({"OOPZ_ANALYZER_MODEL", "OOPZ_ANALYZER_TIMEOUT_SECONDS"})
 
 # env key -> (ControllerConfig field, parser); applied live on `/oopz 设置`.
 LIVE_CONFIG_FIELDS: dict[str, tuple[str, Callable[[str], Any]]] = {
@@ -61,7 +55,7 @@ LIVE_CONFIG_FIELDS: dict[str, tuple[str, Callable[[str], Any]]] = {
 }
 HELP_TEXT = "\n".join([
     "/oopz 开始 [秒数]：依次选择域和语音频道后开始录音，可指定时长（秒，或 5m/1h）",
-    "/oopz 离开：结束录音，结束后询问是否开始分析",
+    "/oopz 离开：结束录音；转写后自动分析，完成后把图发到群里",
     "/oopz 状态：查看当前录音任务状态",
     "/oopz 设置 变量=值：修改运行设置；先用 /oopz 设置状态 查看可用变量、当前值和说明",
     "/oopz 设置状态：查看可修改的变量（密码、手机号和密钥打码）",
@@ -85,74 +79,6 @@ def _parse_duration_seconds(value: str) -> float | None:
         raise ValueError("时长必须在 5 秒到 24 小时之间")
     return seconds
 
-
-def _fmt_beijing(value: str) -> str:
-    if not value:
-        return ""
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-        if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone(timedelta(hours=8))).strftime("%Y-%m-%d %H:%M:%S")
-    except (ValueError, TypeError):
-        return str(value)
-
-
-def _analysis_usage_notice(analysis_output: Any) -> str | None:
-    """Build the concise usage line delivered with a newly completed report."""
-    if not isinstance(analysis_output, dict):
-        return None
-    result = analysis_output.get("result")
-    if not isinstance(result, dict):
-        return None
-    model = result.get("model")
-    if not isinstance(model, dict):
-        return None
-    usage = model.get("usage")
-    if not isinstance(usage, dict):
-        return None
-    try:
-        total_tokens = int(usage.get("total_tokens", 0) or 0)
-        prompt_tokens = int(usage.get("prompt_tokens", 0) or 0)
-        completion_tokens = int(usage.get("completion_tokens", 0) or 0)
-        reasoning_tokens = int(usage.get("reasoning_tokens", 0) or 0)
-    except (TypeError, ValueError):
-        return None
-    text = (
-        f"本次分析使用 Token：{total_tokens:,}（输入 {prompt_tokens:,}；输出 {completion_tokens:,}；"
-        f"其中推理 {reasoning_tokens:,}）。"
-    )
-    estimate = model.get("cost_estimate")
-    if not isinstance(estimate, dict):
-        return text
-    status = str(estimate.get("status") or "")
-    if status == "subscription_estimate":
-        value = estimate.get("total_estimated_cost_usd")
-        try:
-            return text + f"参考等价值：US${float(value):.6f}（OpenCode Go 公布参考单价估算，不代表实际套餐扣费）。"
-        except (TypeError, ValueError):
-            return text + "参考等价值：暂不可估算。"
-    if status == "estimated":
-        stages = estimate.get("stages")
-        total = stages.get("total") if isinstance(stages, dict) else None
-        value = total.get("estimated_cost_rmb") if isinstance(total, dict) else None
-        try:
-            verified = str(estimate.get("pricing_verified_on") or "")
-            date_note = f"；价格核验 {verified}" if verified else ""
-            return text + f"预估费用：¥{float(value):.6f}（DeepSeek Flash，按请求发生时的北京时间峰谷价计算{date_note}；以官方账单为准）。"
-        except (TypeError, ValueError):
-            return text + "预估费用：用量或金额数据不完整，暂不可估算。"
-    if estimate.get("reason") == "content-rejected request usage is unavailable":
-        return text + "预估费用：部分被审核拒绝的请求未返回用量，无法给出完整费用。"
-    return text + "预估费用：当前模型或接入渠道没有匹配的已核验价格，未估算。"
-
-
-def _configured_analysis_label() -> str:
-    provider = os.environ.get("ANALYZER_PROVIDER", "").strip()
-    model = os.environ.get("ANALYZER_MODEL", "").strip()
-    if provider and model:
-        return f"{provider} / {model}"
-    return provider or model or "已配置分析 API"
 
 def _env_bool(name: str, default: bool = False) -> bool:
     value = os.environ.get(name)
@@ -224,64 +150,12 @@ class ControllerConfig:
 
 ConfigLoader = Callable[[bool], Awaitable[Any]]
 CaptureRunner = Callable[..., Awaitable[Path]]
-AnalysisRunner = Callable[[Path, Any], dict[str, Any]]
+AnalysisRunner = Callable[[Path], dict[str, Any]]
 
 
 async def _default_config_loader(show_browser: bool) -> Any:
     from .main import _config
     return await _config(show_browser=show_browser)
-
-
-def _default_model_client() -> Any:
-    from .deepseek_client import configured_analysis_client
-    return configured_analysis_client()
-
-
-
-def _default_analysis_runner(handoff_path: Path, client: Any) -> dict[str, Any]:
-    from .analysis_pipeline import run_analysis
-
-    def progress(event: dict[str, Any]) -> None:
-        stage = str(event.get("stage") or "")
-        if stage in {"short", "long"}:
-            print(
-                f"[分析进度] {stage}：{event.get('completed', 0)}/{event.get('total', 0)} "
-                f"（窗口 {event.get('window_index', '?')}）",
-                flush=True,
-            )
-        elif stage == "started":
-            print(
-                f"[分析进度] 已启动：Session={event.get('session_id')}；"
-                f"分析接口={_configured_analysis_label()}；"
-                f"300秒窗口={event.get('short_total', 0)}，60分钟窗口={event.get('long_total', 0)}；"
-                f"300秒API请求={event.get('short_request_total', 0)}（初始请求；审核拦截时另分两半请求，缓存不重复调用）；"
-                f"并行任务={event.get('parallelism', 1)}。",
-                flush=True,
-            )
-        elif stage == "content_filter_fallback":
-            print(f"[分析进度] 窗口 {event.get('window_index')} 已拆分处理；跳过半段={event.get('skipped', 0)}，缺失时段将写入报告。", flush=True)
-        elif stage == "long_started":
-            print(
-                f"[分析进度] 开始60分钟摘要：0/{event.get('total', 0)}；"
-                f"并行任务={event.get('parallelism', 1)}。",
-                flush=True,
-            )
-        elif stage == "final_started":
-            print("[分析进度] 开始最终综合。", flush=True)
-        elif stage == "pdf_failed":
-            print(f"[分析进度] PDF 生成失败：{event.get('message', '未知原因')}；Markdown 已保留。", flush=True)
-        elif stage == "report_rendered":
-            print("[分析进度] 已生成报告，正在准备飞书投递。", flush=True)
-        elif stage == "completed":
-            print(f"[分析进度] 完成：{event.get('report_path')}", flush=True)
-
-    return run_analysis(
-        handoff_path,
-        client,
-        variant="configured-api",
-        render_pdf=True,
-        progress_reporter=progress,
-    )
 
 
 class ControllerService:
@@ -291,15 +165,13 @@ class ControllerService:
         *,
         config_loader: ConfigLoader = _default_config_loader,
         capture_runner: CaptureRunner = run_continuous_capture,
-        analysis_runner: AnalysisRunner = _default_analysis_runner,
-        model_client_factory: Callable[[], Any] = _default_model_client,
+        analysis_runner: AnalysisRunner = run_digest,
     ):
         config.validate()
         self.config = config
         self.config_loader = config_loader
         self.capture_runner = capture_runner
         self.analysis_runner = analysis_runner
-        self.model_client_factory = model_client_factory
         self.state_root = config.state_root.resolve()
         self.output_root = config.output_root.resolve()
         self.state_root.mkdir(parents=True, exist_ok=True)
@@ -307,7 +179,6 @@ class ControllerService:
         if _is_reparse_point(self.state_root) or _is_reparse_point(self.output_root):
             raise ValueError("controller state and output roots may not be links or reparse points")
         self.state_path = self.state_root / "controller.json"
-        self._decision_path = self.state_root / "analysis_decision.json"
         self._start_flow_path = self.state_root / "start_flow.json"
         self._background_tasks: set[asyncio.Task[None]] = set()
         self._analysis_sessions: set[str] = set()
@@ -316,7 +187,6 @@ class ControllerService:
         self._active_task: asyncio.Task[None] | None = None
         self._state = self._load_state()
         self._recover_active_session()
-        self._recover_interrupted_analyses()
         self._reconcile_last_job()
 
     def request_shutdown(self) -> None:
@@ -455,97 +325,37 @@ class ControllerService:
             self._state["last_job"] = {**active, "status": "interrupted", "updated_at": now}
         self._state["active"] = None
 
-    def _latest_analysis_lifecycle(self, session_dir: Path) -> dict[str, Any] | None:
-        """Read the newest valid analysis lifecycle for a completed capture."""
-        candidates = [session_dir / "analysis" / "lifecycle.json"]
-        variants = session_dir / "analysis_variants"
-        if variants.is_dir() and not _is_reparse_point(variants):
-            candidates.extend(path / "lifecycle.json" for path in variants.iterdir() if path.is_dir())
-        records: list[dict[str, Any]] = []
-        for path in candidates:
-            if not path.is_file() or _is_reparse_point(path):
-                continue
-            value = read_json_or_none(path)
-            if value and str(value.get("status") or "").strip():
-                records.append(value)
-        if not records:
-            return None
-        return max(records, key=lambda item: str(item.get("updated_at") or item.get("completed_at") or ""))
-
-    def _recover_interrupted_analyses(self) -> None:
-        """Make dead analysis jobs visible and resumable after a controller restart."""
-        if self.config.capture_only:
-            return
-        recovered = recover_interrupted_analysis_sessions(self.output_root)
-        if not recovered:
-            return
-        latest = recovered[0]
-        session_id = str(latest["session_id"])
-        last = self._state.get("last_job")
-        if not isinstance(last, dict) or last.get("session_id") == session_id:
-            self._state["last_job"] = {
-                **(last if isinstance(last, dict) else {}),
-                "session_id": session_id,
-                "status": "analysis_interrupted_recoverable",
-                "analysis_interrupted_at": _iso(),
-                "recovered_locks": int(latest["recovered_locks"]),
-            }
-            self._save_state()
-
     def _reconcile_last_job(self) -> bool:
-        """Synchronize stale controller state with authoritative worker lifecycles."""
+        """Synchronize stale controller state with the authoritative worker lifecycle and the digest file."""
         last = self._state.get("last_job")
-        if not isinstance(last, dict):
-            return False
-        session_id = str(last.get("session_id") or "")
+        session_id = str(last.get("session_id") or "") if isinstance(last, dict) else ""
         if not session_id:
             return False
         session_dir = (self.output_root / session_id).resolve()
         if session_dir.parent != self.output_root or not session_dir.is_dir() or _is_reparse_point(session_dir):
             return False
+        capture = self._load_json_object(session_dir / "lifecycle.json") or {}
+        status = str(capture.get("status") or "")
         updates: dict[str, Any] = {}
-        capture = self._load_json_object(session_dir / "lifecycle.json")
-        capture_status = str((capture or {}).get("status") or "")
-        if capture_status in {"ready_for_analysis", "ready_for_analysis_with_errors"}:
+        if not self.config.capture_only and digest_png(session_dir).is_file():
+            updates = {"status": "analysis_completed"}
+        elif last.get("status") == "analyzing" and session_id not in self._analysis_sessions:
+            updates = {"status": "analysis_interrupted"}      # the analysis died with the previous process; "待分析" retries it
+        elif status in {"ready_for_analysis", "ready_for_analysis_with_errors"}:
             updates = {
-                "status": ("capture_transcription_completed_with_errors" if capture_status.endswith("with_errors") else "capture_transcription_completed") if self.config.capture_only else capture_status,
-                "stop_reason": str((capture or {}).get("stop_reason") or ""),
-                "stopped_at": str((capture or {}).get("stopped_at") or ""),
-                "chunks_total": int((capture or {}).get("chunks_total", 0) or 0),
-                "chunks_transcribed": int((capture or {}).get("chunks_transcribed", 0) or 0),
-                "chunks_failed": int((capture or {}).get("chunks_failed", 0) or 0),
+                "status": ("capture_transcription_completed_with_errors" if status.endswith("with_errors") else "capture_transcription_completed") if self.config.capture_only else status,
+                "stop_reason": str(capture.get("stop_reason") or ""),
+                "stopped_at": str(capture.get("stopped_at") or ""),
+                "chunks_total": int(capture.get("chunks_total", 0) or 0),
+                "chunks_transcribed": int(capture.get("chunks_transcribed", 0) or 0),
+                "chunks_failed": int(capture.get("chunks_failed", 0) or 0),
             }
-
-        lifecycle = None if self.config.capture_only else self._latest_analysis_lifecycle(session_dir)
-        analysis_status = str((lifecycle or {}).get("status") or "")
-        if analysis_status == "ready_for_delivery":
-            updates = {
-                "status": "analysis_completed_report_queued",
-                "analysis_completed_at": str((lifecycle or {}).get("completed_at") or (lifecycle or {}).get("updated_at") or ""),
-                "report_id": str((lifecycle or {}).get("report_id") or ""),
-            }
-        elif analysis_status.startswith("analyzing_") or analysis_status in {"prepared", "building_final_report"}:
-            updates = {"status": "analyzing", "analysis_lifecycle_status": analysis_status}
-        elif analysis_status == "failed":
-            updates = {"status": "analysis_failed", "analysis_failure": (lifecycle or {}).get("failure")}
-        elif analysis_status == "interrupted":
-            updates = {
-                "status": "analysis_interrupted_recoverable",
-                "analysis_recovery_reason": str((lifecycle or {}).get("recovery_reason") or ""),
-            }
-        has_stale_capture_error = (
-            updates.get("status") in {"ready_for_analysis", "ready_for_analysis_with_errors"}
-            and any(field in last for field in ("error_type", "error", "finished_at"))
-        )
-        if not updates or (
-            all(last.get(key) == item for key, item in updates.items())
-            and not has_stale_capture_error
-        ):
+        if not updates or all(last.get(key) == item for key, item in updates.items()):
             return False
         reconciled = {**last, **updates}
-        if updates.get("status") in {"ready_for_analysis", "ready_for_analysis_with_errors"}:
-            for stale_error_field in ("error_type", "error", "finished_at"):
-                reconciled.pop(stale_error_field, None)
+        if updates["status"] in {"ready_for_analysis", "ready_for_analysis_with_errors"}:
+            for stale in ("error_type", "error", "finished_at"):
+                reconciled.pop(stale, None)
         self._state["last_job"] = reconciled
         self._save_state()
         return True
@@ -585,9 +395,6 @@ class ControllerService:
                 start_reply = await self._process_start_flow(message, "start_capture")
                 if start_reply is not None:
                     return self._store_reply(start_reply)
-                decision_reply = self._process_analysis_decision(message, "leave")
-                if decision_reply is not None:
-                    return self._store_reply(decision_reply)
                 return self._store_reply(make_reply(
                     message, command="invalid", status="rejected", at=_iso(),
                     text="不支持的指令；发送 /oopz 帮助 查看可用指令。",
@@ -901,7 +708,6 @@ class ControllerService:
             active["stop_requested_before_capture"] = True
             active["stop_requested_at"] = _iso()
             active["stop_requested_by"] = message.requested_by
-            active["analysis_admin_id"] = message.sender_id
             self._save_state()
             return make_reply(
                 message, command=command, status="accepted", at=_iso(),
@@ -922,11 +728,10 @@ class ControllerService:
         active["status"] = "stop_requested"
         active["stop_requested_at"] = _iso()
         active["stop_requested_by"] = message.requested_by
-        active["analysis_admin_id"] = message.sender_id
         self._save_state()
         return make_reply(
             message, command=command, status="accepted", at=_iso(),
-            text=f"已提交离开指令；Session ID={session_id}。转写和最终分析完成后会进入报告 Outbox。",
+            text=f"已提交离开指令；Session ID={session_id}。转写后会自动分析，完成后把图发到本群。",
             session_id=session_id,
         )
 
@@ -984,11 +789,11 @@ class ControllerService:
                 status_text = {
                     "capture_transcription_completed": "录音与转写已结束（仅录音转写模式）",
                     "capture_transcription_completed_with_errors": "录音已结束，转写存在错误（仅录音转写模式）",
-                    "waiting_analysis_decision": "等待管理员确认是否分析",
                     "analyzing": "正在分析",
-                    "analysis_interrupted_recoverable": "分析因机器人重启或异常退出而中断；可发送“待分析”恢复",
-                    "analysis_completed_report_queued": "分析已完成，报告已排队发送",
-                    "analysis_failed": "分析失败",
+                    "ready_for_analysis": "录音和转写已完成，尚未分析；可发送“待分析”",
+                    "analysis_completed": "分析已完成，图已发送",
+                    "analysis_failed": "分析失败；可发送“待分析”重试",
+                    "analysis_interrupted": "分析被机器人重启中断；可发送“待分析”重试",
                 }.get(raw_status, raw_status)
                 suffix = f"；最近 Session ID={last['session_id']}；状态={status_text}"
             return make_reply(
@@ -1131,65 +936,16 @@ class ControllerService:
                         flush=True,
                     )
                     break
-            handoff = session_dir / "handoff" / "analyzer_request.json"
             stop_reason = self._session_stop_reason(session_dir)
-            async with self._lock:
-                active = self._state.get("active")
-                analysis_admin_id = (
-                    str(active.get("analysis_admin_id") or "")
-                    if isinstance(active, dict) and active.get("session_id") == session_id
-                    else ""
-                )
-            # A deliberate stop command transfers ownership of the analysis
-            # confirmation to the member who stopped the recording.
-            # Automatic exits have no override and therefore return to the
-            # administrator who originally started the session.
-            requester = analysis_admin_id or str((request.requested_by or {}).get("sender_id") or "")
+            details = {"session_id": session_id, "stop_reason": stop_reason}
             if self.config.capture_only:
                 final_status = "capture_transcription_completed"
-                details = {"session_id": session_id, "stop_reason": stop_reason}
-            elif (
-                requester
-                and handoff.is_file()
-                and not _is_reparse_point(handoff)
-            ):
-                self._save_decision({
-                    "schema_version": DECISION_SCHEMA,
-                    "session_id": session_id,
-                    "admin_id": requester,
-                    "stage": "awaiting_analysis_decision",
-                    "created_at": _iso(),
-                })
-                reason_note = f"（原因：{stop_reason}）" if stop_reason else ""
-                transcription_note = self._transcription_completion_note(session_dir)
-                enqueue_send_request(
-                    self.state_root, target_type="private", target_id=requester,
-                    text=(f"录音已结束{reason_note}；Session ID={session_id}。{transcription_note}"
-                          f"是否开始分析（{_configured_analysis_label()}）？回复：是 / 否。"),
-                    source="analysis_decision",
-                )
-                final_status = "waiting_analysis_decision"
-                details = {"session_id": session_id, "stop_reason": stop_reason}
             elif self._stopping:
                 final_status = "ready_for_analysis"
-                details = {"session_id": session_id, "stop_reason": stop_reason}
+            elif self._start_analysis_and_deliver(session_dir):
+                final_status = "analyzing"
             else:
-                client = self.model_client_factory()
-                analysis = await asyncio.to_thread(self.analysis_runner, handoff, client)
-                pdf_path = analysis.get("pdf_path") if isinstance(analysis, dict) else None
-                start_text, end_text = self._lifecycle_window_text(session_dir)
-                _atomic_json(session_dir / "report_delivery.json", {
-                    "schema_version": "oopz.controller.report_delivery.v1",
-                    "pdf_path": str(pdf_path or ""),
-                    "started_at_text": start_text,
-                    "ended_at_text": end_text,
-                    "updated_at": _iso(),
-                })
-                final_status = "analysis_completed"
-                details = {
-                    "report_id": analysis["result"]["report_id"],
-                    "pdf_path": str(pdf_path or ""),
-                }
+                final_status = "ready_for_analysis"
         except BaseException as error:
             final_status = "cancelled" if isinstance(error, asyncio.CancelledError) else "failed"
             details = {"error_type": type(error).__name__, "error": str(error)[:1000]}
@@ -1337,293 +1093,50 @@ class ControllerService:
         except (TypeError, ValueError):
             return 0
 
-    def _save_decision(self, value: dict[str, Any]) -> None:
-        _atomic_json(self._decision_path, value)
-
-    def _load_decision(self) -> dict[str, Any] | None:
-        value = self._load_json_object(self._decision_path)
-        if not isinstance(value, dict) or value.get("schema_version") != DECISION_SCHEMA:
-            return None
-        return value
-
-    def _clear_decision(self) -> None:
-        if self._decision_path.is_file() and not _is_reparse_point(self._decision_path):
-            self._decision_path.unlink()
-
-    def _process_analysis_decision(self, message: ControllerInboundMessage, command: str) -> dict[str, Any] | None:
-        if self.config.capture_only:
-            return None
-        decision = self._load_decision()
-        if decision is None:
-            return None
-        session_id = str(decision.get("session_id") or "")
-        admin_id = str(decision.get("admin_id") or "")
-        if not session_id or message.sender_id != admin_id:
-            return None
-        text = message.text.strip().casefold()
-        if text in {"是", "yes", "y", "确定", "确认"}:
-            session_dir = (self.output_root / session_id).resolve()
-            if session_dir.parent != self.output_root.resolve() or not session_dir.is_dir():
-                self._clear_decision()
-                return make_reply(message, command=command, status="rejected", at=_iso(), text="会话目录不存在，已取消。")
-            if not self._start_analysis_and_deliver(session_dir, admin_id):
-                return make_reply(
-                    message, command=command, status="rejected", at=_iso(),
-                    text=f"Session={session_id} 已在分析中，请用 /oopz 状态 查看进度。",
-                )
-            self._clear_decision()
-            return make_reply(
-                message, command=command, status="accepted", at=_iso(),
-                text=f"已开始分析 Session={session_id}（{_configured_analysis_label()}）。完成后会发送报告。",
-            )
-        if text in {"否", "不", "no", "n", "跳过"}:
-            self._clear_decision()
-            return make_reply(
-                message, command=command, status="completed", at=_iso(),
-                text=f"已跳过分析 Session={session_id}。可用 /oopz待分析 查看未分析会话。",
-            )
-        return make_reply(message, command=command, status="rejected", at=_iso(), text="请回复：是 / 否。")
-
-    def _start_analysis_and_deliver(self, session_dir: Path, admin_id: str) -> bool:
+    def _start_analysis_and_deliver(self, session_dir: Path) -> bool:
+        """Analyse a finished recording in the background; the card is queued for the group when it is done."""
         if self.config.capture_only or self._stopping or session_dir.name in self._analysis_sessions:
             return False
         self._analysis_sessions.add(session_dir.name)
         last = self._state.get("last_job")
         if isinstance(last, dict) and last.get("session_id") == session_dir.name:
-            self._state["last_job"] = {
-                **last,
-                "status": "analyzing",
-                "analysis_started_at": _iso(),
-            }
+            self._state["last_job"] = {**last, "status": "analyzing", "analysis_started_at": _iso()}
             self._save_state()
-        task = asyncio.create_task(self._analyze_and_deliver(session_dir, admin_id))
+        task = asyncio.create_task(self._analyze_and_deliver(session_dir))
         self._background_tasks.add(task)
         task.add_done_callback(self._background_tasks.discard)
         return True
 
-    async def _analyze_and_deliver(self, session_dir: Path, admin_id: str) -> None:
+    def busy_sessions(self) -> frozenset[str]:
+        return frozenset(self._analysis_sessions)
+
+    def _queue_to_group(self, **fields: Any) -> None:
+        enqueue_send_request(self.state_root, target_type="group", target_id="oopz-group", **fields)
+
+    async def _analyze_and_deliver(self, session_dir: Path) -> None:
         if self.config.capture_only:
             return
+        status, extra = "analysis_completed", {}
         try:
-            handoff = session_dir / "handoff" / "analyzer_request.json"
-            if not handoff.is_file() or _is_reparse_point(handoff):
-                raise ValueError("handoff/analyzer_request.json 不存在")
-            print(
-                f"[分析进度] 正在初始化 Session={session_dir.name}；"
-                f"分析接口={_configured_analysis_label()}。",
-                flush=True,
-            )
-            client = self.model_client_factory()
-            analysis_output = await asyncio.to_thread(self.analysis_runner, handoff, client)
-            pdf_path = analysis_output.get("pdf_path") if isinstance(analysis_output, dict) else None
-            start_text, end_text = self._lifecycle_window_text(session_dir)
-            _atomic_json(session_dir / "report_delivery.json", {
-                "schema_version": "oopz.controller.report_delivery.v1",
-                "pdf_path": str(pdf_path or ""),
-                "started_at_text": start_text,
-                "ended_at_text": end_text,
-                "updated_at": _iso(),
-            })
-            pieces, pdf_path, _ = self._delivery_for_session(session_dir.name)
-            usage_notice = _analysis_usage_notice(analysis_output)
-            if usage_notice:
-                enqueue_send_request(
-                    self.state_root, target_type="private", target_id=admin_id,
-                    text=usage_notice, source="analysis_delivery:usage",
-                )
-            for piece in pieces:
-                enqueue_send_request(
-                    self.state_root, target_type="private", target_id=admin_id,
-                    text=piece, source="analysis_delivery:summary",
-                )
-            attachment_labels: list[str] = []
-            if pdf_path:
-                enqueue_send_request(
-                    self.state_root, target_type="private", target_id=admin_id,
-                    text="", source="analysis_delivery:pdf", file_path=pdf_path,
-                )
-                attachment_labels.append("PDF")
-            internal_report = self._internal_report_path(session_dir)
-            if internal_report is not None:
-                enqueue_send_request(
-                    self.state_root, target_type="private", target_id=admin_id,
-                    text="", source="analysis_delivery:internal_md", file_path=str(internal_report),
-                )
-                attachment_labels.append("完整.md")
-            if not pdf_path:
-                enqueue_send_request(
-                    self.state_root, target_type="private", target_id=admin_id,
-                    text="分析已完成，但 PDF 生成失败或暂不可用；摘要和完整 Markdown 仍可正常使用。",
-                    source="analysis_delivery:pdf_unavailable",
-                )
-            enqueue_send_request(
-                self.state_root, target_type="private", target_id=admin_id,
-                text=(f"报告已发送到本群（{len(pieces)} 段"
-                      f"{(' + ' + ' + '.join(attachment_labels)) if attachment_labels else ''}）。"
-                      "请使用随后的审查卡片决定是否发布公开版。"),
-                source="publication_review:prompt",
-            )
-            async with self._lock:
-                last = self._state.get("last_job")
-                if isinstance(last, dict) and last.get("session_id") == session_dir.name:
-                    report_id = ""
-                    if isinstance(analysis_output, dict) and isinstance(analysis_output.get("result"), dict):
-                        report_id = str(analysis_output["result"].get("report_id") or "")
-                    self._state["last_job"] = {
-                        **last,
-                        "status": "analysis_completed_report_queued",
-                        "analysis_completed_at": _iso(),
-                        "report_id": report_id or str(last.get("report_id") or ""),
-                    }
-                    self._save_state()
-            print(f"[分析进度] Session={session_dir.name} 的报告已排队发送到飞书。", flush=True)
+            print(f"[分析进度] 开始分析 Session={session_dir.name}。", flush=True)
+            output = await asyncio.to_thread(self.analysis_runner, session_dir)
+            self._queue_to_group(text="", source="digest:image", image_path=str(output["png"]))
+            print(f"[分析进度] Session={session_dir.name} 的图已排队发送到飞书。", flush=True)
         except Exception as error:
-            print(
-                f"[分析进度] Session={session_dir.name} 分析失败：{type(error).__name__}: {str(error)[:300]}",
-                flush=True,
-            )
-            enqueue_send_request(
-                self.state_root, target_type="private", target_id=admin_id,
-                text=(f"分析失败；Session={session_dir.name}；{type(error).__name__}: "
-                      f"{str(error)[:260]}。可稍后使用 /oopz 待分析 重试。"),
-                source="analysis_error",
-            )
-            async with self._lock:
-                last = self._state.get("last_job")
-                if isinstance(last, dict) and last.get("session_id") == session_dir.name:
-                    self._state["last_job"] = {
-                        **last,
-                        "status": "analysis_failed",
-                        "analysis_failed_at": _iso(),
-                        "analysis_error": f"{type(error).__name__}: {str(error)[:500]}",
-                    }
-                    self._save_state()
+            status = "analysis_failed"
+            reason = f"{type(error).__name__}: {str(error)[:300]}"
+            extra = {"analysis_error": reason}
+            print(f"[分析进度] Session={session_dir.name} 分析失败：{reason}", flush=True)
+            self._queue_to_group(
+                text=f"分析失败（{session_dir.name}）：{reason}。可发送“待分析”重试。", source="analysis_error")
         finally:
             self._analysis_sessions.discard(session_dir.name)
+        async with self._lock:
+            last = self._state.get("last_job")
+            if isinstance(last, dict) and last.get("session_id") == session_dir.name:
+                self._state["last_job"] = {**last, "status": status, "analysis_finished_at": _iso(), **extra}
+                self._save_state()
 
-    def _session_report_pieces(self, session_dir: Path) -> list[str]:
-        # Prefer the newest complete report bundle. A generic handoff
-        # report_messages.jsonl can belong to an older analysis route and would
-        # otherwise make /oopz报告 silently send stale content.
-        full_report = self._internal_report_path(session_dir)
-        if full_report is not None:
-            for candidate in (
-                full_report.with_name("summary.text.md"),
-                full_report.with_name("summary.public.md"),
-                full_report,
-            ):
-                if candidate.is_file() and not _is_reparse_point(candidate):
-                    return split_text(report_text(candidate))
-        report_messages_path = session_dir / "handoff" / "report_messages.jsonl"
-        if report_messages_path.is_file() and not _is_reparse_point(report_messages_path):
-            pieces: list[str] = []
-            for line in report_messages_path.read_text(encoding="utf-8").splitlines():
-                if not line.strip():
-                    continue
-                try:
-                    value = json.loads(line)
-                except (ValueError, TypeError):
-                    continue
-                text = str((value or {}).get("text") or "").strip()
-                if text:
-                    pieces.append(text)
-            if pieces:
-                return split_text(overall_summary_text("\n\n".join(pieces)))
-        candidates: list[Path] = []
-        variants = session_dir / "analysis_variants"
-        if variants.is_dir():
-            for variant_dir in sorted(variants.iterdir()):
-                if variant_dir.is_dir():
-                    candidates.append(variant_dir / "summary.text.md")
-                    candidates.append(variant_dir / "summary.public.md")
-                    candidates.append(variant_dir / "summary.md")
-        candidates.append(session_dir / "analysis" / "summary.text.md")
-        candidates.append(session_dir / "analysis" / "summary.public.md")
-        candidates.append(session_dir / "analysis" / "summary.md")
-        for candidate in candidates:
-            if candidate.is_file() and not _is_reparse_point(candidate):
-                return split_text(report_text(candidate))
-        raise ValueError("报告文本不存在")
-
-    def _lifecycle_window_text(self, session_dir: Path) -> tuple[str, str]:
-        path = session_dir / "lifecycle.json"
-        if not path.is_file() or _is_reparse_point(path):
-            return "", ""
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            return "", ""
-        if not isinstance(value, dict):
-            return "", ""
-        start = str(value.get("capture_started_at") or value.get("started_at") or "")
-        end = str(value.get("stopped_at") or value.get("finished_at") or "")
-        return _fmt_beijing(start), _fmt_beijing(end)
-
-    def _delivery_for_session(self, session_id: str) -> tuple[list[str], str | None, str]:
-        session_dir = (self.output_root / session_id).resolve()
-        if session_dir.parent != self.output_root.resolve() or not session_dir.is_dir():
-            raise ValueError("会话目录不存在")
-        pieces = self._session_report_pieces(session_dir)
-        pdf_path: str | None = None
-        start_text = ""
-        end_text = ""
-        meta_path = session_dir / "report_delivery.json"
-        if meta_path.is_file() and not _is_reparse_point(meta_path):
-            try:
-                meta = json.loads(meta_path.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                meta = {}
-            if isinstance(meta, dict):
-                pdf_path = str(meta.get("pdf_path") or "").strip() or None
-                start_text = str(meta.get("started_at_text") or "")
-                end_text = str(meta.get("ended_at_text") or "")
-        if not start_text or not end_text:
-            start_text, end_text = self._lifecycle_window_text(session_dir)
-        header = ""
-        if start_text or end_text:
-            header = f"录音开始：{start_text}\n录音结束：{end_text}\n\n"
-        if header and pieces:
-            pieces = [header + pieces[0]] + pieces[1:]
-        if pdf_path is not None:
-            pdf = Path(pdf_path)
-            if not pdf.is_file() or _is_reparse_point(pdf):
-                pdf_path = None
-        if pdf_path is None:
-            pdf_path = self._render_missing_pdf(session_dir)
-        return pieces, pdf_path, session_id
-
-    def _render_missing_pdf(self, session_dir: Path) -> str | None:
-        """Create a historical PDF on demand when a report predates PDF output."""
-        full_report = self._internal_report_path(session_dir)
-        source = None
-        if full_report is not None:
-            public_report = full_report.with_name("summary.public.md")
-            source = public_report if public_report.is_file() and not _is_reparse_point(public_report) else full_report
-        if source is None:
-            return None
-        try:
-            return str(render_session_reports(session_dir, [(source, "report")])[0])
-        except Exception:
-            # The text and internal Markdown remain deliverable. The selection
-            # reply accurately states that the PDF is unavailable.
-            return None
-
-    def _internal_report_path(self, session_dir: Path) -> Path | None:
-        """Return the newest complete internal report, never the public PDF source."""
-        try:
-            root = session_dir.resolve()
-        except OSError:
-            return None
-        if root.parent != self.output_root.resolve() or not root.is_dir() or _is_reparse_point(root):
-            return None
-        candidates: list[Path] = [root / "analysis" / "summary.md"]
-        variants = root / "analysis_variants"
-        if variants.is_dir() and not _is_reparse_point(variants):
-            candidates.extend(path / "summary.md" for path in variants.iterdir() if path.is_dir())
-        valid = [path for path in candidates if path.is_file() and not _is_reparse_point(path)]
-        if not valid:
-            return None
-        return max(valid, key=lambda path: (path.stat().st_mtime_ns, str(path).casefold()))
     def _delete_session(self, session_id: str) -> None:
         root = self.output_root.resolve()
         target = (root / session_id).resolve()
@@ -1634,5 +1147,4 @@ class ControllerService:
         if not target.is_dir():
             raise ValueError("会话目录不存在")
         _validate_tree_no_links(target)
-        _delete_archived_reports(root, target)
         shutil.rmtree(target)

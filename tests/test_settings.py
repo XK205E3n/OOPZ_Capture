@@ -27,27 +27,17 @@ def test_recording_cutoff_and_empty_timeout_accept_friendly_values(tmp_path, mon
     assert "OOPZ_DEFAULT_CHANNEL_ID" not in setting_status(env_path)
 
 
-def test_generic_api_settings_accept_friendly_values(tmp_path, monkeypatch) -> None:
+def test_analyzer_settings_accept_friendly_values(tmp_path, monkeypatch) -> None:
     env_path = tmp_path / ".env"
-    monkeypatch.delenv("ANALYZER_API_KEY", raising=False)
-    monkeypatch.delenv("ANALYZER_BASE_URL", raising=False)
-    monkeypatch.delenv("ANALYZER_MODEL", raising=False)
-
-    assert apply_setting("分析供应商", "openai-compatible", env_path=env_path) == "openai-compatible"
-    assert apply_setting("分析API密钥", "go-test-key", env_path=env_path) == "已设置（长度 11）"
-    assert apply_setting("分析API地址", "https://example.test/v1", env_path=env_path) == "https://example.test/v1"
-    assert apply_setting("分析模型", "vendor/model-v1", env_path=env_path) == "vendor/model-v1"
-    assert env_path.read_text(encoding="utf-8") == (
-        "ANALYZER_PROVIDER=openai-compatible\n"
-        "ANALYZER_API_KEY=go-test-key\n"
-        "ANALYZER_BASE_URL=https://example.test/v1\n"
-        "ANALYZER_MODEL=vendor/model-v1\n"
-    )
-    # apply_setting intentionally updates the live process environment without
-    # going through monkeypatch.setenv; avoid leaking this fixture into later
-    # provider-default tests in the same pytest process.
-    for key in ("ANALYZER_PROVIDER", "ANALYZER_API_KEY", "ANALYZER_BASE_URL", "ANALYZER_MODEL"):
-        os.environ.pop(key, None)
+    monkeypatch.delenv("OOPZ_ANALYZER_MODEL", raising=False)
+    monkeypatch.delenv("OOPZ_ANALYZER_TIMEOUT_SECONDS", raising=False)
+    assert apply_setting("分析模型", "Qwen3.8-Flash", env_path=env_path) == "Qwen3.8-Flash"
+    assert apply_setting("分析超时秒", "900", env_path=env_path) == "900"
+    assert env_path.read_text(encoding="utf-8").splitlines() == ["OOPZ_ANALYZER_MODEL=Qwen3.8-Flash", "OOPZ_ANALYZER_TIMEOUT_SECONDS=900"]
+    with pytest.raises(ValueError):
+        apply_setting("分析超时秒", "5", env_path=env_path)
+    for key in ("OOPZ_ANALYZER_MODEL", "OOPZ_ANALYZER_TIMEOUT_SECONDS"):
+        os.environ.pop(key, None)            # apply_setting writes the live environment directly
 
 
 def test_chunk_setting_matches_continuous_five_minute_hard_limit(tmp_path) -> None:
@@ -78,27 +68,14 @@ def test_non_sensitive_connectivity_settings_are_settable(tmp_path, monkeypatch)
 
 
 def test_unconfigured_analyzer_settings_have_no_effective_defaults(tmp_path, monkeypatch) -> None:
-    env_path = tmp_path / ".env"
-    for key in (
-        "OOPZ_PROCESSING_DEADLINE_SECONDS",
-        "ANALYZER_PROVIDER", "ANALYZER_API_KEY", "ANALYZER_BASE_URL", "ANALYZER_MODEL",
-        "ANALYZER_TIMEOUT_SECONDS", "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS",
-        "ANALYZER_MAX_TOKENS", "ANALYZER_THINKING_MAX_TOKENS",
-        "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
-    ):
+    for key in ("OOPZ_PROCESSING_DEADLINE_SECONDS", "OOPZ_ANALYZER_MODEL", "OOPZ_ANALYZER_TIMEOUT_SECONDS"):
         monkeypatch.delenv(key, raising=False)
 
-    status = setting_status(env_path)
+    status = setting_status(tmp_path / ".env")
 
     assert status["OOPZ_PROCESSING_DEADLINE_SECONDS"] == "900"
     assert "OOPZ_SHOW_BROWSER" not in status
-    for key in (
-        "ANALYZER_PROVIDER", "ANALYZER_API_KEY", "ANALYZER_BASE_URL", "ANALYZER_MODEL",
-        "ANALYZER_TIMEOUT_SECONDS", "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS",
-        "ANALYZER_MAX_TOKENS", "ANALYZER_THINKING_MAX_TOKENS",
-        "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
-    ):
-        assert status[key] == "未设置"
+    assert status["OOPZ_ANALYZER_MODEL"] == "未设置" and status["OOPZ_ANALYZER_TIMEOUT_SECONDS"] == "未设置"
 
 
 def test_env_write_preserves_hardlink_to_shared_config(tmp_path) -> None:

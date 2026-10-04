@@ -167,19 +167,12 @@ def test_controller_reconciles_stale_failure_with_completed_capture(tmp_path: Pa
     assert "error" not in service._state["last_job"]
 
 
-def test_controller_startup_recovers_interrupted_analysis_for_status(tmp_path: Path) -> None:
+def test_controller_startup_marks_a_dead_analysis_as_interrupted(tmp_path: Path) -> None:
     session_id = "2026-08-27_19-14-12_BJT"
-    session = tmp_path / "output" / session_id
+    (tmp_path / "output" / session_id).mkdir(parents=True)
+    (tmp_path / "output" / session_id / "lifecycle.json").write_text(json.dumps({"status": "ready_for_analysis"}), encoding="utf-8")
     state = tmp_path / "feishu_state"
     state.mkdir()
-    (session / "handoff").mkdir(parents=True)
-    variant = session / "analysis_variants" / "configured-api"
-    variant.mkdir(parents=True)
-    (session / "handoff" / "analyzer_request.json").write_text("{}", encoding="utf-8")
-    (variant / ".run.lock").write_text(json.dumps({"pid": 99999999}), encoding="utf-8")
-    (variant / "lifecycle.json").write_text(json.dumps({
-        "status": "analyzing_short_windows", "updated_at": "2026-08-27T01:29:42+00:00",
-    }), encoding="utf-8")
     (state / "controller.json").write_text(json.dumps({
         "schema_version": "oopz.controller.controller.state.v1",
         "active": None,
@@ -188,5 +181,57 @@ def test_controller_startup_recovers_interrupted_analysis_for_status(tmp_path: P
 
     service = ControllerService(controller_config(tmp_path))
 
-    assert service._state["last_job"]["status"] == "analysis_interrupted_recoverable"
-    assert not (variant / ".run.lock").exists()
+    assert service._state["last_job"]["status"] == "analysis_interrupted"
+
+
+def test_a_finished_recording_is_analysed_and_only_the_image_is_queued(tmp_path: Path) -> None:
+    from oopz_capture.continuous import ContinuousRequest
+    from oopz_capture.send_request import list_send_requests
+
+    async def loader(*args):
+        return object()
+
+    async def capture(config, request, *, output_root, device, session_id):
+        session = output_root / session_id
+        session.mkdir(parents=True)
+        (session / "lifecycle.json").write_text(json.dumps({"status": "ready_for_analysis", "stop_reason": "done"}), encoding="utf-8")
+        return session
+
+    analysed = []
+
+    def analyse(session_dir):
+        analysed.append(session_dir.name)
+        png = session_dir / "analysis" / "digest" / "digest.png"
+        png.parent.mkdir(parents=True)
+        png.write_bytes(b"png")
+        return {"png": str(png)}
+
+    service = ControllerService(controller_config(tmp_path), config_loader=loader, capture_runner=capture, analysis_runner=analyse)
+
+    async def run():
+        request = ContinuousRequest(request_id="r", area_id="a", channel_id="c", consent_confirmed=True, requested_by={})
+        service._state["active"] = {"session_id": "s1", "status": "recording"}
+        await service._run_session("s1", request)
+        await service.shutdown()
+
+    asyncio.run(run())
+    assert analysed == ["s1"]
+    queued = list_send_requests(service.state_root, statuses={"pending"})
+    assert len(queued) == 1 and queued[0]["image_path"].endswith("digest.png") and queued[0]["text"] == ""
+    assert service._state["last_job"]["status"] == "analysis_completed"
+
+
+def test_a_failed_analysis_is_reported_in_text_and_can_be_retried(tmp_path: Path) -> None:
+    from oopz_capture.send_request import list_send_requests
+    session = tmp_path / "output" / "s1"
+    session.mkdir(parents=True)
+
+    def broken(session_dir):
+        raise RuntimeError("model unreachable")
+
+    service = ControllerService(controller_config(tmp_path), analysis_runner=broken)
+    service._state["last_job"] = {"session_id": "s1", "status": "analyzing"}
+    asyncio.run(service._analyze_and_deliver(session))
+    queued = list_send_requests(service.state_root, statuses={"pending"})
+    assert len(queued) == 1 and "model unreachable" in queued[0]["text"] and "待分析" in queued[0]["text"]
+    assert service._state["last_job"]["status"] == "analysis_failed" and "s1" not in service.busy_sessions()

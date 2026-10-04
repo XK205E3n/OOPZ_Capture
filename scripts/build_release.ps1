@@ -102,11 +102,7 @@ try {
                 'scripts/linux/release_transaction.py',
                 'scripts/linux/prepare_dependencies.sh',
                 'scripts/linux/oopz-capture.service',
-                'scripts/linux/oopz-capture.logrotate',
-                'src/oopz_capture/weasy_pdf.py',
-                'tools/md_to_html.mjs',
-                'tools/md_to_pdf.mjs',
-                'tools/md_to_pdf.css'
+                'scripts/linux/oopz-capture.logrotate'
             )) {
                 if ($null -eq $verification.GetEntry($requiredEntry)) {
                     throw "Release entry is missing: $requiredEntry"

@@ -55,6 +55,7 @@ def enqueue_send_request(
     text: str,
     source: str,
     file_path: str | None = None,
+    image_path: str | None = None,
     notify_admin_id: str | None = None,
 ) -> dict[str, Any]:
     """Queue one outbound message (already split by the caller)."""
@@ -66,9 +67,12 @@ def enqueue_send_request(
     file_path_value = str(file_path or "").strip() or None
     if file_path_value is not None and len(file_path_value) > 2048:
         raise ValueError("file_path is too long")
+    image_path_value = str(image_path or "").strip() or None
+    if image_path_value is not None and len(image_path_value) > 2048:
+        raise ValueError("image_path is too long")
     text = str(text or "").strip()
-    if (not text and not file_path_value) or len(text) > 8000:
-        raise ValueError("text must contain 1 to 8000 characters or a file_path")
+    if (not text and not file_path_value and not image_path_value) or len(text) > 8000:
+        raise ValueError("text must contain 1 to 8000 characters, a file_path or an image_path")
     notify_admin_value = str(notify_admin_id or "").strip() or None
     if notify_admin_value is not None and not re.fullmatch(r"[A-Za-z0-9_-]{1,256}", notify_admin_value):
         raise ValueError("notify_admin_id must contain 1 to 256 safe identifier characters")
@@ -80,6 +84,7 @@ def enqueue_send_request(
         "target_id": target_id,
         "text": text,
         "file_path": file_path_value,
+        "image_path": image_path_value,
         "notify_admin_id": notify_admin_value,
         "source": str(source or "")[:100],
         "status": "pending",

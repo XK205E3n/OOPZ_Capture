@@ -250,56 +250,6 @@ def purge_session_audio(output_root: Path, session_dir: Path, *, deleted_at: dat
     return deleted
 
 
-def _delete_archived_reports(output_root: Path, session_dir: Path) -> None:
-    """Delete only PDFs explicitly associated with an expired managed Session.
-
-    New reports carry a manifest. For historical reports, derive the stable
-    filename prefix used by the renderer. No other Report files are touched.
-    """
-    report_root = (output_root / "Report").resolve()
-    targets: list[Path] = []
-    manifest_path = session_dir / "report_archive.json"
-    if manifest_path.is_file() and not _is_reparse_point(manifest_path):
-        try:
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            entries = manifest.get("files") if isinstance(manifest, dict) else []
-        except (OSError, ValueError, TypeError):
-            entries = []
-        if isinstance(entries, list):
-            for entry in entries:
-                candidate = (output_root / str(entry)).resolve()
-                try:
-                    candidate.relative_to(report_root)
-                except ValueError:
-                    continue
-                targets.append(candidate)
-    if not targets and report_root.is_dir() and not _is_reparse_point(report_root):
-        try:
-            from .pdf_reports import session_report_stamp
-            date_folder, stamp = session_report_stamp(session_dir)
-            date_root = (report_root / date_folder).resolve()
-            if date_root.parent == report_root and date_root.is_dir() and not _is_reparse_point(date_root):
-                targets.extend(date_root.glob(f"{stamp}_*.pdf"))
-        except (OSError, ValueError, TypeError):
-            pass
-    parent_dirs: set[Path] = set()
-    for target in targets:
-        if not target.is_file() or _is_reparse_point(target):
-            continue
-        try:
-            target.relative_to(report_root)
-        except ValueError:
-            continue
-        parent_dirs.add(target.parent)
-        target.unlink()
-    for directory in sorted(parent_dirs, key=lambda item: len(item.parts), reverse=True):
-        if directory != report_root:
-            try:
-                directory.rmdir()
-            except OSError:
-                pass
-
-
 async def _run_transcription_process(
     session_dir: Path,
     request: WorkflowRequest,

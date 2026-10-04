@@ -13,7 +13,6 @@ import sys
 from typing import Sequence
 
 from .feishu_gateway import CAPTURE_ONLY_HELP_TEXT, FEISHU_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
-from .feishu_publisher import FeishuPublisher, LarkPublishingClient
 from .settings import upsert_env
 
 
@@ -145,8 +144,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     from .env_loader import load_project_env
     load_project_env()
     parser = argparse.ArgumentParser(prog="oopz-feishu", description="OOPZ Feishu group-control gateway")
-    parser.add_argument("command", choices=["serve", "drain", "notify", "reconcile-publications", "repair-publication-index", "backfill-publications", "discover-ids", "setup"])
-    parser.add_argument("--capture-only", action="store_true", help="isolated CPU capture/transcription; disables analysis, reports, publication and cleanup")
+    parser.add_argument("command", choices=["serve", "drain", "notify", "discover-ids", "setup"])
+    parser.add_argument("--capture-only", action="store_true", help="isolated CPU capture/transcription; disables analysis, image delivery and cleanup")
     parser.add_argument("message", nargs="?", help="message text for notify")
     parser.add_argument("--lifecycle", choices=["started", "restarted"], help="send this lifecycle status once the long connection is ready")
     parser.add_argument("--runtime-log", help="append stdout to this UTF-8 log (serve only)")
@@ -245,8 +244,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             require_mention=True,
         ),
     )
-    publisher = (FeishuPublisher(config.publication, LarkPublishingClient(config.app_id, config.app_secret), output_root=config.controller_config.output_root) if config.publication else None)
-    gateway = FeishuGateway(config, channel, publisher=publisher)
+    gateway = FeishuGateway(config, channel)
     if args.command == "drain":
         print(asyncio.run(gateway.drain_outbox()))
         return 0
@@ -263,16 +261,6 @@ def main(argv: Sequence[str] | None = None) -> int:
                 await channel.disconnect()
         asyncio.run(notify())
         return 0
-    if args.command == "reconcile-publications":
-        print(asyncio.run(gateway.reconcile_publications()))
-        return 0
-    if args.command == "repair-publication-index":
-        print(asyncio.run(gateway.repair_publication_index()))
-        return 0
-    if args.command == "backfill-publications":
-        print(asyncio.run(gateway.backfill_publications()))
-        return 0
-
     async def on_message(message):
         if getattr(gateway.controller, "_stopping", False):
             return
@@ -308,7 +296,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 
 async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | None) -> None:
-    """Keep the long connection alive: drain the outbox, reconcile hourly, clean retention minutely.
+    """Keep the long connection alive: drain the outbox every second, clean retention every minute.
 
     A failure inside one housekeeping step must never kill the gateway process:
     this loop is the only remote control surface and it shares the process with
@@ -317,7 +305,6 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
     """
     import traceback
 
-    last_reconcile = 0.0
     last_retention_cleanup = 0.0
     loop = asyncio.get_running_loop()
     stopping = asyncio.Event()
@@ -362,16 +349,11 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
             await gateway.send_lifecycle_notice(notice)
         while not stopping.is_set():
             now = asyncio.get_running_loop().time()
-            do_reconcile = now - last_reconcile >= 3600
             do_retention_cleanup = now - last_retention_cleanup >= 60
-            if do_reconcile:
-                last_reconcile = now
             if do_retention_cleanup:
                 last_retention_cleanup = now
             try:
                 await gateway.drain_outbox()
-                if do_reconcile and not stopping.is_set():
-                    await gateway.reconcile_publications()
                 if do_retention_cleanup and not stopping.is_set():
                     await gateway.cleanup_expired_sessions()
             except asyncio.CancelledError:

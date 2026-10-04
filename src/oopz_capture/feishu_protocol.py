@@ -21,8 +21,7 @@ _RAW_ALLOWED = {
     "/oopz 帮助", "/oopz help",
     "/oopz 状态", "/oopz status",
     "/oopz 离开", "/oopz stop", "/oopz leave",
-    "/oopz 最近报告", "/oopz reports", "/oopz report",
-    "/oopz 详细报告", "/oopz reportfull",
+    "/oopz 最近图片", "/oopz digest",
     "/oopz 待分析", "/oopz pending",
     "/oopz 删除会话", "/oopz delete session",
     "/oopz 设置状态", "/oopz settings",
@@ -31,8 +30,7 @@ _RAW_CANONICAL = {
     "/oopz 帮助": "/oopz 帮助", "/oopz help": "/oopz 帮助",
     "/oopz 状态": "/oopz 状态", "/oopz status": "/oopz 状态",
     "/oopz 离开": "/oopz 离开", "/oopz stop": "/oopz 离开", "/oopz leave": "/oopz 离开",
-    "/oopz 最近报告": "/oopz 最近报告", "/oopz reports": "/oopz 最近报告", "/oopz report": "/oopz 最近报告",
-    "/oopz 详细报告": "/oopz 详细报告", "/oopz reportfull": "/oopz 详细报告",
+    "/oopz 最近图片": "/oopz 最近图片", "/oopz digest": "/oopz 最近图片",
     "/oopz 待分析": "/oopz 待分析", "/oopz pending": "/oopz 待分析",
     "/oopz 删除会话": "/oopz 删除会话", "/oopz delete session": "/oopz 删除会话",
     "/oopz 设置状态": "/oopz 设置状态", "/oopz settings": "/oopz 设置状态",
@@ -61,8 +59,7 @@ def display_intent(command: str | None) -> str:
         "/oopz 帮助": "帮助",
         "/oopz 状态": "状态",
         "/oopz 离开": "停止",
-        "/oopz 最近报告": "最近报告",
-        "/oopz 详细报告": "详细报告",
+        "/oopz 最近图片": "最近图片",
         "/oopz 待分析": "待分析",
         "/oopz 删除会话": "删除会话",
         "/oopz 设置状态": "设置状态",
@@ -94,7 +91,7 @@ def normalize_intent(text: str) -> str | None:
     raw = _SPACE.sub(" ", str(text or "").strip())
     if raw.startswith("@"):
         marker = re.search(
-            r"(?i)(?:帮助|开始录音|状态|停止|待分析|最近报告|详细报告|删除会话|设置状态|设置\s+|开始分析|暂不分析)",
+            r"(?i)(?:帮助|开始录音|状态|停止|待分析|最近图片|删除会话|设置状态|设置\s+)",
             raw,
         )
         if marker:
@@ -102,7 +99,7 @@ def normalize_intent(text: str) -> str | None:
     value = raw.casefold()
     if not raw:
         return None
-    if value.isdigit() or value in {"取消", "退出", "cancel", "是", "否", "yes", "no", "y", "n", "跳过"}:
+    if value.isdigit() or value in {"取消", "退出", "cancel"}:
         return value
     if value in _RAW_CANONICAL:
         return _RAW_CANONICAL[value]
@@ -116,10 +113,8 @@ def normalize_intent(text: str) -> str | None:
         return "/oopz 帮助"
     if value in {"设置状态", "settings"}:
         return "/oopz 设置状态"
-    if value in {"最近报告", "recent report"}:
-        return "/oopz 最近报告"
-    if value in {"详细报告", "report full"}:
-        return "/oopz 详细报告"
+    if value in {"最近图片", "digest"}:
+        return "/oopz 最近图片"
     if value in {"待分析", "pending"}:
         return "/oopz 待分析"
     if re.fullmatch(r"(?:设置|set)\s+[^\s=]+\s*=\s*.+", raw, re.I):
@@ -128,10 +123,6 @@ def normalize_intent(text: str) -> str | None:
         return "/oopz 状态"
     if value in {"停止", "stop"}:
         return "/oopz 离开"
-    if value in {"开始分析", "是", "yes", "y"}:
-        return "是"
-    if value in {"暂不分析", "否", "no", "n", "跳过"}:
-        return "否"
     start = re.fullmatch(r"开始录音(?:\s*(.+))?", raw, re.I)
     if start:
         duration_text = str(start.group(1) or "").strip()

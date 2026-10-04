@@ -126,8 +126,6 @@ def artifact(host, *, missing=None, extra=None):
     path = host['tmp'] / 'release.zip'
     with zipfile.ZipFile(path, 'w') as archive:
         files = list(SCRIPTS.glob('*')) + [REPO / '.env.example', REPO / 'pyproject.toml', REPO / 'scripts/download_sensevoice_model.py']
-        files += [REPO / name for name in ('src/oopz_capture/weasy_pdf.py', 'tools/md_to_html.mjs',
-                                           'tools/md_to_pdf.mjs', 'tools/md_to_pdf.css')]
         for file in files:
             if file.is_file():
                 name = str(file.relative_to(REPO))
@@ -205,9 +203,7 @@ def test_u1_update_runs_real_installer_with_all_helpers(host):
     assert not list((host['root']/'artifacts').glob('.verified-*'))
 
 
-@pytest.mark.parametrize('missing',['scripts/linux/release_transaction.py','scripts/linux/release_locks.py','scripts/linux/release_archive.py','scripts/linux/prepare_dependencies.sh',
-                                    'src/oopz_capture/weasy_pdf.py', 'tools/md_to_html.mjs',
-                                    'tools/md_to_pdf.mjs', 'tools/md_to_pdf.css'])
+@pytest.mark.parametrize('missing',['scripts/linux/release_transaction.py','scripts/linux/release_locks.py','scripts/linux/release_archive.py','scripts/linux/prepare_dependencies.sh'])
 def test_missing_helper_rejected_before_any_service_or_dependency(host,missing):
     archive,digest=artifact(host,missing=missing)
     result=call(host,'update','--artifact',str(archive),'--sha256',digest)

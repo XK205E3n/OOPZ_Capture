@@ -29,8 +29,6 @@ def clean_source(tmp_path):
     for relative in (
         '.gitattributes', 'scripts/build_release.ps1',
         'scripts/download_sensevoice_model.py', '.env.example',
-        'src/oopz_capture/weasy_pdf.py', 'tools/md_to_html.mjs',
-        'tools/md_to_pdf.mjs', 'tools/md_to_pdf.css',
     ):
         path = source / relative
         path.parent.mkdir(parents=True, exist_ok=True)

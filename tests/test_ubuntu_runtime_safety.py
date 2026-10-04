@@ -12,43 +12,10 @@ import threading
 
 import pytest
 
-from oopz_capture import analyzer_job, process_utils, reports
+from oopz_capture import process_utils
 from oopz_capture.controller import ControllerService
 from oopz_capture.workflow import _resolved_direct_child, _run_transcription_process
-from test_analyzer_job import make_session
 from test_controller import controller_config
-
-
-@pytest.mark.parametrize('payload', ['{', '[]', '{}', '{"pid":0}', '{"pid":-1}',
-                                     '{"pid":true}', '{"pid":"123"}', '{"pid":1.5}',
-                                     '{"pid":99999999999999999999}'])
-def test_unknown_locks_never_reclaimed(tmp_path, payload):
-    lock = tmp_path / '.run.lock'
-    lock.write_text(payload)
-    with pytest.raises(RuntimeError):
-        analyzer_job._acquire_run_lock(lock)
-    assert reports._lock_is_active(lock)
-    analyzer_job._release_lock(lock)
-    assert lock.read_text() == payload
-
-
-@pytest.mark.parametrize('kind', ['dangling', 'file', 'directory'])
-def test_unsafe_lock_nodes_refused(tmp_path, kind):
-    lock = tmp_path / '.run.lock'
-    if kind == 'directory':
-        lock.mkdir()
-    else:
-        target = tmp_path / 'target'
-        if kind == 'file':
-            target.write_text('{"pid":999999999}')
-        try:
-            lock.symlink_to(target)
-        except OSError:
-            pytest.skip('symlinks unavailable')
-    with pytest.raises(RuntimeError):
-        analyzer_job._acquire_run_lock(lock)
-    assert reports._lock_is_active(lock)
-    assert os.path.lexists(lock)
 
 
 @pytest.mark.parametrize('code,expected', [(errno.EPERM, True), (errno.EACCES, True),
@@ -64,38 +31,19 @@ def test_only_missing_process_proves_stale(monkeypatch, code, expected):
 
 def test_shared_root_links_work_but_session_links_do_not(tmp_path):
     shared = tmp_path / '共享 output'
-    shared.mkdir()
-    handoff = make_session(shared)
+    session = shared / 'session'
+    session.mkdir(parents=True)
     alias = tmp_path / 'release output'
     try:
         alias.symlink_to(shared, target_is_directory=True)
     except OSError:
         pytest.skip('symlinks unavailable')
-    through_alias = alias / handoff.relative_to(shared)
-    assert analyzer_job.prepare_analysis(through_alias)['session_dir'] == handoff.parent.parent
-    root, session = _resolved_direct_child(alias, through_alias.parent.parent)
-    assert root == shared
-    assert session == handoff.parent.parent
+    root, resolved = _resolved_direct_child(alias, alias / 'session')
+    assert root == shared and resolved == session
     session_alias = alias / 'session-alias'
     session_alias.symlink_to(session, target_is_directory=True)
     with pytest.raises(ValueError, match='linked session'):
         _resolved_direct_child(alias, session_alias)
-    with pytest.raises(ValueError, match='may not be links'):
-        analyzer_job.load_analyzer_input(session_alias / 'handoff/analyzer_request.json')
-    (session / 'analysis' / 'escape').symlink_to(tmp_path / 'absent')
-    with pytest.raises(ValueError, match='linked retention target'):
-        analyzer_job.prepare_analysis(through_alias)
-
-
-def test_recovery_preserves_corrupt_lock_and_lifecycle(tmp_path):
-    handoff = make_session(tmp_path)
-    analysis = handoff.parent.parent / 'analysis'
-    analysis.mkdir()
-    (analysis / '.run.lock').write_text('{broken')
-    (analysis / 'lifecycle.json').write_text('{"status":"running"}')
-    assert reports.recover_interrupted_analysis_sessions(tmp_path) == []
-    assert (analysis / '.run.lock').read_text() == '{broken'
-    assert json.loads((analysis / 'lifecycle.json').read_text())['status'] == 'running'
 
 
 @pytest.mark.parametrize('phase', ['recording', 'transcribing', 'api'])
@@ -141,7 +89,7 @@ def test_controller_shutdown_drains_owned_work(tmp_path, phase):
         assert service._stopping
         assert not shutdown.done()
         assert not task.cancelled()
-        assert not service._start_analysis_and_deliver(session, 'admin')
+        assert not service._start_analysis_and_deliver(session)
         if phase == 'api':
             release.set()
         else:

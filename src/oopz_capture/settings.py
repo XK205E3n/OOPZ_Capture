@@ -150,71 +150,20 @@ SETTABLE_KEYS: dict[str, dict[str, object]] = {
         "description": "转写设备 cpu / cuda:0",
         "secret": False,
     },
-    "OOPZ_ANALYSIS_MAX_PARALLELISM": {
-        "validator": lambda value: value.isdigit() and 1 <= int(value) <= 8,
-        "description": "分析并行任务数 1-8",
-        "secret": False,
-    },
-    "ANALYZER_PROVIDER": {
-        "validator": lambda value: value in _PROVIDERS,
-        "description": "分析供应商 deepseek / opencode-go / openai-compatible",
-        "secret": False,
-    },
-    "ANALYZER_API_KEY": {
-        "validator": lambda value: 8 <= len(value) <= 512 and "\n" not in value and "\r" not in value,
-        "description": "分析 API Key（Bearer Token）",
-        "secret": True,
-    },
-    "ANALYZER_BASE_URL": {
-        "validator": _https_url,
-        "description": "分析 API HTTPS 地址",
-        "secret": False,
-    },
-    "ANALYZER_MODEL": {
+    "OOPZ_ANALYZER_MODEL": {
         "validator": lambda value: bool(_MODEL_RE.fullmatch(value)),
-        "description": "分析模型 ID",
+        "description": "分析模型（Qoder CLI 的模型名，如 Qwen3.8-Flash）",
         "secret": False,
     },
-    "ANALYZER_TIMEOUT_SECONDS": {
-        "validator": lambda value: value.isdigit() and 1 <= int(value) <= 600,
-        "description": "API 超时秒数 1-600",
-        "secret": False,
-    },
-    "ANALYZER_MAX_RETRIES": {
-        "validator": lambda value: value.isdigit() and 0 <= int(value) <= 8,
-        "description": "API 失败重试次数 0-8",
-        "secret": False,
-    },
-    "ANALYZER_MIN_INTERVAL_SECONDS": {
-        "validator": lambda value: bool(re.fullmatch(r"\d+(?:\.\d+)?", value)) and 0 <= float(value) <= 60,
-        "description": "API 请求最小间隔秒数 0-60",
-        "secret": False,
-    },
-    "ANALYZER_MAX_TOKENS": {
-        "validator": lambda value: value.isdigit() and 128 <= int(value) <= 384000,
-        "description": "普通请求最大输出 Token 128-384000",
-        "secret": False,
-    },
-    "ANALYZER_THINKING_MAX_TOKENS": {
-        "validator": lambda value: value.isdigit() and 128 <= int(value) <= 384000,
-        "description": "思考请求最大输出 Token 128-384000",
-        "secret": False,
-    },
-    "ANALYZER_THINKING_MODE": {
-        "validator": lambda value: value in _THINKING_MODES,
-        "description": "思考模式 auto / enabled / disabled",
-        "secret": False,
-    },
-    "ANALYZER_JSON_MODE": {
-        "validator": lambda value: value in {"true", "false"},
-        "description": "JSON 模式 true / false",
+    "OOPZ_ANALYZER_TIMEOUT_SECONDS": {
+        "validator": lambda value: value.isdigit() and 60 <= int(value) <= 3600,
+        "description": "单次模型调用超时秒数 60-3600",
         "secret": False,
     },
 }
 
 # Defaults used by the real Feishu gateway, controller, and SDK-backed login
-# flow. ANALYZER_* settings are intentionally absent: users must explicitly
-# configure every analysis API field.
+# flow.
 SETTING_DEFAULTS: dict[str, str] = {
     "OOPZ_CUTOFF_LOCAL_HOUR": "4",
     "OOPZ_EMPTY_CHANNEL_TIMEOUT_SECONDS": "300",
@@ -235,7 +184,6 @@ SETTING_DEFAULTS: dict[str, str] = {
     "OOPZ_RETAIN_AUDIO": "false",
     "OOPZ_RETENTION_HOURS": "360",
     "OOPZ_DEVICE": "cpu",
-    "OOPZ_ANALYSIS_MAX_PARALLELISM": "4",
 }
 
 KEY_ORDER = tuple(SETTABLE_KEYS)
@@ -250,18 +198,8 @@ SETTING_ALIASES = {
     "保留音频": "OOPZ_RETAIN_AUDIO",
     "文本保留小时": "OOPZ_RETENTION_HOURS",
     "转写设备": "OOPZ_DEVICE",
-    "分析并行数": "OOPZ_ANALYSIS_MAX_PARALLELISM",
-    "分析供应商": "ANALYZER_PROVIDER",
-    "分析api密钥": "ANALYZER_API_KEY",
-    "分析api地址": "ANALYZER_BASE_URL",
-    "分析模型": "ANALYZER_MODEL",
-    "分析超时秒": "ANALYZER_TIMEOUT_SECONDS",
-    "分析重试次数": "ANALYZER_MAX_RETRIES",
-    "分析最小间隔秒": "ANALYZER_MIN_INTERVAL_SECONDS",
-    "分析最大token": "ANALYZER_MAX_TOKENS",
-    "分析思考最大token": "ANALYZER_THINKING_MAX_TOKENS",
-    "分析思考模式": "ANALYZER_THINKING_MODE",
-    "分析json模式": "ANALYZER_JSON_MODE",
+    "分析模型": "OOPZ_ANALYZER_MODEL",
+    "分析超时秒": "OOPZ_ANALYZER_TIMEOUT_SECONDS",
 }
 
 

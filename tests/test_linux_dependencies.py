@@ -26,8 +26,7 @@ def test_preparation_checks_selected_browser_with_sandbox(tmp_path, browser_over
         (modules / package).mkdir()
         (modules / package / '__init__.py').write_text('')
     (modules / 'oopz_capture/feishu_cli.py').write_text('')
-    (modules / 'oopz_capture/weasy_pdf.py').write_text('def require_weasyprint(): pass\n')
-    (modules / 'weasyprint.py').write_text('')
+    (modules / 'PIL.py').write_text('')
     for name in ('funasr', 'torchaudio', 'onnxruntime'):
         (modules / f'{name}.py').write_text('')
     (modules / 'torch.py').write_text('class cuda:\n @staticmethod\n def is_available(): return False\n')

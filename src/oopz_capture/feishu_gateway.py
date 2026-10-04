@@ -8,23 +8,22 @@ import os
 import re
 import time
 from dataclasses import dataclass, replace
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
 from .feishu_protocol import FeishuInbound, display_intent, normalize_intent, synthetic_controller_id
-from .feishu_publisher import FeishuPublisher, PublicationConfig, public_report_fingerprint, recording_title
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none as _read_json_or_none
 from .controller import ControllerConfig, ControllerService, _env_bool
 from .controller_protocol import SenderPolicy
-from .reports import find_pending_sessions, find_recent_reports
+from .analyzer.backend import QoderCli
+from .sessions import digest_png, find_pending_sessions, find_recent_digests
 from .settings import canonical_setting_key, setting_description, setting_is_configured, setting_status
 from .send_request import acknowledge_send_request, list_send_requests, reschedule_send_request, send_request_is_due
 
 
-CAPTURE_ONLY_HELP_TEXT = "仅录音转写模式：@OOPZ 开始录音 [时长]，随后选择域和语音频道并确认已告知参与者；状态；停止。分析、报告、发布和删除均已禁用。"
-
+CAPTURE_ONLY_HELP_TEXT = "仅录音转写模式：@OOPZ 开始录音 [时长]，随后选择域和语音频道并确认已告知参与者；状态；停止。分析和出图已禁用。"
 
 def _capture_only_command_allowed(command: str) -> bool:
     return (command in {"/oopz 帮助", "/oopz help", "/oopz 状态", "/oopz 离开", "取消", "退出", "cancel"}
@@ -33,26 +32,17 @@ def _capture_only_command_allowed(command: str) -> bool:
 
 
 FEISHU_HELP_TEXT = "\n".join([
-    "飞书群共用指令（仅本群成员 @OOPZ 后生效）",
+    "@OOPZ 后发送以下指令（仅本群成员有效）",
     "",
-    "【录音与分析】",
+    "• 开始录音 [时长]：例如“开始录音”“开始录音 1小时”“开始录音 45分钟”；随后点击卡片选择 OOPZ 域和语音频道。不填时长会一直录到北京时间强制结束时间，或频道无人时自动退出。",
+    "• 停止：结束当前录音。转写完成后会自动分析，并把成品图发到本群，不需要再确认。",
+    "• 状态：查看当前录音或最近一次分析的状态。",
+    "• 待分析：列出还没出图的录音（例如分析失败的），选择后重新分析。",
+    "• 最近图片：列出最近出过图的录音，选择后重新发送图片。",
+    "• 删除会话 [Session ID]：删除本地的录音、转写和图片；需要再点一次确认。",
+    "• 设置状态：显示可由本群调整的运行参数（敏感值不显示）。",
+    "• 设置 变量=值：例如“设置 OOPZ_LANGUAGE=zh”。密码、手机号等只能在服务器上配置。",
     "• 帮助：显示本说明。",
-    "• 开始录音 [时长]：时长可省略，例如“开始录音”“开始录音 1小时”“开始录音 45分钟”；随后点击卡片选择 OOPZ 域和语音频道。未填写时长时会持续录音，但仍受北京时间强制结束时间和频道无人自动退出保护；也可随时发送“停止”。",
-    "• 状态：查看当前录音或最近一次分析状态。",
-    "• 停止：安全结束当前录音；完成转写后，点击卡片选择“开始分析”或“暂不分析”。",
-    "• 待分析：列出尚未完成分析的录音；选择后再次开始分析。",
-    "",
-    "【报告与会话】",
-    "• 最近报告：列出最近 7 份报告；选择后将对应 PDF 上传到本群。",
-    "• 详细报告：列出最近 7 份报告；选择后将内部完整 .md 上传到本群。",
-    "• 删除会话 [Session ID]：列出可删除会话，或指定 Session ID；必须再次点击确认，才会删除本地会话、公开文档及其公开索引记录。",
-    "",
-    "【运行设置】",
-    "• 设置状态：显示可由本群调整的当前运行参数（敏感值会打码）。",
-    "• 设置 变量=值：例如“设置 OOPZ_LANGUAGE=zh”“设置 分片时长=300”。",
-    "",
-    "──────────",
-    "说明：频道、分析、报告、发布和撤回卡片均对本群所有成员开放；同一事件不会重复执行。公开报告经“批准发布”后进入公开日历，日历记录内的“打开公开报告”链接用于阅读。为避免在群消息中泄露凭据，密码、手机号和 API Key 只能在本机配置，不接受群内设置。",
 ])
 
 
@@ -61,54 +51,29 @@ FEISHU_HELP_TEXT = "\n".join([
 FEISHU_SETTING_KEYS = frozenset({
     "OOPZ_CUTOFF_LOCAL_HOUR", "OOPZ_EMPTY_CHANNEL_TIMEOUT_SECONDS", "OOPZ_CHUNK_SECONDS",
     "OOPZ_TRANSCRIPTION_REPAIR_ATTEMPTS", "OOPZ_LANGUAGE", "OOPZ_RETAIN_AUDIO",
-    "OOPZ_RETENTION_HOURS", "OOPZ_DEVICE", "OOPZ_ANALYSIS_MAX_PARALLELISM",
-    "OOPZ_PROCESSING_DEADLINE_SECONDS", "OOPZ_POLL_INTERVAL_SECONDS",
+    "OOPZ_RETENTION_HOURS", "OOPZ_DEVICE", "OOPZ_PROCESSING_DEADLINE_SECONDS", "OOPZ_POLL_INTERVAL_SECONDS",
     "OOPZ_MEMBERSHIP_REFRESH_SECONDS", "OOPZ_MEMBERSHIP_TIMEOUT_SECONDS",
     "OOPZ_CONNECTION_CHECK_SECONDS", "OOPZ_DISCONNECT_GRACE_SECONDS",
     "OOPZ_BROWSER_OPERATION_TIMEOUT_SECONDS", "OOPZ_RECONNECT_WINDOW_SECONDS",
     "OOPZ_RECONNECT_INITIAL_DELAY_SECONDS", "OOPZ_RECONNECT_MAX_DELAY_SECONDS",
     "OOPZ_RECONNECT_ATTEMPT_TIMEOUT_SECONDS",
-    "ANALYZER_PROVIDER", "ANALYZER_MODEL", "ANALYZER_TIMEOUT_SECONDS",
-    "ANALYZER_MAX_RETRIES", "ANALYZER_MIN_INTERVAL_SECONDS", "ANALYZER_MAX_TOKENS",
-    "ANALYZER_THINKING_MAX_TOKENS", "ANALYZER_THINKING_MODE", "ANALYZER_JSON_MODE",
+    "OOPZ_ANALYZER_MODEL", "OOPZ_ANALYZER_TIMEOUT_SECONDS",
 })
 
 # These settings affect credentials, trust boundaries, storage paths, gateway
 # identity, or low-level connectivity.  The status command may name them so an
 # operator knows where to look, but it must never read or echo their values.
 LOCAL_ONLY_SETTING_INFO: dict[str, tuple[str, str]] = {
-    "ANALYZER_API_KEY": (
-        "分析 API 凭据",
-        "未设置，分析不可用",
-    ),
-    "ANALYZER_BASE_URL": (
-        "分析 API 地址",
-        "未设置，分析不可用",
-    ),
+    "OOPZ_ANALYZER_CLI": ("Qoder CLI 可执行文件路径", "未设置，分析不可用"),
+    "OOPZ_ANALYZER_HOME": ("Qoder CLI 的 HOME（保存其登录）", "未设置，分析不可用"),
     "OOPZ_FEISHU_ADMIN_CHAT_ID": (
         "唯一接受控制指令的飞书群 ID",
         "未设置，启动后等待首次群邀请并自动绑定",
     ),
     "OOPZ_FEISHU_APP_ID": ("飞书机器人应用 ID", "未设置，网关无法启动"),
     "OOPZ_FEISHU_APP_SECRET": ("飞书机器人应用密钥", "未设置，网关无法启动"),
-    "OOPZ_FEISHU_BASE_APP_TOKEN": (
-        "公开索引多维表格 App Token",
-        "未设置，公开发布和删除不可用",
-    ),
-    "OOPZ_FEISHU_BASE_TABLE_ID": (
-        "公开索引数据表 ID",
-        "未设置，公开发布和删除不可用",
-    ),
-    "OOPZ_FEISHU_PUBLIC_FOLDER_TOKEN": (
-        "公开报告文档目录 Token",
-        "未设置，公开发布和删除不可用",
-    ),
-    "OOPZ_FEISHU_PUBLIC_INDEX_URL": (
-        "发给读者的公开索引 HTTPS 地址",
-        "未设置，公开发布不可用",
-    ),
     "OOPZ_FEISHU_STATE_ROOT": (
-        "飞书事件去重、发布决策和控制状态目录",
+        "飞书事件去重和控制状态目录",
         "未设置，使用 feishu_state",
     ),
     "OOPZ_LOGIN_PASSWORD": (
@@ -146,8 +111,6 @@ def adapt_controller_reply_for_feishu(text: str) -> str:
 
     exact = {
         "不支持的指令；发送 /oopz 帮助 查看可用指令。": "该指令尚未接入飞书。请在本群 @OOPZ 后发送“帮助”查看可用指令。",
-        "已跳过分析。可用 /oopz待分析 查看未分析会话。": "已跳过分析。需要再次处理时，请在本群 @OOPZ 后发送“待分析”。",
-        "请回复：是 / 否。": "请点击分析卡片中的“开始分析”或“暂不分析”。",
     }
     if adapted in exact:
         return exact[adapted]
@@ -161,7 +124,6 @@ def adapt_controller_reply_for_feishu(text: str) -> str:
         flags=re.IGNORECASE,
     )
     replacements = (
-        (r"(?:请)?回复\s*[：:]\s*是\s*/\s*否[。.]?", "请点击下方按钮选择“开始分析”或“暂不分析”。"),
         (r"格式：\s*/oopz\s*设置\s*变量名=值；可用变量见\s*/oopz\s*设置状态。", "格式：发送“设置 变量名=值”；可用变量请发送“设置状态”查看。"),
         (r"如需结束当前录音，请发送\s*/oopz\s*(?:离开|leave|stop)。", "如需结束当前录音，请在本群 @OOPZ 后发送“停止”。"),
         (r"请用\s*/oopz\s*状态\s*查看进度。", "请在本群 @OOPZ 后发送“状态”查看进度。"),
@@ -198,20 +160,15 @@ class FeishuGatewayConfig:
     admin_chat_id: str
     state_root: Path
     controller_config: ControllerConfig
-    publication: PublicationConfig | None = None
     capture_only: bool = False
 
     @classmethod
     def from_env(cls) -> "FeishuGatewayConfig":
-        from .deepseek_client import DeepSeekConfig
-
         app_id = os.environ.get("OOPZ_FEISHU_APP_ID", "").strip()
         app_secret = os.environ.get("OOPZ_FEISHU_APP_SECRET", "").strip()
         chat_id = os.environ.get("OOPZ_FEISHU_ADMIN_CHAT_ID", "").strip()
         if not app_id or not app_secret or not chat_id:
             raise ValueError("OOPZ_FEISHU_APP_ID, OOPZ_FEISHU_APP_SECRET and OOPZ_FEISHU_ADMIN_CHAT_ID are required")
-        # Production startup must fail early when the analysis API contract is
-        # incomplete. No provider, endpoint, model, or tuning value is implied.
         capture_only = _env_bool("OOPZ_CAPTURE_ONLY")
         state_root = Path(os.environ.get("OOPZ_FEISHU_STATE_ROOT", "feishu_state"))
         output_root = Path(os.environ.get("OOPZ_OUTPUT_ROOT", "output"))
@@ -232,7 +189,7 @@ class FeishuGatewayConfig:
                 raise ValueError("capture-only roots must be separate from each other and normal state/output")
             state_root, output_root = roots
         else:
-            DeepSeekConfig.from_env()
+            QoderCli.from_env()      # fail at startup, not after the first recording, when the CLI is not configured
         # Keep recording settings in their existing OOPZ_* variables.
         controller = ControllerConfig(
             output_root=output_root, state_root=state_root,
@@ -260,16 +217,7 @@ class FeishuGatewayConfig:
             device="cpu" if capture_only else os.environ.get("OOPZ_DEVICE", "cpu").strip(),
         )
         controller.validate()
-        values = {
-            "folder_token": os.environ.get("OOPZ_FEISHU_PUBLIC_FOLDER_TOKEN", "").strip(),
-            "base_app_token": os.environ.get("OOPZ_FEISHU_BASE_APP_TOKEN", "").strip(),
-            "base_table_id": os.environ.get("OOPZ_FEISHU_BASE_TABLE_ID", "").strip(),
-            "public_index_url": os.environ.get("OOPZ_FEISHU_PUBLIC_INDEX_URL", "").strip(),
-        }
-        publication = PublicationConfig(**values) if not capture_only and any(values.values()) else None
-        if publication is not None:
-            publication.validate()
-        return cls(app_id, app_secret, chat_id, state_root, controller, publication, capture_only)
+        return cls(app_id, app_secret, chat_id, state_root, controller, capture_only)
 
 
 class FeishuGateway:
@@ -279,27 +227,13 @@ class FeishuGateway:
     always sent to the configured Feishu group.
     """
 
-    def __init__(self, config: FeishuGatewayConfig, channel: FeishuChannel, *, controller: ControllerService | None = None, publisher: FeishuPublisher | None = None):
+    def __init__(self, config: FeishuGatewayConfig, channel: FeishuChannel, *, controller: ControllerService | None = None):
         self.config = config
         self.channel = channel
         self.state_root = config.state_root.resolve()
         self.state_root.mkdir(parents=True, exist_ok=True)
         self.controller = controller or ControllerService(config.controller_config)
-        self.publisher = None if config.capture_only else publisher
         self._lock = asyncio.Lock()
-
-    async def _approver_display_name(self, open_id: str) -> str | None:
-        """Resolve a name only for the configured group; an ID fallback is safe."""
-        if self.publisher is None:
-            return None
-        resolver = getattr(self.publisher.client, "get_chat_member_name", None)
-        if not callable(resolver):
-            return None
-        try:
-            return await resolver(chat_id=self.config.admin_chat_id, open_id=open_id)
-        except Exception as error:
-            self._audit("approver_name_lookup_failed", open_id=open_id, error_type=type(error).__name__)
-            return None
 
     def _audit(self, kind: str, **fields: Any) -> None:
         path = self.state_root / "feishu_audit.jsonl"
@@ -346,158 +280,50 @@ class FeishuGateway:
 
     @staticmethod
     def _session_label(session_id: str) -> str:
-        try:
-            title, _ = recording_title(session_id)
-            return title
-        except ValueError:
-            return f"Session={session_id}"
+        """2026-10-03_14-32-31_BJT -> "2026-10-03 14:32 录音"; anything else is shown as is."""
+        match = re.fullmatch(r"(\d{4}-\d{2}-\d{2})_(\d{2})-(\d{2})-\d{2}_BJT", session_id)
+        return f"{match.group(1)} {match.group(2)}:{match.group(3)} 录音" if match else f"Session={session_id}"
 
-    def _publication_for_session(self, session_id: str) -> dict[str, Any] | None:
-        """Load the durable publication record used by delete cards."""
-        path = self.state_root / "publication_decisions" / f"{session_id}.json"
-        if not path.is_file():
-            return None
-        try:
-            value = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return {"publication_record_invalid": True}
-        return value if isinstance(value, dict) else {"publication_record_invalid": True}
-
-    def _delete_session_label(self, session_id: str) -> str:
-        publication = self._publication_for_session(session_id)
-        if publication and publication.get("publication_record_invalid"):
-            status = "发布记录异常"
-        elif publication and publication.get("publication_created") and not publication.get("remote_deleted_at"):
-            status = "已发布"
-        else:
-            status = "仅本地"
-        return f"{self._session_label(session_id)}｜{session_id}｜{status}"
-
-    @staticmethod
-    def _remote_delete_failure_text(error: Exception, publication: dict[str, Any] | None = None) -> str:
-        """Turn actionable Feishu permission failures into a useful reply."""
-        detail = str(error)
-        if "99991672" in detail and "space:document:delete" in detail:
-            return (
-                "飞书应用缺少删除云文档权限 `space:document:delete`（错误码 99991672）。"
-                "本地会话和公开索引记录均未删除；请在飞书开放平台为应用开通该权限并发布新版本，然后重试。"
-            )
-        if "99991672" in detail and "base:record:delete" in detail:
-            prefix = "公开文档已删除，但" if publication and publication.get("remote_document_deleted_at") else ""
-            return (
-                f"{prefix}飞书应用缺少删除 Base 记录权限 `base:record:delete`（错误码 99991672）。"
-                "公开索引记录和本地会话均未删除；请开通该权限并发布新版本，然后重试。"
-            )
-        return "删除公开文档或公开索引失败；本地会话未删除，请稍后重试。"
-
-    async def _delete_remote_publication(
-        self, publication: dict[str, Any], decision_path: Path,
-    ) -> None:
-        """Delete remote resources stepwise and persist each completed step."""
-        if self.publisher is None:
-            raise RuntimeError("publication target is not configured")
-        if not publication.get("remote_document_deleted_at"):
-            await self.publisher.delete_document(publication)
-            publication["remote_document_deleted_at"] = _iso()
-            _atomic_json(decision_path, publication)
-        if not publication.get("remote_index_deleted_at"):
-            await self.publisher.delete_index_record(publication)
-            publication["remote_index_deleted_at"] = _iso()
-            _atomic_json(decision_path, publication)
-        publication["remote_deleted_at"] = _iso()
-        _atomic_json(decision_path, publication)
-
-    def _report_selection_card(self, *, kind: str) -> dict[str, Any] | None:
-        reports = find_recent_reports(self.config.controller_config.output_root, 7)
-        if not reports:
-            return None
-        is_pdf = kind == "pdf"
-        actions = []
-        for item in reports:
-            session_id = str(item["session_id"])
-            actions.append({
-                "tag": "button",
-                "text": {"tag": "plain_text", "content": self._session_label(session_id)[:80]},
-                "type": "primary" if is_pdf else "default",
-                "value": {"action_id": f"report:{kind}:{session_id}"},
-            })
+    def _selection_card(self, *, title: str, hint: str, action: str, sessions: list[dict], style: str) -> dict[str, Any]:
         return {
             "config": {"wide_screen_mode": True},
-            "header": {"title": {"tag": "plain_text", "content": "选择公开 PDF 报告" if is_pdf else "选择内部 Markdown 报告"}},
+            "header": {"title": {"tag": "plain_text", "content": title}},
             "elements": [
-                {"tag": "markdown", "content": "选择一份报告后，将文件直接上传到本群。"},
-                {"tag": "action", "actions": actions},
+                {"tag": "markdown", "content": hint},
+                {"tag": "action", "actions": [
+                    {"tag": "button", "text": {"tag": "plain_text", "content": self._session_label(str(item["session_id"]))[:80]},
+                     "type": style, "value": {"action_id": f"{action}:{item['session_id']}"}}
+                    for item in sessions
+                ]},
             ],
         }
+
+    def _digest_selection_card(self) -> dict[str, Any] | None:
+        recent = find_recent_digests(self.config.controller_config.output_root, 7)
+        return self._selection_card(title="选择要重新发送的图片", hint="选择一场录音，把它的图片再发到本群。",
+                                    action="digest:send", sessions=recent, style="primary") if recent else None
 
     def _pending_selection_card(self) -> dict[str, Any] | None:
-        pending = find_pending_sessions(self.config.controller_config.output_root)
-        if not pending:
-            return None
-        return {
-            "config": {"wide_screen_mode": True},
-            "header": {"title": {"tag": "plain_text", "content": "选择待分析录音"}},
-            "elements": [
-                {"tag": "markdown", "content": "选择后会重新开始分析；若机器人曾异常退出，会从已保存的窗口检查点继续，避免重复 API 请求。分析完成后报告将发送到本群。"},
-                {"tag": "action", "actions": [
-                    {
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": (
-                            self._session_label(str(item["session_id"]))
-                            + ("（中断可恢复）" if item.get("interrupted") else "")
-                        )[:80]},
-                        "type": "primary",
-                        "value": {"action_id": f"pending:analyze:{item['session_id']}"},
-                    }
-                    for item in pending[:7]
-                ]},
-            ],
-        }
+        pending = find_pending_sessions(self.config.controller_config.output_root, self.controller.busy_sessions())
+        return self._selection_card(title="选择待分析录音", hint="选择后开始分析，完成后图片会发到本群。",
+                                    action="pending:analyze", sessions=pending[:7], style="primary") if pending else None
 
     def _delete_selection_card(self) -> dict[str, Any] | None:
-        merged: dict[str, float] = {}
-        for item in find_recent_reports(self.config.controller_config.output_root, 7):
-            merged[str(item["session_id"])] = float(item.get("modified_ts") or 0)
-        for item in find_pending_sessions(self.config.controller_config.output_root)[:7]:
-            session_id = str(item["session_id"])
-            merged[session_id] = max(merged.get(session_id, 0), float(item.get("modified_ts") or 0))
-        if not merged:
-            return None
-        session_ids = sorted(merged, key=merged.__getitem__, reverse=True)[:7]
-        return {
-            "config": {"wide_screen_mode": True},
-            "header": {"title": {"tag": "plain_text", "content": "选择要删除的会话"}},
-            "elements": [
-                {"tag": "markdown", "content": "下一步还会要求确认。已发布会话会同时删除本地文件、公开文档和公开索引记录。"},
-                {"tag": "action", "actions": [
-                    {
-                        "tag": "button",
-                        "text": {"tag": "plain_text", "content": self._delete_session_label(session_id)[:80]},
-                        "type": "danger",
-                        "value": {"action_id": f"delete:request:{session_id}"},
-                    }
-                    for session_id in session_ids
-                ]},
-            ],
-        }
+        root = self.config.controller_config.output_root
+        merged = {str(i["session_id"]): float(i["modified_ts"]) for i in find_recent_digests(root, 7)}
+        for item in find_pending_sessions(root)[:7]:
+            merged.setdefault(str(item["session_id"]), float(item["modified_ts"]))
+        ids = sorted(merged, key=merged.__getitem__, reverse=True)[:7]
+        return self._selection_card(title="选择要删除的会话", hint="下一步还会要求确认；会永久删除本地录音、转写和图片。",
+                                    action="delete:request", sessions=[{"session_id": i} for i in ids],
+                                    style="danger") if ids else None
 
     def _delete_confirmation_card(self, session_id: str) -> dict[str, Any]:
-        publication = self._publication_for_session(session_id)
-        is_published = bool(
-            publication
-            and publication.get("publication_created")
-            and not publication.get("remote_deleted_at")
-        )
-        scope = (
-            "本地 Session、飞书公开文档和公开索引记录"
-            if is_published
-            else "本地 Session；该会话没有待删除的公开文档或公开索引记录"
-        )
         return {
             "config": {"wide_screen_mode": True},
             "header": {"title": {"tag": "plain_text", "content": "确认删除会话"}},
             "elements": [
-                {"tag": "markdown", "content": f"将永久删除 **{self._session_label(session_id)}**。\n\nSession ID：`{session_id}`\n\n删除范围：{scope}。"},
+                {"tag": "markdown", "content": f"将永久删除 **{self._session_label(session_id)}** 的本地录音、转写和图片。\n\nSession ID：`{session_id}`"},
                 {"tag": "action", "actions": [
                     {"tag": "button", "text": {"tag": "plain_text", "content": "确认删除"}, "type": "danger", "value": {"action_id": f"delete:confirm:{session_id}"}},
                     {"tag": "button", "text": {"tag": "plain_text", "content": "取消"}, "value": {"action_id": f"delete:cancel:{session_id}"}},
@@ -537,15 +363,12 @@ class FeishuGateway:
         return {"reply": reply, "controller_message_id": raw["message_id"]}
 
     async def _direct_command(self, command: str, open_id: str) -> dict[str, Any] | None:
-        if command == "/oopz 最近报告":
-            card = self._report_selection_card(kind="pdf")
-            return {"card": card} if card else {"text": "没有找到可发送的 PDF 报告。"}
-        if command == "/oopz 详细报告":
-            card = self._report_selection_card(kind="md")
-            return {"card": card} if card else {"text": "没有找到内部完整 Markdown 报告。"}
+        if command == "/oopz 最近图片":
+            card = self._digest_selection_card()
+            return {"card": card} if card else {"text": "还没有出过图的录音。"}
         if command == "/oopz 待分析":
             card = self._pending_selection_card()
-            return {"card": card} if card else {"text": "没有未分析的录制会话。"}
+            return {"card": card} if card else {"text": "没有待分析的录音。"}
         if command == "/oopz 删除会话":
             card = self._delete_selection_card()
             return {"card": card} if card else {"text": "没有可删除的会话。"}
@@ -640,9 +463,6 @@ class FeishuGateway:
         if self.config.capture_only and not action_id.startswith("selection:"):
             await self._send_text(CAPTURE_ONLY_HELP_TEXT)
             return
-        if action_id in {"analysis_yes", "analysis_no"}:
-            await self.handle_message(FeishuInbound(event_id, self.config.admin_chat_id, open_id, "是" if action_id == "analysis_yes" else "否"))
-            return
         if action_id.startswith("selection:"):
             number = action_id.removeprefix("selection:")
             if number.isdigit():
@@ -650,92 +470,8 @@ class FeishuGateway:
             elif number == "cancel":
                 await self.handle_message(FeishuInbound(event_id, self.config.admin_chat_id, open_id, "取消"))
             return
-        if action_id.startswith(("report:", "pending:", "delete:")):
+        if action_id.startswith(("digest:", "pending:", "delete:")):
             await self._handle_extended_card_action(action_id=action_id, open_id=open_id, event_id=event_id)
-            return
-        if not action_id.startswith("publication:"):
-            return
-        parts = action_id.split(":", 2)
-        if len(parts) != 3:
-            self._audit("invalid_publication_action", action_id=action_id, open_id=open_id)
-            return
-        _, decision, payload = parts
-        await self._handle_publication_card_action(
-            decision=decision, payload=payload, open_id=open_id, event_id=event_id,
-        )
-
-    async def _handle_publication_card_action(
-        self, *, decision: str, payload: str, open_id: str, event_id: str,
-    ) -> None:
-        session_id, separator, expected_fingerprint = payload.rpartition("|")
-        if not separator:
-            session_id, expected_fingerprint = payload, ""
-        if decision not in {"approve", "reject", "withdraw"} or not _SESSION_ID.fullmatch(session_id):
-            return
-        path = self.state_root / "publication_decisions" / f"{session_id}.json"
-        event_path = self._event_path(event_id)
-        send_text: str
-        async with self._lock:
-            if event_path.exists():
-                self._audit("duplicate_card_action", action_id=f"publication:{decision}", event_id=event_id)
-                return
-            existing = _read_json_or_none(path)
-            if isinstance(existing, dict) and existing.get("decision") == "withdraw" and not existing.get("publication_created"):
-                # A pre-publication withdraw never blocked anything worth keeping;
-                # retire the legacy record so a later approval can proceed.
-                existing = None
-            if isinstance(existing, dict):
-                if decision == "withdraw" and existing.get("publication_created") and not existing.get("revoked_at"):
-                    if self.publisher is None:
-                        await self._send_text("未配置 M3 发布目标，无法撤回已发布报告。")
-                        return
-                    await self.publisher.revoke(existing)
-                    existing.update({"revoked_at": _iso(), "revoked_by_open_id": open_id})
-                    _atomic_json(path, existing)
-                    self._audit("publication_withdrawn", session_id=session_id, withdrawn_by_open_id=open_id)
-                    send_text = "已撤回公开文档，并从公开日历中隐藏该报告。"
-                else:
-                    send_text = f"Session={session_id} 的发布审查已记录，未重复执行。"
-            elif decision == "withdraw":
-                # Nothing was published, so there is nothing to withdraw; record
-                # nothing, otherwise the record would block a later approval.
-                self._audit("publication_withdraw_before_publish_ignored", session_id=session_id, open_id=open_id)
-                send_text = "该报告尚未发布公开文档，无需撤回；如要放弃发布，请点击“不发布”。"
-            else:
-                record = {"schema_version": "oopz.feishu.publication_decision.v1", "session_id": session_id, "decision": decision, "approved_by_open_id": open_id, "decided_at": _iso(), "publication_created": False}
-                if decision == "approve":
-                    if self.publisher is None:
-                        _atomic_json(path, record)
-                        self._audit("publication_decision", **record)
-                        send_text = "未配置 M3 发布目标，已拒绝执行公开发布。请配置公开文档文件夹、Base 和固定索引链接。"
-                    else:
-                        approved_by_name = await self._approver_display_name(open_id)
-                        result = await self.publisher.publish(
-                            session_id=session_id, approved_by_open_id=open_id,
-                            approved_by_name=approved_by_name, expected_fingerprint=expected_fingerprint or None,
-                        )
-                        if approved_by_name:
-                            record["approved_by_name"] = approved_by_name
-                        record.update({"publication_created": True, **result})
-                        _atomic_json(path, record)
-                        self._audit("publication_decision", **record)
-                        send_text = f"已发布到固定公开索引：{record['public_index_url']}"
-                else:
-                    _atomic_json(path, record)
-                    self._audit("publication_decision", **record)
-                    send_text = "已记录：不发布该候选报告。"
-            _atomic_json(event_path, {
-                "feishu_card_event_id": event_id,
-                "action_id": f"publication:{decision}",
-                "sender_open_id": open_id,
-                "session_id": session_id,
-                "received_at": _iso(),
-            })
-        try:
-            await self._send_text(send_text)
-        except Exception:
-            event_path.unlink(missing_ok=True)
-            raise
 
     async def _handle_extended_card_action(self, *, action_id: str, open_id: str, event_id: str) -> None:
         """Handle Feishu-native report, pending-analysis and delete cards."""
@@ -772,10 +508,8 @@ class FeishuGateway:
         try:
             if outbound.get("card"):
                 await self._send_card(outbound["card"])
-            elif outbound.get("file_path"):
-                file_path = Path(str(outbound["file_path"]))
-                await self.channel.send(self.config.admin_chat_id, {"file": {"source": str(file_path), "file_name": file_path.name}})
-                await self._send_text(str(outbound.get("text") or "文件已上传到本群。"))
+            elif outbound.get("image_path"):
+                await self._send_image(Path(str(outbound["image_path"])))
             else:
                 await self._send_text(str(outbound.get("text") or "已处理。"))
         except Exception:
@@ -784,74 +518,32 @@ class FeishuGateway:
             raise
 
     async def _extended_card_outbound(self, *, family: str, action: str, session_id: str, session_dir: Path, open_id: str) -> dict[str, Any]:
-        if family == "report":
-            if not session_dir.is_dir():
-                return {"text": "会话目录不存在，无法发送报告。"}
-            if action == "pdf":
-                try:
-                    _, pdf_path, _ = self.controller._delivery_for_session(session_id)
-                except ValueError as error:
-                    return {"text": str(error)}
-                if not pdf_path:
-                    return {"text": "这份报告没有可用的 PDF 文件。"}
-                return {"file_path": pdf_path, "text": "公开 PDF 报告已上传到本群。"}
-            if action == "md":
-                full_path = self.controller._internal_report_path(session_dir)
-                if full_path is None:
-                    return {"text": "这份会话没有内部完整 .md 报告。"}
-                return {"file_path": str(full_path), "text": "内部完整 Markdown 报告已上传到本群。"}
-            return {"text": "未知的报告操作。"}
+        if family == "digest" and action == "send":
+            png = digest_png(session_dir)
+            return {"image_path": str(png)} if png.is_file() else {"text": "这场录音还没有图片。"}
 
         if family == "pending" and action == "analyze":
             if not session_dir.is_dir():
                 return {"text": "会话目录不存在，无法重新分析。"}
-            surrogate = self._allow_group_member_in_controller(open_id)
-            if not self.controller._start_analysis_and_deliver(session_dir, surrogate):
-                return {"text": f"Session={session_id} 已在分析中，请发送“状态”查看进度。"}
-            decision = self.controller._load_decision()
-            if decision is not None and str(decision.get("session_id") or "") == session_id:
-                self.controller._clear_decision()
-            return {"text": f"已开始分析 {self._session_label(session_id)}。完成后报告会发送到本群。"}
+            if not self.controller._start_analysis_and_deliver(session_dir):
+                return {"text": f"{self._session_label(session_id)} 已在分析中，请发送“状态”查看进度。"}
+            return {"text": f"已开始分析 {self._session_label(session_id)}，完成后图片会发到本群。"}
 
         if family == "delete":
+            if not session_dir.is_dir():
+                return {"text": "会话目录不存在，未执行删除。"}
             if action == "request":
-                if not session_dir.is_dir():
-                    return {"text": "会话目录不存在，未执行删除。"}
                 return {"card": self._delete_confirmation_card(session_id)}
             if action == "cancel":
                 return {"text": "已取消删除。"}
             if action != "confirm":
                 return {"text": "未知的删除操作。"}
-            if not session_dir.is_dir():
-                return {"text": "会话目录不存在，未执行删除。"}
-            decision_path = self.state_root / "publication_decisions" / f"{session_id}.json"
-            publication = self._publication_for_session(session_id)
-            if publication and publication.get("publication_record_invalid"):
-                return {"text": "公开报告记录无法读取，为避免留下公开文件，未删除本地会话。"}
-            remote_deleted = False
-            if publication and publication.get("publication_created") and not publication.get("remote_deleted_at"):
-                if self.publisher is None:
-                    return {"text": "该会话已有公开报告，但当前未配置发布目标；为避免留下公开文件，未删除本地会话。"}
-                try:
-                    await self._delete_remote_publication(publication, decision_path)
-                except Exception as error:
-                    self._audit("session_delete_remote_failed", session_id=session_id, error=f"{type(error).__name__}: {error}")
-                    return {"text": self._remote_delete_failure_text(error, publication)}
-                publication["remote_deleted_by_open_id"] = open_id
-                _atomic_json(decision_path, publication)
-                remote_deleted = True
             try:
                 self.controller._delete_session(session_id)
             except ValueError as error:
-                return {"text": f"公开内容已删除，但本地会话删除失败：{error}"}
-            if publication is not None:
-                publication["deleted_at"] = _iso()
-                publication["deleted_by_open_id"] = open_id
-                _atomic_json(decision_path, publication)
+                return {"text": f"删除失败：{error}"}
             self._audit("session_deleted", session_id=session_id, deleted_by_open_id=open_id)
-            if remote_deleted:
-                return {"text": f"已删除 {self._session_label(session_id)}（Session ID={session_id}）的本地会话、公开文档和公开索引记录。"}
-            return {"text": f"已删除 {self._session_label(session_id)}（Session ID={session_id}）的本地会话。该会话没有公开文档或公开索引记录。"}
+            return {"text": f"已删除 {self._session_label(session_id)} 的本地录音、转写和图片。"}
 
         return {"text": "未知的卡片操作。"}
 
@@ -863,11 +555,8 @@ class FeishuGateway:
             if not send_request_is_due(item):
                 continue
             try:
-                source = str(item.get("source") or "")
-                if source == "analysis_decision":
-                    await self._send_card(self._analysis_card(str(item.get("text") or "")))
-                elif source == "publication_review:prompt":
-                    await self._send_card(self._publication_card())
+                if item.get("image_path"):
+                    await self._send_image(Path(str(item["image_path"])))
                 elif item.get("file_path"):
                     path = Path(str(item["file_path"]))
                     self._console("发件", f"文件={path.name}")
@@ -880,30 +569,6 @@ class FeishuGateway:
                 reschedule_send_request(self.state_root, str(item["send_request_id"]), error=f"Feishu: {type(error).__name__}: {error}")
                 self._audit("outbound_retry", send_request_id=str(item["send_request_id"]), error=f"{type(error).__name__}: {error}")
         return sent
-
-    async def reconcile_publications(self) -> int:
-        """Remove remote reports whose local Session is already absent."""
-        if self.config.capture_only:
-            return 0
-        if self.publisher is None:
-            return 0
-        changed = 0
-        root = self.state_root / "publication_decisions"
-        for path in root.glob("*.json") if root.is_dir() else ():
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                session_id = str(value.get("session_id") or "")
-                if not value.get("publication_created") or value.get("remote_deleted_at") or (self.config.controller_config.output_root / session_id).is_dir():
-                    continue
-                await self.publisher.delete(value)
-                value["remote_deleted_at"] = _iso()
-                value["deleted_by_retention_at"] = value["remote_deleted_at"]
-                _atomic_json(path, value)
-                self._audit("retention_remote_deleted", session_id=session_id, document_id=value.get("document_id"))
-                changed += 1
-            except Exception as error:
-                self._audit("retention_withdrawal_failed", record=str(path), error=f"{type(error).__name__}: {error}")
-        return changed
 
     @staticmethod
     def _expired_session_ids(output_root: Path, *, now: datetime | None = None) -> list[str]:
@@ -954,143 +619,22 @@ class FeishuGateway:
         return removed
 
     async def cleanup_expired_sessions(self) -> int:
-        """Delete an expired local Session only after its remote report is deleted."""
+        """Delete local sessions past their retention time, then old control-plane files."""
         if self.config.capture_only:
             return 0
         removed = 0
         async with self._lock:
             for session_id in self._expired_session_ids(self.config.controller_config.output_root):
-                decision_path = self.state_root / "publication_decisions" / f"{session_id}.json"
-                publication: dict[str, Any] | None = None
-                if decision_path.is_file():
-                    try:
-                        candidate = json.loads(decision_path.read_text(encoding="utf-8"))
-                        publication = candidate if isinstance(candidate, dict) else None
-                    except (OSError, ValueError, TypeError):
-                        self._audit("retention_skipped_invalid_publication", session_id=session_id)
-                        continue
-                if publication and publication.get("publication_created") and not publication.get("remote_deleted_at"):
-                    if self.publisher is None:
-                        self._audit("retention_skipped_no_publisher", session_id=session_id)
-                        continue
-                    try:
-                        await self._delete_remote_publication(publication, decision_path)
-                    except Exception as error:
-                        self._audit("retention_remote_delete_failed", session_id=session_id, error=f"{type(error).__name__}: {error}")
-                        continue
-                    publication["deleted_by_retention_at"] = publication["remote_deleted_at"]
-                    _atomic_json(decision_path, publication)
                 try:
                     self.controller._delete_session(session_id)
                 except Exception as error:
-                    # A locked file (viewer/antivirus) must not kill the gateway
-                    # loop; the session stays and is retried next minute.
+                    # A locked file must not kill the gateway loop; the session stays and is retried next minute.
                     self._audit("retention_local_delete_failed", session_id=session_id, error=f"{type(error).__name__}: {error}")
                     continue
-                if publication is not None:
-                    publication["deleted_at"] = _iso()
-                    _atomic_json(decision_path, publication)
                 self._audit("retention_session_deleted", session_id=session_id)
                 removed += 1
             removed += self._purge_stale_state_files()
         return removed
-
-    def _backfill_approver_open_id(self) -> str:
-        root = self.state_root / "publication_decisions"
-        candidates: list[tuple[str, str]] = []
-        for path in root.glob("*.json") if root.is_dir() else ():
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                open_id = str(value.get("approved_by_open_id") or "").strip()
-                decided_at = str(value.get("decided_at") or "")
-                if open_id:
-                    candidates.append((decided_at, open_id))
-            except (OSError, ValueError, TypeError):
-                continue
-        if not candidates:
-            raise ValueError("没有可用于历史补传的飞书审批人 ID；请先在本群批准一份报告。")
-        return max(candidates)[1]
-
-    async def backfill_publications(self) -> int:
-        """Publish every current, non-future local public report exactly once."""
-        if self.config.capture_only:
-            return 0
-        if self.publisher is None:
-            raise ValueError("未配置公开文档文件夹、Base 或固定索引链接")
-        approver_open_id = self._backfill_approver_open_id()
-        created = 0
-        # Session timestamps are named in Beijing time, not the host locale.
-        now = datetime.now(timezone(timedelta(hours=8))).replace(tzinfo=None)
-        async with self._lock:
-            for item in find_recent_reports(self.config.controller_config.output_root, 1000):
-                session_id = str(item["session_id"])
-                try:
-                    _, recorded_at = recording_title(session_id)
-                except ValueError:
-                    continue
-                if recorded_at > now:
-                    continue
-                path = self.state_root / "publication_decisions" / f"{session_id}.json"
-                existing: dict[str, Any] | None = None
-                if path.is_file():
-                    try:
-                        candidate = json.loads(path.read_text(encoding="utf-8"))
-                        existing = candidate if isinstance(candidate, dict) else None
-                    except (OSError, ValueError, TypeError):
-                        existing = None
-                if existing and existing.get("publication_created") and not existing.get("remote_deleted_at"):
-                    approved_by_name = await self._approver_display_name(str(existing.get("approved_by_open_id") or ""))
-                    if approved_by_name:
-                        existing["approved_by_name"] = approved_by_name
-                        _atomic_json(path, existing)
-                    await self.publisher.repair_index_record(existing, approved_by_name=approved_by_name)
-                    continue
-                approved_by_name = await self._approver_display_name(approver_open_id)
-                result = await self.publisher.publish(
-                    session_id=session_id, approved_by_open_id=approver_open_id,
-                    approved_by_name=approved_by_name,
-                )
-                record = {
-                    "schema_version": "oopz.feishu.publication_decision.v1",
-                    "session_id": session_id,
-                    "decision": "backfill",
-                    "approved_by_open_id": approver_open_id,
-                    "approved_by_name": approved_by_name,
-                    "decided_at": _iso(),
-                    "publication_created": True,
-                    **result,
-                }
-                _atomic_json(path, record)
-                self._audit("publication_backfilled", session_id=session_id, document_id=result.get("document_id"))
-                created += 1
-        return created
-
-    async def repair_publication_index(self) -> int:
-        """Update active legacy Base entries to the tenant-hosted report URL."""
-        if self.config.capture_only:
-            return 0
-        if self.publisher is None:
-            return 0
-        changed = 0
-        root = self.state_root / "publication_decisions"
-        for path in root.glob("*.json") if root.is_dir() else ():
-            try:
-                value = json.loads(path.read_text(encoding="utf-8"))
-                if not isinstance(value, dict) or not value.get("publication_created"):
-                    continue
-                if value.get("revoked_at") or value.get("deleted_at"):
-                    continue
-                if not _SESSION_ID.fullmatch(str(value.get("session_id") or "")):
-                    continue
-                await self.publisher.repair_index_record(value)
-                value["document_url"] = self.publisher.document_url(str(value["document_id"]))
-                value["index_repaired_at"] = _iso()
-                _atomic_json(path, value)
-                self._audit("publication_index_repaired", session_id=value["session_id"], document_id=value.get("document_id"))
-                changed += 1
-            except Exception as error:
-                self._audit("publication_index_repair_failed", record=str(path), error=f"{type(error).__name__}: {error}")
-        return changed
 
     @staticmethod
     def _capture_consent_card(token: str, text: str) -> dict[str, Any]:
@@ -1145,24 +689,15 @@ class FeishuGateway:
             "elements": elements,
         })
 
+    async def _send_image(self, path: Path) -> None:
+        self._console("发图", path.name)
+        result = await self.channel.send(self.config.admin_chat_id, {"image": {"source": str(path)}})
+        if getattr(result, "success", True) is False:
+            raise RuntimeError(getattr(result, "error", "Feishu image send failed"))
+
     async def _send_card(self, card: dict[str, Any]) -> None:
         header = (((card.get("header") or {}).get("title") or {}).get("content") or "操作卡片")
         self._console("发卡", str(header))
         result = await self.channel.send(self.config.admin_chat_id, {"card": card})
         if getattr(result, "success", True) is False:
             raise RuntimeError(getattr(result, "error", "Feishu card send failed"))
-
-    @staticmethod
-    def _analysis_card(text: str) -> dict[str, Any]:
-        body = adapt_controller_reply_for_feishu(text)
-        return {"config": {"wide_screen_mode": True}, "header": {"title": {"tag": "plain_text", "content": "录音已结束：是否开始分析"}}, "elements": [{"tag": "markdown", "content": body}, {"tag": "action", "actions": [{"tag": "button", "text": {"tag": "plain_text", "content": "开始分析"}, "type": "primary", "value": {"action_id": "analysis_yes"}}, {"tag": "button", "text": {"tag": "plain_text", "content": "暂不分析"}, "value": {"action_id": "analysis_no"}}]}]}
-
-    def _publication_card(self) -> dict[str, Any]:
-        state = getattr(self.controller, "_state", {})
-        session_id = str((state.get("last_job") or {}).get("session_id") or "unknown")
-        try:
-            fingerprint = public_report_fingerprint(output_root=self.config.controller_config.output_root, session_id=session_id)
-        except (OSError, ValueError):
-            fingerprint = ""
-        action_suffix = f"{session_id}|{fingerprint}" if fingerprint else session_id
-        return {"config": {"wide_screen_mode": True}, "header": {"title": {"tag": "plain_text", "content": "候选公开报告审查"}}, "elements": [{"tag": "markdown", "content": "内部报告和候选公开 PDF 已发送到本群。批准将仅发布此时审查的公开版本。"}, {"tag": "action", "actions": [{"tag": "button", "text": {"tag": "plain_text", "content": "批准发布"}, "type": "primary", "value": {"action_id": f"publication:approve:{action_suffix}"}}, {"tag": "button", "text": {"tag": "plain_text", "content": "不发布"}, "value": {"action_id": f"publication:reject:{action_suffix}"}}, {"tag": "button", "text": {"tag": "plain_text", "content": "撤回"}, "type": "danger", "value": {"action_id": f"publication:withdraw:{action_suffix}"}}]}]}
