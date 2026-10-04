@@ -6,6 +6,12 @@
 
 ## 未发布
 
+### 2026-10-04 — 部署：服务账号改为 `ubuntu`，退役原专用账号
+
+- `scripts/linux/manage_release.py` 的 `--user` 默认值由 `oopz` 改为 `ubuntu`；`oopz-capture.service` 增加 `ProtectHome=yes`（与已有的 `NoNewPrivileges=yes`、`PrivateTmp=yes` 共同隔离）；`docs/DEPLOYMENT.md` 改为“全机只有 `ubuntu` 一个管理账号、不新建服务账号”，删除 `useradd oopz` 步骤并说明 `ProtectHome` 的后果（服务所需文件须在 `/opt/oopz/shared` 下）。
+- 服务器侧：原账号的文件改属 `ubuntu`，采集进程改由 `systemd-run` 的隔离单元以 `ubuntu` 运行，清理了冗余密钥副本与测试残留；详见 `docs/DEPLOYMENT_STATE.md`。
+- 验证：脚本与模板改动经全量测试；服务器侧以 `systemctl show`、内核 `NoNewPrivs` 标志、服务命名空间内 `/home` 不可见、`shared/` 可写等实测确认。迁移与回滚：备份在服务器 `/opt/oopz/backups/`；原账号已删除，不可逆；账号相关文件的备份在服务器 `/opt/oopz/backups/`。无业务数据格式变化。
+
 ### 2026-10-03 — 整理：移出 Windows 部署层，精简门禁与文档
 
 - 移除 Windows 部署层（13 个 PowerShell 安装/更新/启停脚本、3 个 `.bat`、1200 行 Windows 部署指南、6 个仅 Windows 的测试模块及其检查脚本）；Windows 部署线（已在生产验证，流程保持原样）保留在 `windows-legacy`、`v0.11.*` 标签与 GitHub Release；其更新脚本依赖 GitHub 的 latest Release，Linux 发布须用 `linux-v*` 标签且不设为 Latest（已写入 `AGENTS.md`）。保留 `scripts/build_release.ps1`（发布构建）与 `scripts/download_sensevoice_model.py`，构建器必需条目不再含 `install_release.ps1`。

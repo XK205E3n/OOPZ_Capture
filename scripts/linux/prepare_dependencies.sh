@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Invoked as the dedicated service account; never copies another release's venv.
+# Invoked as the service account (ubuntu); never copies another release's venv.
 set -euo pipefail
 python3.12 -m venv .venv
 .venv/bin/python -m pip install --upgrade pip
