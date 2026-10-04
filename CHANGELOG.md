@@ -6,6 +6,8 @@
 
 ## 未发布
 
+## 0.12.0 — 2026-10-04（Linux 主线首个发布，标签 `linux-v0.12.0`）
+
 ### 2026-10-04 — 新增：出入频道记录、头像下载、音轨身份修复
 
 - `continuous.py`：录音时把每次成功的成员刷新写入 `presence_observations.json`（V7 `PresenceObservationRecorder`），断线、连接不健康、刷新失败记为间断，结束时写入时长；成员刷新得到的头像地址经 `AvatarCache` 后台下载到 `<会话>/avatars/`（失败不影响录音）；本场见过的 OOPZ 数据流 `uid/cid` 累积用于身份映射（`identity.build_identity_mappings(known_states=…)`）。`OopzParticipant` 新增 `avatar_url`。

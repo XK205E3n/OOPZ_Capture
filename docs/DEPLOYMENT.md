@@ -97,11 +97,8 @@ the operator PATH so `runuser` is available. Do not upgrade an unrelated project
 Python to repair an OOPZ PATH selection problem.
 
 Chromium is installed without the legacy headless shell. The preparation check
-explicitly enables `chromium_sandbox=True` and uses the installed `chromium`
-channel. If an administrator-managed browser is required, pass its absolute
-path in the preparation process's `MD_TO_PDF_CHROME_PATH` (name kept for compatibility); the
-check launches that exact executable with sandboxing enabled. No automatic disabling
-fallback is provided.
+launches the installed `chromium` channel exactly as the OOPZ recording SDK does
+(Playwright defaults); the project starts no other browser.
 
 When configuration will be supplied later, stop after prepare and credential-free
 checks: imports/pip check, service-user browser and synthetic PCM, Pillow import,
@@ -112,11 +109,9 @@ do not establish live OOPZ/Feishu/API or sustained-load acceptance.
 On Ubuntu, a `No usable sandbox` Chromium error must be investigated independently
 of the Python browser tests. Different browser drivers can have different sandbox
 defaults: the current upstream OOPZ SDK uses Playwright's disabled-sandbox default,
-whereas the preparation check enables the browser's normal sandbox. SDK PCM success is
-not sandbox readiness evidence. This adaptation does not patch that upstream SDK
-behavior. Do not add `--no-sandbox`,
-disable AppArmor or globally relax user-namespace restrictions to make a check
-pass. Any needed host security-policy change requires explicit approval and must
+and the preparation check launches the same way. This adaptation does not patch that
+upstream SDK behavior. Do not disable AppArmor or globally relax user-namespace
+restrictions to make a check pass. Any needed host security-policy change requires explicit approval and must
 remain scoped to the verified browser executable.
 
 Configure `shared/config/.env` through the authorized secure operator flow. Do not

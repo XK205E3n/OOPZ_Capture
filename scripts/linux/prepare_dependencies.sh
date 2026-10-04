@@ -11,16 +11,9 @@ python3.12 -m venv .venv
 import os
 from playwright.sync_api import sync_playwright
 with sync_playwright() as p:
-    # Verify the browser's real sandbox prerequisite, independently of the
-    # SDK driver's default sandbox setting. Never fall back to --no-sandbox.
-    launch = dict(headless=True, chromium_sandbox=True)
-    browser_path = os.environ.get("MD_TO_PDF_CHROME_PATH")
-    if browser_path:
-        launch["executable_path"] = browser_path
-    else:
-        # Match the installed Chromium channel after --no-shell.
-        launch["channel"] = "chromium"
-    browser = p.chromium.launch(**launch)
+    # Launch the way the OOPZ recording SDK does (Playwright defaults, the installed
+    # Chromium channel after --no-shell); the project starts no other browser.
+    browser = p.chromium.launch(headless=True, channel="chromium")
     browser.close()
 import oopz_capture.feishu_cli
 import funasr, torch, torchaudio, onnxruntime

@@ -10,7 +10,7 @@
 
 | 端 | 内容 | 状态 |
 | --- | --- | --- |
-| GitHub `main` | Linux 主线，应用版本 0.11.15 | 含新流程的提交在本地，尚未推送；服务器运行的是 `4291aa8` |
+| GitHub `main` | Linux 主线，应用版本 0.12.0 | 含新流程的提交在本地，尚未推送；服务器运行的是 `4291aa8` |
 | GitHub `windows-legacy`、标签 `v0.11.*`、Release | Windows 部署线，最后为 v0.11.15 | 已在生产验证、流程保持原样；其更新脚本依赖 GitHub 的 latest Release |
 | GitHub `recovery/server-v0.11.15-snapshots` | 服务器 4 个发布包的原样快照 | 只读存档 |
 | 服务器 `/opt/oopz` | 4 个 `v0.11.15-*` 发布目录，运行的是 `4291aa894f7a` | 隔离的 capture-only 测试进程；无 `current` 链接、无 systemd 服务 |

@@ -16,8 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.skipif(os.name == 'nt', reason='Linux dependency shell entrypoint')
-@pytest.mark.parametrize('browser_override', [False, True])
-def test_preparation_checks_selected_browser_with_sandbox(tmp_path, browser_override):
+def test_preparation_launches_the_installed_chromium_like_the_sdk(tmp_path):
     bins = tmp_path / 'bin'
     bins.mkdir()
     modules = tmp_path / 'modules'
@@ -42,14 +41,7 @@ class Playwright:
     def __exit__(self, *args): pass
     def launch(self, **kwargs):
         assert Path('chromium-installed').is_file(), 'Chromium was not installed'
-        expected = {'headless': True, 'chromium_sandbox': True}
-        browser_path = os.environ.get('MD_TO_PDF_CHROME_PATH')
-        if browser_path:
-            assert Path(browser_path).is_file()
-            expected['executable_path'] = browser_path
-        else:
-            expected['channel'] = 'chromium'
-        assert kwargs == expected, 'Check selected browser with its sandbox enabled'
+        assert kwargs == {'headless': True, 'channel': 'chromium'}, 'Launch the way the SDK does'
         Path('browser-launch.json').write_text(json.dumps(kwargs))
         return Browser()
 def sync_playwright(): return Playwright()
@@ -85,20 +77,10 @@ p.write_text({wrapper!r}); p.chmod(0o755)
         path.chmod(0o755)
     env = {**os.environ, 'PATH': str(bins) + os.pathsep + os.environ['PATH'],
            'PYTHONPATH': str(modules)}
-    env.pop('MD_TO_PDF_CHROME_PATH', None)
-    expected = {'headless': True, 'chromium_sandbox': True}
-    if browser_override:
-        browser = tmp_path / 'managed browser/chrome'
-        browser.parent.mkdir()
-        browser.touch()
-        env['MD_TO_PDF_CHROME_PATH'] = str(browser)
-        expected['executable_path'] = str(browser)
-    else:
-        expected['channel'] = 'chromium'
     result = subprocess.run(['bash', str(ROOT / 'scripts/linux/prepare_dependencies.sh')],
                             cwd=tmp_path, env=env, text=True, capture_output=True, timeout=30)
     assert result.returncode == 0, result.stdout + result.stderr
-    assert json.loads((tmp_path / 'browser-launch.json').read_text()) == expected
+    assert json.loads((tmp_path / 'browser-launch.json').read_text()) == {'headless': True, 'channel': 'chromium'}
     assert (tmp_path / 'browser-closed').is_file()
     assert (tmp_path / 'model-step-completed').is_file()
 
