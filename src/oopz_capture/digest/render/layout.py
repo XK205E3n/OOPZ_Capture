@@ -191,7 +191,8 @@ class Builder:
         if body:
             y += sp["section_gap"]
             y = self.section("section_content", v["sections"]["content"], y, col["mint"])
-            y = self.run_modules(body, y)
+            y = self.run_modules([m for m in body if m["kind"] != "next_hook"], y)
+            y = self.hooks_panel([m for m in body if m["kind"] == "next_hook"], y)
         if closing:
             y += 64
             y = self.run_modules(closing, y)
@@ -217,6 +218,23 @@ class Builder:
             k, yy = k + 1, yy + 1500
         self.ops[bg_index:bg_index] = rings
         return LayoutResult(W, height, self.ops, self.blocks, self.modules, self.header_height, self.min_font)
+
+    def hooks_panel(self, hooks, y) -> float:
+        """"Still open" threads: a tinted panel of their own, so they are not mistaken for more topics."""
+        if not hooks:
+            return y
+        sp, col, W, mx = self.sp, self.col, self.W, self.mx
+        y += sp["module_gap"]
+        pad, cut = 36, 26
+        x0, x1 = mx - 24, W - mx + 24
+        panel = self.add(op="shape", parts=[])           # filled below, once the height is known
+        inner = y + pad
+        end = self.run_modules(hooks, inner)
+        bottom = end + pad
+        poly = [[x0, y], [x1 - cut, y], [x1, y + cut], [x1, bottom], [x0 + cut, bottom], [x0, bottom - cut]]
+        self.ops[panel] = {"op": "shape", "parts": [("poly", poly)], "fill": col["amber"], "alpha": 0.06,
+                           "alpha_r": 0.02, "outline": col["amber"], "ow": 2, "oalpha": 0.45}
+        return bottom
 
     def run_modules(self, mods, y) -> float:
         sp, col, W, mx = self.sp, self.col, self.W, self.mx

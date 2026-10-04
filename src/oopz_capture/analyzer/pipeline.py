@@ -25,6 +25,8 @@ from .windows import Window, split_windows
 
 ATTEMPTS = 4          # model answers tried per call before giving up
 MAX_PROFILES = 4      # people block is about as big as the topics block; none is fine when nobody stood out
+MIN_TOPICS = 3        # the editor may drop unreadable entries but keeps at least this many (if the draft had them)
+MIN_PROFILES = 3
 MAX_STAGES = 4        # the stage track is one row of at most this many
 MERGE_ABOVE = 12      # more windows than this are merged in groups before the final digest
 MERGE_GROUP = 8
@@ -293,6 +295,12 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
         return parsed
 
     def extra(edited: dict) -> None:
+        for name, wanted in (("topics", MIN_TOPICS), ("profiles", MIN_PROFILES)):
+            before = len(content["content"][name] if name == "topics" else content["people"][name])
+            after = len(edited["content"][name] if name == "topics" else edited["people"][name])
+            if after < min(wanted, before):
+                raise ValueError(f"style:{name} has {after} entries but at least {min(wanted, before)} are required; "
+                                 "rewrite the weak ones instead of deleting them")
         check_named(edited, aliases.roster)
         held["checked"] = check_labels(held["labels"], edited, flow)
         if fit:

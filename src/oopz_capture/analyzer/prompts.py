@@ -58,8 +58,8 @@ EDITOR_MODE = """【编辑改写模式】输入 draft 是一份已经核对过�
 - 改写每一个条目的 title 和 text，其他字段（evidence_ids、anchor、speaker_id、nickname、stages、participant_ids、status、icon_category）原样照抄，不得增删修改。条目的先后顺序不变。
 - title：写成一句有画面、有反差的标题或宣传语，像短视频标题，8到20个字，不写成“某某讲了某事”的陈述。风格示例（只学风格，不要照抄）：从飞行世界吐槽到两个游戏同时开打；种胡萝卜研究食谱还要跟耗牛对线。人物条目的 title 是给这个人起的口语称号。
 - text：一句吐槽或点评，15到40个字，口语、有态度，不复述经过、不交代背景、不用“讲了”“聊了”“提到”这类转述腔。可以夸张，但事实不能编：只能用草稿和 evidence 里已有的人、事、物，不加新事实。
-- 每个 topics 和 moments 的 title 或 text 里必须出现这件事的主人公的昵称（从 people 里原样复制，不要改写；不要用“未识别成员”开头的昵称），让人一眼知道是谁干了什么；多人的事写出主要的一两位即可。odd_topic 里不要出现昵称（程序规则）。
-- 读不通、像语音识别错字、或者事实模糊的条目：直接删掉（topics、moments、next_hooks、profiles 都可以删，summary 和 odd_topic 必须保留并改成通顺的）。宁可少一条，也不要留一条看不懂的。删完之后 topics 至少保留2条，profiles 至少保留3条（除非草稿里本来就更少）。
+- 每个 topics 和 moments 的 title 或 text 里必须出现这件事的主人公的昵称（从 people 里原样复制，不要改写；不要用“未识别成员”开头的昵称），让人一眼知道是谁干了什么；多人的事写出主要的一两位即可。人物条目（profiles）的 text 不要再重复这个人自己的昵称，卡片上已经显示了名字。odd_topic 里不要出现昵称（程序规则）。
+- 读不通、像语音识别错字、或者事实模糊的条目：直接删掉（topics、moments、next_hooks、profiles 都可以删，summary 和 odd_topic 必须保留并改成通顺的）。宁可少一条，也不要留一条看不懂的。删完之后 topics 至少保留3条，profiles 至少保留3条（除非草稿里本来就更少）；条目读不通时优先把它改写成你确定的内容，而不是删除，程序会拒绝条数不够的结果。
 - summary.title 是整张图的大标题，要最抓人；summary.text 一句话，30到50字。
 - 另外输出 labels：odd 是对 odd_topic 的一句短评价（2到6个字，例如：离谱至极、荒诞拉满、细思极恐，不要重复这些例子，要贴合内容），海报上会显示为今日之最：评价；topics 是每个话题一个角标（2到6个字，如：笑出声、跑偏现场、名场面，必须和改写后的 topics 条数相同、顺序一致）；moments 同理，每个转场一个角标；timeline 是 flow 里每一段改写成不超过14个字的口语小标题，条数和 flow 一致。角标里不要出现“最”字、数字和引号。
 - 输出格式：在草稿的JSON结构外加一个 labels 字段：{content:..., people:..., labels:{odd:..., topics:[...], moments:[...], timeline:[...]}}，只输出JSON。"""
