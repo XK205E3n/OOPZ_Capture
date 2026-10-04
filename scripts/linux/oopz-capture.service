@@ -9,7 +9,7 @@ StartLimitBurst=5
 Type=simple
 User=@USER@
 Group=@GROUP@
-WorkingDirectory="@ROOT@/current"
+WorkingDirectory=@ROOT@/current
 Environment="HOME=@ROOT@/shared/home"
 Environment="PLAYWRIGHT_BROWSERS_PATH=@ROOT@/shared/browsers"
 Environment="OOPZ_ENV_FILE=@ROOT@/shared/config/.env"
