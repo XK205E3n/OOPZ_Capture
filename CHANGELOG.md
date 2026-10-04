@@ -24,6 +24,7 @@
 - 验证：`python -m pytest` 257 通过、12 跳过（本机 Windows）；分析器与渲染在服务器会话 `2026-10-03_14-32-31_BJT`（12.9 小时、7834 段）上整场实跑多轮，成品图经用户验收。**真实飞书发图与整条链路尚未在服务器验证**。影响部署与配置：部署前须在服务器配置分析器与字体；回滚到上一个发布包即可（旧版本忽略新键）。
 - 同日补充：飞书指令改为更符合中文习惯的词表（`开始录音`/`录音`、`结束录音`/`结束`/`停止`、`状态`/`进度`、`重新出图`/`待分析`、`重发图片`/`最近图片`、`删除录音`/`删除会话`、`设置`、`帮助`），帮助文本缩短到 8 行以内，控制器回复直接用中文（删除 `adapt_controller_reply_for_feishu` 改写层与启动时的重复帮助）；成功出图后在图片之后再发 `digest.md`（图片上的文字稿）；删除 capture-only 模式里"已告知参与者并开始录音"的确认卡片和 `ControllerConfig.consent_confirmed`（点选频道后直接开始录音；底层 `ContinuousRequest.consent_confirmed` 字段与手动调试 CLI 的同名参数保持不变）。
 - 修复：`scripts/linux/oopz-capture.service` 的 `WorkingDirectory` 带引号，systemd 报"path is not absolute"而无法加载（该单元此前从未在服务器上激活过，首次激活时暴露）；改为不带引号并加测试。
+- 部署：2026-10-04 部署到 Ubuntu 服务器并启用（systemd，开机自启；详见 `docs/DEPLOYMENT_STATE.md`）。`scripts/linux/prepare_dependencies.sh` 不再做 PDF 用的沙箱浏览器检查，改为与录音 SDK 相同的方式启动已安装的 Chromium。迁移与回滚：旧发布目录已清理；回滚用发布包重装旧版本。
 - 未做：MaiBot 联动。
 
 ### 2026-10-04 — 部署：服务账号改为 `ubuntu`，退役原专用账号

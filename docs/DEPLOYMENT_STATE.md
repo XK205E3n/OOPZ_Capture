@@ -2,23 +2,31 @@
 
 > 这是本地代码与生产服务器差异的唯一事实来源。任何部署相关修改和每次生产发布都必须同步更新本文件。禁止记录密钥、密码、完整服务器地址或个人信息。
 
-更新时间：2026-10-04
+更新时间：2026-10-04（晚，已部署 0.12.0）
 
 ## 当前状态
 
-### Ubuntu 生产服务器实测基线（2026-10-03 只读检查；2026-10-04 账号迁移后更新）
+### Ubuntu 生产服务器实测基线（2026-10-04 部署 0.12.0 后）
 
-检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB（清理音频后已用约 40%）。以下为实测事实，不含密钥或地址。
+检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB（清理后已用约 26%，`/opt/oopz` 约 3.7 GB）。以下为实测事实，不含密钥或地址。
 
 | 项目 | 实测状态 |
 | --- | --- |
 | 账号 | 全机只有一个管理账号 `ubuntu`，所有操作者和 AI 共用，不另建服务账号；OOPZ 以 `ubuntu` 身份运行，靠 systemd 隔离（见下） |
-| 目录 | `/opt/oopz`（属主 `ubuntu`）：`releases/` 下有四个 v0.11.15 发布目录（`f19cb4a60606`、`bf8a2d777692`、`b8ee9c881551`、`4291aa894f7a`）和 `.management.lock`、`backups/` 属主 root；`shared/` 持久数据、`artifacts/` 发布包与脚本属主 `ubuntu` |
-| 服务形态 | 无 `current` 链接、无持久 systemd 单元；采集测试进程由瞬时单元 `oopz-capture-test`（`systemd-run`）托管：`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`、`PrivateTmp=yes`、`UMask=0077`、`Restart=no`。**服务器重启后不会自动恢复** |
-| 运行进程 | `feishu_cli serve --capture-only`，运行版本 `4291aa894f7a`；capture-only 每次启动都要求全新的空 state/output 目录，当前使用 `shared/capture-tests/20261004T1145`；非正式环境 |
+| 目录 | `/opt/oopz`（属主 `ubuntu`）：`current` → `releases/v0.12.0-18d560a7f329`（唯一的发布目录，root 属主）；`.management.lock`、`backups/`（账号迁移备份）属主 root；`shared/` 持久数据（`config`、`models`、`output`、`feishu_state`、`logs`、`home`、`browsers`、`tools`、`python`、`assets/fonts`、`capture-tests`）、`artifacts/`（当前发布包与引导脚本）属主 `ubuntu` |
+| 服务形态 | 持久 systemd 单元 `oopz-capture.service`（`enabled`，开机自启，`Restart=on-failure`）：`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`、`PrivateTmp=yes`、`UMask=0077`；日志在 `shared/logs/feishu_runtime.log` 与 `feishu_error.log`。原瞬时测试单元 `oopz-capture-test` 已停止 |
+| 运行进程 | `feishu_cli serve`（完整模式，非 capture-only），版本 0.12.0（提交 `18d560a`，标签 `linux-v0.12.0`）；录音后自动分析并发图 |
 | 最近一次实测 | 会话 `2026-10-03_14-32-31_BJT`（北京时间）：159 个分片全部转写成功、失败 0、共 7834 段，状态 `ready_for_analysis`；日志无错误。仅验证录音与转写；该会话音频已按用户批准删除，转写文本保留供分析测试 |
-| 配置 | `shared/config/.env` 仅 8 个键（飞书应用与管理群、OOPZ 登录、设备、音频保留、`OOPZ_PDF_BACKEND=weasyprint`）；无分析器配置（`OOPZ_ANALYZER_CLI`/`OOPZ_ANALYZER_HOME`）；分析、出图、发图均未验收 |
-| 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；Chromium 在 `/opt/oopz-browser-runtime` 与 `shared/browsers`；模型约 897 MB；分析器用的 Qoder CLI 在 `shared/tools/qodercn-*`（登录状态在 `qodercn-home`，须留在 `/opt` 下，`ProtectHome` 会挡住 `/home`） |
+| 配置 | `shared/config/.env` 共 12 个键：飞书应用与管理群、OOPZ 登录、`OOPZ_DEVICE=cpu`、`OOPZ_RETAIN_AUDIO=false`（转写成功即删分片音频）、`OOPZ_ANALYZER_CLI/HOME/MODEL/TIMEOUT_SECONDS`、`OOPZ_FONT_DIR=/opt/oopz/shared/assets/fonts`；已去掉 `OOPZ_PDF_BACKEND` |
+| 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；录音用的 Chromium 在 `shared/browsers`（PDF 用的 `/opt/oopz-browser-runtime` 已删除）；模型约 897 MB；字体在 `shared/assets/fonts`；分析器用的 Qoder CLI 在 `shared/tools/qodercn-*`（登录状态在 `qodercn-home`，须留在 `/opt` 下，`ProtectHome` 会挡住 `/home`） |
+
+### 2026-10-04 部署 0.12.0（Linux 主线首个发布）
+
+- 流程：本地 `scripts/build_release.ps1` 从提交 `18d560a` 构建 `oopz-capture-v0.12.0-18d560a7f329.zip`（SHA-256 `f93b55f6…cd9b5`），上传后在服务器核对哈希，解出引导脚本，`prepare`（独立 Python 3.12 虚拟环境、CPU 版 torch、模型哈希已验证）→ 停止 `oopz-capture-test` → `activate --enable`。启动后日志出现"飞书长连接已就绪"，服务 `active`、`enabled`。
+- 部署中发现并修复：systemd 单元模板 `WorkingDirectory="@ROOT@/current"` 带引号，systemd 报"path is not absolute"（此前从未在服务器激活过）。第一次激活失败后，事务恢复也因单元坏了而失败（按设计保留日志并停服务）；按日志记录的"原先全无"状态手动删除了单元、logrotate、`current` 链接和日志，重建发布包（`a85be8d` → `18d560a`）后重新部署。受影响的 `a85be8d` 构建只准备过、从未激活。
+- 实测：用服务器上 2026-10-03 那场会话的副本，在新发布的环境里完整跑了分析与渲染（4642 段、7 个窗口，约 20 分钟），得到 1080×5870 的图和 `digest.md`，无渲染警告；未映射的音轨按排除法归给 `rola`。副本已删除。**真实飞书群的发图、真实头像下载与出入记录尚未验证**，由用户在群里发起第一次录音时验证。
+- 空间清理（根分区已用 44% → 26%）：删除 4 个旧的 `v0.11.15` 发布目录（约 8.5 GB）、`artifacts/` 里的旧发布包/引导/测试产物、`shared/dev`（开发用虚拟环境与分析实验）、capture-only 用的空 state/output、3 个含凭据的旧 `.env` 备份、pip/pnpm/npm 缓存、PDF 用的 `/opt/oopz-browser-runtime`（393 MB）、`tools/uv`。保留：模型、录音浏览器、Node/Python/Qoder、`capture-tests/20261003T0625`（旧会话的转写，供测试）、账号迁移备份。
+- 回滚：旧版本目录已删除，回滚方式是用 Git 标签/发布包重新构建旧版本；旧版本只是 capture-only 测试代码，没有回滚价值。
 
 ### 2026-10-04 服务账号迁移：退役原专用账号，OOPZ 改以 `ubuntu` 运行
 
@@ -78,8 +86,8 @@ Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux
 
 ## Ubuntu 验收待办
 
-- [ ] 建立 `current` 链接与 systemd 单元，使服务随开机恢复（当前为手动 nohup 测试进程）。
-- [ ] 以含新流程的发布包（建议 0.12.0）部署：配置 `OOPZ_ANALYZER_CLI`/`OOPZ_ANALYZER_HOME`/`OOPZ_FONT_DIR`，把字体放到 `shared/assets/fonts`，在目标机验证"录音 → 自动分析 → 图发到群"全链路（本地 `main` 已实现，服务器仍运行旧的 capture-only 版本 `4291aa894f7a`）。
+- [x] 建立 `current` 链接与 systemd 单元，使服务随开机恢复（2026-10-04 完成）。
+- [ ] 在真实群里验证"录音 → 自动分析 → 图和 digest.md 发到群"全链路，并检查真实头像下载、出入记录、音频删除（部署已完成，等第一次真实录音）。
 - [ ] 在目标机验证无人频道退出、服务重启恢复与版本回滚演练。
 - [ ] 清理测试残留（测试网关进程、`artifacts/` 中的探测脚本与分片，磁盘仅剩约 12 GB）并设置告警。
 - [ ] 完成 4 vCPU 下的长时间负载与 15 分钟转写期限复核。
