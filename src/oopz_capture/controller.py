@@ -17,6 +17,7 @@ from .continuous import (
 )
 from .identifiers import new_session_id
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none
+from .feishu_protocol import HELP_TEXT
 from .controller_protocol import SenderPolicy, ControllerInboundMessage, make_reply, parse_command
 from .digest_job import run_digest
 from .sessions import digest_png
@@ -53,16 +54,6 @@ LIVE_CONFIG_FIELDS: dict[str, tuple[str, Callable[[str], Any]]] = {
     "OOPZ_RECONNECT_MAX_DELAY_SECONDS": ("reconnect_max_delay_seconds", float),
     "OOPZ_RECONNECT_ATTEMPT_TIMEOUT_SECONDS": ("reconnect_attempt_timeout_seconds", float),
 }
-HELP_TEXT = "\n".join([
-    "/oopz 开始 [秒数]：依次选择域和语音频道后开始录音，可指定时长（秒，或 5m/1h）",
-    "/oopz 离开：结束录音；转写后自动分析，完成后把图发到群里",
-    "/oopz 状态：查看当前录音任务状态",
-    "/oopz 设置 变量=值：修改运行设置；先用 /oopz 设置状态 查看可用变量、当前值和说明",
-    "/oopz 设置状态：查看可修改的变量（密码、手机号和密钥打码）",
-    "/oopz 帮助：显示本帮助",
-])
-
-
 _DURATION_RE = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*([smh]?)\s*$", re.IGNORECASE)
 _DURATION_UNIT_SECONDS = {"s": 1.0, "m": 60.0, "h": 3600.0}
 
@@ -73,7 +64,7 @@ def _parse_duration_seconds(value: str) -> float | None:
         return None
     match = _DURATION_RE.fullmatch(value)
     if not match:
-        raise ValueError("时长格式无效；示例：/oopz开始 300（秒）、5m、1h")
+        raise ValueError("时长格式无效；示例：开始录音 300（秒）、5m、1h")
     seconds = float(match.group(1)) * _DURATION_UNIT_SECONDS[match.group(2).casefold() or "s"]
     if not 5 <= seconds <= 86400:
         raise ValueError("时长必须在 5 秒到 24 小时之间")
@@ -97,7 +88,6 @@ class ControllerConfig:
     output_root: Path
     state_root: Path
     authorization: SenderPolicy
-    consent_confirmed: bool
     chunk_seconds: int = 300
     cutoff_local_hour: int = 4
     language: str = "auto"
@@ -122,8 +112,6 @@ class ControllerConfig:
     def validate(self) -> None:
         if not self.authorization.allowed_sender_ids:
             raise ValueError("controller authorization requires at least one allowed sender")
-        if self.consent_confirmed is not True and not self.capture_only:
-            raise ValueError("recording consent must be confirmed by the caller")
         if self.device not in {"cpu", "cuda:0"}:
             raise ValueError("OOPZ_DEVICE must be cpu or cuda:0")
         if not 0 <= self.transcription_repair_attempts <= 3:
@@ -340,7 +328,7 @@ class ControllerService:
         if not self.config.capture_only and digest_png(session_dir).is_file():
             updates = {"status": "analysis_completed"}
         elif last.get("status") == "analyzing" and session_id not in self._analysis_sessions:
-            updates = {"status": "analysis_interrupted"}      # the analysis died with the previous process; "待分析" retries it
+            updates = {"status": "analysis_interrupted"}      # the analysis died with the previous process; "重新出图" retries it
         elif status in {"ready_for_analysis", "ready_for_analysis_with_errors"}:
             updates = {
                 "status": ("capture_transcription_completed_with_errors" if status.endswith("with_errors") else "capture_transcription_completed") if self.config.capture_only else status,
@@ -380,14 +368,14 @@ class ControllerService:
         async with self._lock:
             if self._stopping:
                 return make_reply(message, command="shutdown", status="rejected", at=_iso(),
-                                  text="服务正在停止，请在重启后重试。")
+                                  text="机器人正在重启，请稍后再试。")
             existing = self._saved_reply(message.message_id)
             if existing is not None:
                 return existing
             if not self._authorize(message):
                 return self._store_reply(make_reply(
                     message, command="unauthorized", status="rejected", at=_iso(),
-                    text="拒绝执行：发送者或会话不在授权名单中。",
+                    text="没有权限执行这个操作。",
                 ))
             try:
                 command = parse_command(message.text)
@@ -397,10 +385,10 @@ class ControllerService:
                     return self._store_reply(start_reply)
                 return self._store_reply(make_reply(
                     message, command="invalid", status="rejected", at=_iso(),
-                    text="不支持的指令；发送 /oopz 帮助 查看可用指令。",
+                    text="没看懂这条指令，发送“帮助”看看能做什么。",
                 ))
             if self.config.capture_only and command not in {"help", "start_capture", "leave_channel", "status"}:
-                return self._store_reply(make_reply(message, command=command, status="rejected", at=_iso(), text="仅录音转写模式不支持此操作。"))
+                return self._store_reply(make_reply(message, command=command, status="rejected", at=_iso(), text="当前是仅录音模式，这个操作不可用。"))
             if command == "help":
                 return self._store_reply(make_reply(
                     message, command=command, status="completed", at=_iso(),
@@ -434,7 +422,7 @@ class ControllerService:
             session_id = str(active.get("session_id") or "")
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text=f"录音已占用：已有录音任务在运行；Session ID={session_id}。如需结束当前录音，请发送 /oopz 离开。",
+                text=f"已经有录音在进行了（Session ID={session_id}）。要结束请发送“结束录音”。",
                 session_id=session_id,
             )
         duration_match = re.match(r"^/oopz\s*(?:start|开始)\s*(.*)$", message.text, re.IGNORECASE)
@@ -449,19 +437,19 @@ class ControllerService:
         if existing_flow is not None and str(existing_flow.get("admin_id")) != message.sender_id:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text="另一位管理员正在选择录音目标；请稍后重试。",
+                text="另一位群成员正在选择录音频道，请稍后再试。",
             )
         try:
             areas = await self._load_area_choices()
         except Exception as error:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text=f"无法读取 OOPZ 域列表：{error}",
+                text=f"读不到 OOPZ 的域列表：{error}",
             )
         if not areas:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text="当前账号没有可供选择的已加入域。",
+                text="这个账号还没有加入任何域。",
             )
         self._save_start_flow({
             "schema_version": START_FLOW_SCHEMA,
@@ -473,7 +461,7 @@ class ControllerService:
         lines = [f"{index}. {item['name']}" for index, item in enumerate(areas, start=1)]
         return make_reply(
             message, command=command, status="completed", at=_iso(),
-            text="请选择要进入的域：\n" + "\n".join(lines) + "\n\n回复编号；回复 取消 可退出选择。",
+            text="请选择要进入的域：\n" + "\n".join(lines) + "\n\n点选按钮，或发送“取消”退出。",
         )
 
     async def _load_area_choices(self) -> list[dict[str, str]]:
@@ -556,30 +544,18 @@ class ControllerService:
         text = message.text.strip()
         if text.casefold() in {"取消", "退出", "cancel"}:
             self._clear_start_flow()
-            return make_reply(message, command=command, status="completed", at=_iso(), text="已取消录音目标选择。")
+            return make_reply(message, command=command, status="completed", at=_iso(), text="已取消。")
         if isinstance(self._state.get("active"), dict):
             self._clear_start_flow()
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text="录音任务已被占用，本次选择已取消。发送 /oopz 状态 可查看详情。",
+                text="已经有录音在进行了，这次选择已取消。发送“状态”看详情。",
             )
         stage = str(flow.get("stage") or "")
-        if self.config.capture_only and stage == "awaiting_recording_consent":
-            token = str(flow.get("consent_token") or "")
-            if not token or text != "capture_consent:" + token:
-                return make_reply(message, command=command, status="rejected", at=_iso(),
-                                  text="请由发起人点击“已告知参与者并开始录音”，或取消。")
-            area, channel = flow["selected_area"], flow["selected_channel"]
-            self._clear_start_flow()
-            return await self._launch_capture(
-                message, command, area_id=str(area["area_id"]), channel_id=str(channel["channel_id"]),
-                area_name=str(area["name"]), channel_name=str(channel["display_name"]),
-                max_runtime=flow.get("max_runtime_seconds"), consent_confirmed=True,
-            )
         if not text.isdigit():
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text="请回复列表中的编号，或回复 取消。",
+                text="请点选按钮，或发送“取消”。",
             )
         stage = str(flow.get("stage") or "")
         if stage == "awaiting_area_selection":
@@ -597,13 +573,13 @@ class ControllerService:
                 self._clear_start_flow()
                 return make_reply(
                     message, command=command, status="rejected", at=_iso(),
-                    text=f"无法读取“{area['name']}”的频道列表：{error}",
+                    text=f"读不到“{area['name']}”的频道列表：{error}",
                 )
             if not channels:
                 self._clear_start_flow()
                 return make_reply(
                     message, command=command, status="rejected", at=_iso(),
-                    text=f"“{area['name']}”中没有可供选择的语音频道。",
+                    text=f"“{area['name']}”里没有语音频道。",
                 )
             flow["selected_area"] = area
             flow["channels"] = channels
@@ -612,7 +588,7 @@ class ControllerService:
             lines = [f"{number}. {item['display_name']}" for number, item in enumerate(channels, start=1)]
             return make_reply(
                 message, command=command, status="completed", at=_iso(),
-                text=f"已选择域：{area['name']}\n请选择语音频道：\n" + "\n".join(lines) + "\n\n回复编号；回复 取消 可退出选择。",
+                text=f"已选择域：{area['name']}\n请选择语音频道：\n" + "\n".join(lines) + "\n\n点选按钮，或发送“取消”退出。",
             )
         if stage == "awaiting_channel_selection":
             channels = flow.get("channels") or []
@@ -624,13 +600,6 @@ class ControllerService:
                 )
             area = flow.get("selected_area") or {}
             channel = channels[index - 1]
-            if self.config.capture_only:
-                token = uuid4().hex
-                flow.update(stage="awaiting_recording_consent", selected_channel=channel, consent_token=token)
-                self._save_start_flow(flow)
-                return make_reply(message, command=command, status="completed", at=_iso(),
-                                  text=f"即将录音：{area['name']} / {channel['display_name']}。尚未开始录音；请先告知所有参与者，再点击确认。",
-                                  capture_consent_token=token)
             self._clear_start_flow()
             return await self._launch_capture(
                 message, command,
@@ -639,15 +608,13 @@ class ControllerService:
                 max_runtime=flow.get("max_runtime_seconds"),
             )
         self._clear_start_flow()
-        return make_reply(message, command=command, status="rejected", at=_iso(), text="录音目标选择状态已失效，请重新发送 /oopz 开始。")
+        return make_reply(message, command=command, status="rejected", at=_iso(), text="这次选择已过期，请重新发送“开始录音”。")
 
     async def _launch_capture(
         self, message: ControllerInboundMessage, command: str, *, area_id: str,
         channel_id: str, area_name: str, channel_name: str,
-        max_runtime: float | None, consent_confirmed: bool = False,
+        max_runtime: float | None,
     ) -> dict[str, Any]:
-        if self.config.capture_only and consent_confirmed is not True:
-            raise ValueError("capture-only requires explicit initiator confirmation before recording")
         session_id = new_session_id(self.output_root)
         request_id = str(uuid4())
         active = {
@@ -665,7 +632,7 @@ class ControllerService:
             request_id=request_id,
             area_id=area_id,
             channel_id=channel_id,
-            consent_confirmed=consent_confirmed if self.config.capture_only else True,
+            consent_confirmed=True,
             max_runtime_seconds=max_runtime,
             chunk_seconds=self.config.chunk_seconds,
             cutoff_local_hour=self.config.cutoff_local_hour,
@@ -690,7 +657,7 @@ class ControllerService:
         await asyncio.sleep(0)
         return make_reply(
             message, command=command, status="accepted", at=_iso(),
-            text=f"录音任务已启动；域：{area_name}；频道：{channel_name}；Session ID={session_id}{('；时长=' + str(int(max_runtime)) + ' 秒') if max_runtime is not None else ''}。发送 /oopz 离开 可提前结束录音。",
+            text=f"开始录音：{area_name} / {channel_name}{('，最长 ' + str(int(max_runtime)) + ' 秒') if max_runtime is not None else ''}。要结束请发送“结束录音”，结束后会自动出图并发到本群。",
             request_id=request_id, session_id=session_id,
         )
 
@@ -699,7 +666,7 @@ class ControllerService:
         if not isinstance(active, dict):
             return make_reply(
                 message, command=command, status="completed", at=_iso(),
-                text="当前没有正在运行的录音任务。",
+                text="现在没有在录音。",
             )
         session_id = str(active["session_id"])
         lifecycle_path = self.output_root / session_id / "lifecycle.json"
@@ -711,7 +678,7 @@ class ControllerService:
             self._save_state()
             return make_reply(
                 message, command=command, status="accepted", at=_iso(),
-                text=f"已登记离开指令；Session ID={session_id}。连接建立后将立即安全退出。",
+                text="收到，连上频道后会立即结束。",
                 session_id=session_id,
             )
         try:
@@ -722,7 +689,7 @@ class ControllerService:
         except ValueError as error:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text=f"暂时无法提交离开指令；Session ID={session_id}；原因={error}",
+                text=f"暂时结束不了：{error}",
                 session_id=session_id,
             )
         active["status"] = "stop_requested"
@@ -731,7 +698,7 @@ class ControllerService:
         self._save_state()
         return make_reply(
             message, command=command, status="accepted", at=_iso(),
-            text=f"已提交离开指令；Session ID={session_id}。转写后会自动分析，完成后把图发到本群。",
+            text="收到，正在结束录音；转写完成后会自动出图并发到本群。",
             session_id=session_id,
         )
 
@@ -741,7 +708,7 @@ class ControllerService:
         if not args:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(),
-                text="格式：/oopz设置 变量名=值；可用变量见 /oopz 设置状态。",
+                text="格式：设置 变量名=值；可用变量发送“设置状态”查看。",
             )
         if args.casefold() in {"状态", "status"}:
             return self._settings_status(message, command)
@@ -762,10 +729,10 @@ class ControllerService:
             return make_reply(
                 message, command=command, status="rejected", at=_iso(), text=str(error),
             )
-        effect_note = "下一次分析生效" if canonical_key in _ANALYSIS_SETTING_KEYS else "下一次录音生效"
+        effect_note = "下次分析生效" if canonical_key in _ANALYSIS_SETTING_KEYS else "下次录音生效"
         return make_reply(
             message, command=command, status="completed", at=_iso(),
-            text=f"已设置 {canonical_key}：{masked}。已保存到 .env；{effect_note}。",
+            text=f"已设置 {canonical_key} = {masked}，{effect_note}。",
         )
 
     def _settings_status(self, message: ControllerInboundMessage, command: str) -> dict[str, Any]:
@@ -787,18 +754,18 @@ class ControllerService:
             if isinstance(last, dict) and last.get("session_id"):
                 raw_status = str(last.get("status") or "unknown")
                 status_text = {
-                    "capture_transcription_completed": "录音与转写已结束（仅录音转写模式）",
-                    "capture_transcription_completed_with_errors": "录音已结束，转写存在错误（仅录音转写模式）",
+                    "capture_transcription_completed": "录音和转写已结束（仅录音模式）",
+                    "capture_transcription_completed_with_errors": "录音已结束，有转写失败的分片（仅录音模式）",
                     "analyzing": "正在分析",
-                    "ready_for_analysis": "录音和转写已完成，尚未分析；可发送“待分析”",
-                    "analysis_completed": "分析已完成，图已发送",
-                    "analysis_failed": "分析失败；可发送“待分析”重试",
-                    "analysis_interrupted": "分析被机器人重启中断；可发送“待分析”重试",
+                    "ready_for_analysis": "录音和转写已完成，还没出图；发送“重新出图”可以分析",
+                    "analysis_completed": "已出图并发送",
+                    "analysis_failed": "分析失败；发送“重新出图”可以重试",
+                    "analysis_interrupted": "分析被重启打断了；发送“重新出图”可以重试",
                 }.get(raw_status, raw_status)
-                suffix = f"；最近 Session ID={last['session_id']}；状态={status_text}"
+                suffix = f"。最近一次（{last['session_id']}）：{status_text}"
             return make_reply(
                 message, command=command, status="completed", at=_iso(),
-                text="当前没有正在运行的录音任务" + suffix + "。",
+                text="现在没有在录音" + (suffix or "。"),
             )
         session_id = str(active["session_id"])
         lifecycle_path = self.output_root / session_id / "lifecycle.json"
@@ -812,19 +779,19 @@ class ControllerService:
             "connecting": "正在连接频道",
             "recording": "正在录音",
             "reconnecting": "语音连接中断，正在重连",
-            "stop_requested": "已收到离开指令，正在安全结束",
-            "stopping": "正在结束并等待转写",
-            "interrupted": "录音因机器人重启而中断",
+            "stop_requested": "正在结束",
+            "stopping": "正在结束，等待转写完成",
+            "interrupted": "录音被重启打断了",
             "ready_for_analysis": "录音和转写已完成",
             "ready_for_analysis_with_errors": "转写完成但仍有失败分片",
         }.get(lifecycle_status, lifecycle_status)
-        details = [f"录音任务状态={status_text}", f"Session ID={session_id}"]
+        details = [status_text]
         area_name = str(active.get("area_name") or "")
         channel_name = str(active.get("channel_name") or "")
         if area_name:
-            details.append(f"域={area_name}")
+            details.append(f"域：{area_name}")
         if channel_name:
-            details.append(f"频道={channel_name}")
+            details.append(f"频道：{channel_name}")
         try:
             total = int(lifecycle.get("chunks_total", 0) or 0)
             transcribed = int(lifecycle.get("chunks_transcribed", 0) or 0)
@@ -832,12 +799,12 @@ class ControllerService:
         except (TypeError, ValueError):
             total = transcribed = failed = 0
         if total or transcribed or failed:
-            details.append(f"分片转写={transcribed}/{total or transcribed}")
+            details.append(f"已转写 {transcribed}/{total or transcribed} 段")
             if failed:
-                details.append(f"失败={failed}")
+                details.append(f"失败 {failed} 段")
         return make_reply(
             message, command=command, status="completed", at=_iso(),
-            text="；".join(details) + "。",
+            text="，".join(details) + f"（Session ID={session_id}）。",
             session_id=session_id, session_status=lifecycle_status,
         )
 
@@ -1121,14 +1088,15 @@ class ControllerService:
             print(f"[分析进度] 开始分析 Session={session_dir.name}。", flush=True)
             output = await asyncio.to_thread(self.analysis_runner, session_dir)
             self._queue_to_group(text="", source="digest:image", image_path=str(output["png"]))
-            print(f"[分析进度] Session={session_dir.name} 的图已排队发送到飞书。", flush=True)
+            self._queue_to_group(text="", source="digest:md", file_path=str(output["md"]))      # the text that is on the image
+            print(f"[分析进度] Session={session_dir.name} 的图和文字稿已排队发送到飞书。", flush=True)
         except Exception as error:
             status = "analysis_failed"
             reason = f"{type(error).__name__}: {str(error)[:300]}"
             extra = {"analysis_error": reason}
             print(f"[分析进度] Session={session_dir.name} 分析失败：{reason}", flush=True)
             self._queue_to_group(
-                text=f"分析失败（{session_dir.name}）：{reason}。可发送“待分析”重试。", source="analysis_error")
+                text=f"分析失败（{session_dir.name}）：{reason}。发送“重新出图”可以重试。", source="analysis_error")
         finally:
             self._analysis_sessions.discard(session_dir.name)
         async with self._lock:

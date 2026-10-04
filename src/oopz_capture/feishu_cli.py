@@ -12,7 +12,7 @@ import signal
 import sys
 from typing import Sequence
 
-from .feishu_gateway import CAPTURE_ONLY_HELP_TEXT, FEISHU_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
+from .feishu_gateway import CAPTURE_ONLY_HELP_TEXT, FeishuGateway, FeishuGatewayConfig
 from .settings import upsert_env
 
 
@@ -75,12 +75,9 @@ def inbound_message_text(message: object) -> str:
 def lifecycle_notices(lifecycle: str | None) -> tuple[str, ...]:
     """Return the notices appropriate for a newly connected gateway."""
     if lifecycle == "started":
-        return (
-            "OOPZ 飞书机器人已启动：正在监听本群 @OOPZ 指令，并显示录音、转写、分析和文件投递状态。",
-            FEISHU_HELP_TEXT,
-        )
+        return ("OOPZ 机器人已上线，@我 发送“帮助”查看指令。",)
     if lifecycle == "restarted":
-        return ("OOPZ 飞书机器人重启完成：已恢复本群指令监听与状态更新。",)
+        return ("OOPZ 机器人已重启，可以继续使用。",)
     return ()
 
 
@@ -341,7 +338,7 @@ async def serve_gateway(channel, gateway: FeishuGateway, *, lifecycle: str | Non
             if not connecting.done():
                 connecting.cancel()
             await asyncio.gather(connecting, stop_waiter, return_exceptions=True)
-        print("飞书长连接已就绪；正在监听受控群的 @OOPZ 指令。", flush=True)
+        print("飞书长连接已就绪；正在监听受控群的 @ 指令。", flush=True)
         notices = ((CAPTURE_ONLY_HELP_TEXT,) if lifecycle else ()) if getattr(getattr(gateway, "config", None), "capture_only", False) else lifecycle_notices(lifecycle)
         for notice in notices:
             if stopping.is_set():

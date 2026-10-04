@@ -11,20 +11,17 @@ from oopz_capture.feishu_cli import (
     inbound_message_text,
     lifecycle_notices,
 )
-from oopz_capture.feishu_gateway import FEISHU_HELP_TEXT
 
 
-def test_fresh_start_sends_startup_and_help() -> None:
+def test_fresh_start_sends_one_short_notice() -> None:
     notices = lifecycle_notices("started")
-    assert len(notices) == 2
-    assert notices[-1] == FEISHU_HELP_TEXT
+    assert len(notices) == 1 and "帮助" in notices[0]
 
 
 def test_restart_sends_completion_without_help() -> None:
     notices = lifecycle_notices("restarted")
     assert len(notices) == 1
-    assert FEISHU_HELP_TEXT not in notices
-    assert "重启完成" in notices[0]
+    assert "帮助" not in notices[0] and "重启" in notices[0]
 
 
 def test_first_group_invitation_persists_admin_chat_id(tmp_path, monkeypatch) -> None:

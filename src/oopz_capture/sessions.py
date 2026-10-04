@@ -18,6 +18,10 @@ def digest_png(session_dir: Path) -> Path:
     return analysis_dir(session_dir) / "digest" / "digest.png"
 
 
+def digest_md(session_dir: Path) -> Path:
+    return analysis_dir(session_dir) / "digest" / "digest.md"
+
+
 def _session_dirs(output_root: Path):
     root = Path(output_root).resolve()
     if root.is_dir():

@@ -13,7 +13,7 @@
   → FeishuGateway → ControllerService → OOPZ 录音与分片
   → 本地转写与修复 → 录音结束后自动分析（Qoder CN CLI）
   → analysis/ 目录（content.json 等）+ digest/digest.png
-  → 发件箱（图片消息）→ 飞书群
+  → 发件箱（图片消息 + digest.md 文件）→ 飞书群
 ```
 
 会话文件保存在 `OOPZ_OUTPUT_ROOT`（默认 `output`），网关事件、发件箱和审计日志保存在 `OOPZ_FEISHU_STATE_ROOT`（默认 `feishu_state`）。控制器、转写和分析可在后续命令中从文件状态恢复。
@@ -30,9 +30,9 @@
 4. 编辑改写：另一次调用把汇总改写成"标题 + 一句吐槽"，同时给出各块的角标和时间线短标题；证据字段不得改动，仍走同一校验；实际渲染一次，超高则退回缩写。
 5. `digest/render` 离线渲染 `digest.png` 和 `digest.md`（Pillow，字体在 `OOPZ_FONT_DIR`）。
 
-输出写入 `<会话>/analysis/`：`content.json`、`bundle.json`、`meta.json`、`stats.json`、`windows.json`、`coverage.json`、`calls.jsonl`（每次模型调用的审计）、`digest/digest.png`。失败时写 `failure.json`，并向群里发一条文字说明；`待分析` 重新运行。控制器重启会把"分析中"的会话标成"分析被中断"，同样可用 `待分析` 重试。
+输出写入 `<会话>/analysis/`：`content.json`、`bundle.json`、`meta.json`、`stats.json`、`windows.json`、`coverage.json`、`calls.jsonl`（每次模型调用的审计）、`digest/digest.png`。失败时写 `failure.json`，并向群里发一条文字说明；`重新出图` 重新运行。控制器重启会把"分析中"的会话标成"分析被中断"，同样可用 `重新出图` 重试。
 
-发件箱（`feishu_state/send_requests`）持久保存待发消息；网关每秒检查，发送失败会重试。只有图片消息 `{"image": {"source": 路径}}` 和失败说明文字；没有总结文字。
+发件箱（`feishu_state/send_requests`）持久保存待发消息；网关每秒检查，发送失败会重试。成功时依次发图片消息 `{"image": {"source": 路径}}` 和 `digest.md` 文件（图片上的文字稿），没有别的文字消息；失败时发一条带原因的文字。
 
 ## 录音浏览器依赖
 
@@ -40,4 +40,4 @@
 
 ## 保留与删除
 
-会话默认保留 15 天（`OOPZ_RETENTION_HOURS=360`），到期由网关每分钟清理一次本地会话和过期的控制文件。`删除会话` 在二次确认后只删除本地会话目录。
+会话默认保留 15 天（`OOPZ_RETENTION_HOURS=360`），到期由网关每分钟清理一次本地会话和过期的控制文件。`删除录音` 在二次确认后只删除本地会话目录。

@@ -9,9 +9,9 @@ from oopz_capture.controller import ControllerConfig
 from oopz_capture.controller_protocol import SenderPolicy
 from oopz_capture.feishu_gateway import (
     FEISHU_SETTING_KEYS, LOCAL_ONLY_SETTING_KEYS, FeishuGateway,
-    FeishuGatewayConfig, adapt_controller_reply_for_feishu,
+    FeishuGatewayConfig,
 )
-from oopz_capture.feishu_protocol import FeishuInbound, synthetic_controller_id
+from oopz_capture.feishu_protocol import HELP_TEXT, FeishuInbound, synthetic_controller_id
 from oopz_capture.send_request import enqueue_send_request
 
 
@@ -50,7 +50,6 @@ def config(tmp_path: Path) -> FeishuGatewayConfig:
     controller = ControllerConfig(
         output_root=tmp_path / "output", state_root=tmp_path / "feishu_state",
         authorization=SenderPolicy(frozenset({synthetic_controller_id("ou_admin")})),
-        consent_confirmed=True,
     )
     return FeishuGatewayConfig("app", "secret", "oc_admins", tmp_path / "feishu_state", controller)
 
@@ -99,15 +98,17 @@ def test_configured_group_member_is_admitted_to_reused_controller_in_memory(tmp_
     assert member_id in gateway.controller.config.authorization.allowed_sender_ids
 
 
-def test_help_is_feishu_specific_and_does_not_enter_controller(tmp_path: Path) -> None:
+def test_help_is_short_and_in_the_commands_people_type(tmp_path: Path) -> None:
     async def run():
         channel, controller = FakeChannel(), FakeController()
         gateway = FeishuGateway(config(tmp_path), channel, controller=controller)
         await gateway.handle_message(FeishuInbound("om_help", "oc_admins", "ou_admin", "帮助"))
         assert controller.received == []
         text = channel.sent[-1][1]["text"]
-        assert "开始录音" in text and "最近图片" in text and "删除会话" in text
-        assert "不需要再确认" in text and "报告" not in text and "批准" not in text
+        assert text == HELP_TEXT and len(text.splitlines()) <= 9 and len(text) < 260
+        for word in ("开始录音", "结束录音", "状态", "重新出图", "重发图片", "删除录音", "设置"):
+            assert word in text
+        assert "/oopz" not in text and "批准" not in text and "报告" not in text
     asyncio.run(run())
 
 
@@ -143,26 +144,14 @@ def test_feishu_setting_classification_keeps_security_boundaries_local() -> None
     assert "OOPZ_SHOW_BROWSER" not in FEISHU_SETTING_KEYS
 
 
-def test_recording_reply_is_rewritten_for_feishu(tmp_path: Path) -> None:
+def test_controller_replies_are_sent_as_they_are(tmp_path: Path) -> None:
     async def run():
-        legacy = "录音任务已启动；域：粘合国；频道：无分类 / 尼古喵喵；Session ID=session-1；时长=60 秒。发送 /oopz 离开 可提前结束录音。"
-        channel, controller = FakeChannel(), FakeController(legacy)
+        reply = "录音任务已启动；域：粘合国；Session ID=session-1。要结束请发送“结束录音”。"
+        channel, controller = FakeChannel(), FakeController(reply)
         gateway = FeishuGateway(config(tmp_path), channel, controller=controller)
         await gateway.handle_message(FeishuInbound("om_start", "oc_admins", "ou_admin", "开始录音 1分钟"))
-        response = channel.sent[-1][1]["text"]
-        assert "/oopz" not in response
-        assert "@OOPZ 后发送“停止”" in response
-        assert "Session ID=session-1" in response
+        assert channel.sent[-1][1] == {"text": reply} and controller.received[-1]["text"] == "/oopz 开始 1m"
     asyncio.run(run())
-
-
-def test_progress_prompts_are_rewritten_for_feishu() -> None:
-    assert adapt_controller_reply_for_feishu("录音已占用，请用 /oopz 状态 查看进度。") == "录音已占用，请在本群 @OOPZ 后发送“状态”查看进度。"
-    assert adapt_controller_reply_for_feishu("另一位管理员正在选择录音目标；发送 /oopz 状态 可查看详情。") == "另一位群成员正在选择录音目标；请在本群 @OOPZ 后发送“状态”查看详情。"
-    assert "/oopz" not in adapt_controller_reply_for_feishu("不支持的指令；发送 /oopz 帮助 查看可用指令。")
-    setting_prompt = adapt_controller_reply_for_feishu("格式：/oopz设置 变量名=值；可用变量见 /oopz 设置状态。")
-    assert "/oopz" not in setting_prompt
-    assert "设置状态" in setting_prompt
 
 
 def test_recording_target_card_omits_list_spacing_from_markdown(tmp_path: Path) -> None:
@@ -173,7 +162,7 @@ def test_recording_target_card_omits_list_spacing_from_markdown(tmp_path: Path) 
         await gateway._send_reply(
             "已选择域：粘合国\n请选择语音频道：\n"
             "1. 无分类 / 尼古喵喵\n2. 无分类 / yy dz\n\n"
-            "回复编号；回复 取消 可退出选择。"
+            "点选按钮，或发送“取消”退出。"
         )
         card = channel.sent[-1][1]["card"]
         assert card["elements"][0] == {"tag": "markdown", "content": "已选择域：粘合国\n请选择语音频道："}
@@ -187,16 +176,20 @@ def test_recording_target_card_omits_list_spacing_from_markdown(tmp_path: Path) 
     asyncio.run(run())
 
 
-def test_finished_digest_is_sent_as_an_image_only(tmp_path: Path) -> None:
+def test_finished_digest_is_sent_as_image_then_text_file(tmp_path: Path) -> None:
     async def run():
         channel = FakeChannel()
         gateway = FeishuGateway(config(tmp_path), channel, controller=FakeController())
-        png = tmp_path / "digest.png"
+        png, md = tmp_path / "digest.png", tmp_path / "digest.md"
         png.write_bytes(b"png")
+        md.write_text("text", encoding="utf-8")
         enqueue_send_request(gateway.state_root, target_type="group", target_id="oopz-group", text="",
                              source="digest:image", image_path=str(png))
-        assert await gateway.drain_outbox() == 1
-        assert channel.sent == [("oc_admins", {"image": {"source": str(png)}}, None)]
+        enqueue_send_request(gateway.state_root, target_type="group", target_id="oopz-group", text="",
+                             source="digest:md", file_path=str(md))
+        assert await gateway.drain_outbox() == 2
+        assert channel.sent == [("oc_admins", {"image": {"source": str(png)}}, None),
+                                ("oc_admins", {"file": {"source": str(md), "file_name": "digest.md"}}, None)]
         assert await gateway.drain_outbox() == 0
     asyncio.run(run())
 
@@ -220,14 +213,14 @@ def test_pending_card_lists_unanalysed_sessions_and_starts_the_analysis(tmp_path
         make_session(tmp_path, "2026-10-02_10-00-00_BJT", digest=True)                    # already has its image
         make_session(tmp_path, "2026-10-01_09-00-00_BJT", digest=False, ready=False)      # still recording
         gateway = FeishuGateway(config(tmp_path), channel, controller=controller)
-        await gateway.handle_message(FeishuInbound("om_pending", "oc_admins", "ou_admin", "待分析"))
+        await gateway.handle_message(FeishuInbound("om_pending", "oc_admins", "ou_admin", "重新出图"))
         buttons = channel.sent[-1][1]["card"]["elements"][1]["actions"]
         assert [b["value"]["action_id"] for b in buttons] == ["pending:analyze:2026-10-03_14-32-31_BJT"]
         assert "2026-10-03 14:32" in buttons[0]["text"]["content"]
         await gateway.handle_card_action(action_id=buttons[0]["value"]["action_id"], open_id="ou_admin",
                                          event_id="evt_a", chat_id="oc_admins")
         assert controller.analysed == ["2026-10-03_14-32-31_BJT"]
-        assert "完成后图片会发到本群" in channel.sent[-1][1]["text"]
+        assert "重新出图" in channel.sent[-1][1]["text"] and "发到本群" in channel.sent[-1][1]["text"]
     asyncio.run(run())
 
 
@@ -235,12 +228,14 @@ def test_recent_digest_card_sends_the_selected_image_again(tmp_path: Path) -> No
     async def run():
         channel = FakeChannel()
         session = make_session(tmp_path, "2026-10-03_14-32-31_BJT", digest=True)
+        (session / "analysis" / "digest" / "digest.md").write_text("text", encoding="utf-8")
         gateway = FeishuGateway(config(tmp_path), channel, controller=FakeController())
-        await gateway.handle_message(FeishuInbound("om_recent", "oc_admins", "ou_admin", "最近图片"))
+        await gateway.handle_message(FeishuInbound("om_recent", "oc_admins", "ou_admin", "重发图片"))
         action = channel.sent[-1][1]["card"]["elements"][1]["actions"][0]["value"]["action_id"]
         assert action == "digest:send:2026-10-03_14-32-31_BJT"
         await gateway.handle_card_action(action_id=action, open_id="ou_admin", event_id="evt_img", chat_id="oc_admins")
-        assert channel.sent[-1][1] == {"image": {"source": str(session / "analysis" / "digest" / "digest.png")}}
+        assert channel.sent[-2][1] == {"image": {"source": str(session / "analysis" / "digest" / "digest.png")}}
+        assert channel.sent[-1][1]["file"]["file_name"] == "digest.md"
         await gateway.handle_message(FeishuInbound("om_old", "oc_admins", "ou_admin", "最近报告"))   # the old command is gone
         assert "未能可靠识别" in channel.sent[-1][1]["text"]
     asyncio.run(run())
@@ -252,8 +247,8 @@ def test_delete_needs_a_second_confirmation_and_only_removes_the_local_session(t
         session_id = "2026-10-03_14-32-31_BJT"
         make_session(tmp_path, session_id, digest=True)
         gateway = FeishuGateway(config(tmp_path), channel, controller=controller)
-        await gateway.handle_message(FeishuInbound("om_del", "oc_admins", "ou_admin", f"删除会话 {session_id}"))
-        assert channel.sent[-1][1]["card"]["header"]["title"]["content"] == "确认删除会话"
+        await gateway.handle_message(FeishuInbound("om_del", "oc_admins", "ou_admin", f"删除录音 {session_id}"))
+        assert channel.sent[-1][1]["card"]["header"]["title"]["content"] == "确认删除录音"
         assert controller.deleted == []
         await gateway.handle_card_action(action_id=f"delete:confirm:{session_id}", open_id="ou_admin",
                                          event_id="evt_d1", chat_id="oc_admins")

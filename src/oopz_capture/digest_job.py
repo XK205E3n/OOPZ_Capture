@@ -26,4 +26,5 @@ def run_digest(session_dir: Path) -> dict:
         raise
     save(session, session_dir, analysis, out)
     manifest = render(out)
-    return {"png": str(out / "digest" / "digest.png"), "warnings": manifest.get("warnings", [])}
+    return {"png": str(out / "digest" / "digest.png"), "md": str(out / "digest" / "digest.md"),
+            "warnings": manifest.get("warnings", [])}

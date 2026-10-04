@@ -17,7 +17,6 @@ def controller_config(tmp_path: Path) -> ControllerConfig:
         output_root=tmp_path / "output",
         state_root=tmp_path / "feishu_state",
         authorization=SenderPolicy(frozenset({"member-1"}), frozenset({"group-1"})),
-        consent_confirmed=True,
     )
 
 
@@ -48,16 +47,6 @@ def test_controller_uses_feishu_state_root(tmp_path: Path) -> None:
     service = ControllerService(controller_config(tmp_path))
     assert service.state_root == (tmp_path / "feishu_state").resolve()
     assert service.output_root == (tmp_path / "output").resolve()
-
-
-def test_controller_requires_explicit_recording_consent(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="recording consent"):
-        ControllerConfig(
-            output_root=tmp_path / "output",
-            state_root=tmp_path / "state",
-            authorization=SenderPolicy(frozenset({"member-1"})),
-            consent_confirmed=False,
-        ).validate()
 
 
 def test_controller_retires_orphaned_worker_lifecycle_on_restart(tmp_path: Path) -> None:
@@ -184,7 +173,7 @@ def test_controller_startup_marks_a_dead_analysis_as_interrupted(tmp_path: Path)
     assert service._state["last_job"]["status"] == "analysis_interrupted"
 
 
-def test_a_finished_recording_is_analysed_and_only_the_image_is_queued(tmp_path: Path) -> None:
+def test_a_finished_recording_is_analysed_and_the_image_and_text_file_are_queued(tmp_path: Path) -> None:
     from oopz_capture.continuous import ContinuousRequest
     from oopz_capture.send_request import list_send_requests
 
@@ -204,7 +193,9 @@ def test_a_finished_recording_is_analysed_and_only_the_image_is_queued(tmp_path:
         png = session_dir / "analysis" / "digest" / "digest.png"
         png.parent.mkdir(parents=True)
         png.write_bytes(b"png")
-        return {"png": str(png)}
+        md = png.with_name("digest.md")
+        md.write_text("text", encoding="utf-8")
+        return {"png": str(png), "md": str(md)}
 
     service = ControllerService(controller_config(tmp_path), config_loader=loader, capture_runner=capture, analysis_runner=analyse)
 
@@ -217,7 +208,8 @@ def test_a_finished_recording_is_analysed_and_only_the_image_is_queued(tmp_path:
     asyncio.run(run())
     assert analysed == ["s1"]
     queued = list_send_requests(service.state_root, statuses={"pending"})
-    assert len(queued) == 1 and queued[0]["image_path"].endswith("digest.png") and queued[0]["text"] == ""
+    assert [(q["image_path"] or q["file_path"]).rsplit("digest", 1)[1] for q in queued] == [".png", ".md"]
+    assert all(q["text"] == "" for q in queued)
     assert service._state["last_job"]["status"] == "analysis_completed"
 
 
@@ -233,5 +225,5 @@ def test_a_failed_analysis_is_reported_in_text_and_can_be_retried(tmp_path: Path
     service._state["last_job"] = {"session_id": "s1", "status": "analyzing"}
     asyncio.run(service._analyze_and_deliver(session))
     queued = list_send_requests(service.state_root, statuses={"pending"})
-    assert len(queued) == 1 and "model unreachable" in queued[0]["text"] and "待分析" in queued[0]["text"]
+    assert len(queued) == 1 and "model unreachable" in queued[0]["text"] and "重新出图" in queued[0]["text"]
     assert service._state["last_job"]["status"] == "analysis_failed" and "s1" not in service.busy_sessions()

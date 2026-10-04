@@ -31,7 +31,7 @@ OOPZ_ANALYZER_HOME=/opt/oopz/shared/tools/qodercn-home
 
 分析失败时群里会收到一条文字说明，里面有 Session 和原因。排查文件在 `output/<Session ID>/analysis/`：`failure.json`（最终失败原因）、`calls.jsonl`（每次模型调用的耗时、错误、被拒绝的原文）、`windows.json`（各窗口结果）。常见原因：Qoder CLI 未登录或额度用尽（单次调用报错）、模型多次输出被校验拒绝、转写没有任何发言（无法出图）。
 
-修复后在群内发送"待分析"并选择该 Session 重试；机器人重启时正在分析的会话会显示"分析被中断"，同样可重试。重试会重新分析整场（不复用窗口结果；手动调试可用 `python -m oopz_capture.analyzer analyze … --reuse <旧输出目录>` 只重跑汇总和改写）。
+修复后在群内发送"重新出图"并选择该录音重试；机器人重启时正在分析的会话会显示"分析被中断"，同样可重试。重试会重新分析整场（不复用窗口结果；手动调试可用 `python -m oopz_capture.analyzer analyze … --reuse <旧输出目录>` 只重跑汇总和改写）。
 
 ## 服务器容量
 

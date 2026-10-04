@@ -13,37 +13,22 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import uuid4
 
-from .feishu_protocol import FeishuInbound, display_intent, normalize_intent, synthetic_controller_id
+from .feishu_protocol import HELP_TEXT, FeishuInbound, display_intent, normalize_intent, synthetic_controller_id
 from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_none as _read_json_or_none
 from .controller import ControllerConfig, ControllerService, _env_bool
 from .controller_protocol import SenderPolicy
 from .analyzer.backend import QoderCli
-from .sessions import digest_png, find_pending_sessions, find_recent_digests
+from .sessions import digest_md, digest_png, find_pending_sessions, find_recent_digests
 from .settings import canonical_setting_key, setting_description, setting_is_configured, setting_status
 from .send_request import acknowledge_send_request, list_send_requests, reschedule_send_request, send_request_is_due
 
 
-CAPTURE_ONLY_HELP_TEXT = "仅录音转写模式：@OOPZ 开始录音 [时长]，随后选择域和语音频道并确认已告知参与者；状态；停止。分析和出图已禁用。"
+CAPTURE_ONLY_HELP_TEXT = "仅录音转写模式：@我 发“开始录音 [时长]”并点选频道即开始录音；“结束录音”；“状态”。分析和出图已关闭。"
 
 def _capture_only_command_allowed(command: str) -> bool:
     return (command in {"/oopz 帮助", "/oopz help", "/oopz 状态", "/oopz 离开", "取消", "退出", "cancel"}
             or command.isdigit()
             or re.fullmatch(r"/oopz\s*(?:开始|start)(?:\s+\d+(?:\.\d+)?\s*(?:秒|分钟|分|小时|时|h|m|s)?)?", command, re.I) is not None)
-
-
-FEISHU_HELP_TEXT = "\n".join([
-    "@OOPZ 后发送以下指令（仅本群成员有效）",
-    "",
-    "• 开始录音 [时长]：例如“开始录音”“开始录音 1小时”“开始录音 45分钟”；随后点击卡片选择 OOPZ 域和语音频道。不填时长会一直录到北京时间强制结束时间，或频道无人时自动退出。",
-    "• 停止：结束当前录音。转写完成后会自动分析，并把成品图发到本群，不需要再确认。",
-    "• 状态：查看当前录音或最近一次分析的状态。",
-    "• 待分析：列出还没出图的录音（例如分析失败的），选择后重新分析。",
-    "• 最近图片：列出最近出过图的录音，选择后重新发送图片。",
-    "• 删除会话 [Session ID]：删除本地的录音、转写和图片；需要再点一次确认。",
-    "• 设置状态：显示可由本群调整的运行参数（敏感值不显示）。",
-    "• 设置 变量=值：例如“设置 OOPZ_LANGUAGE=zh”。密码、手机号等只能在服务器上配置。",
-    "• 帮助：显示本说明。",
-])
 
 
 # Keep the operational settings that make sense for a Feishu-only group.
@@ -103,52 +88,6 @@ _SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _CONTROLLER_PLACEHOLDER_ID = "feishu-placeholder"
 
 
-def adapt_controller_reply_for_feishu(text: str) -> str:
-    """Translate internal controller prompts into the Feishu group vocabulary."""
-    adapted = text.strip()
-    if not adapted:
-        return "已处理。"
-
-    exact = {
-        "不支持的指令；发送 /oopz 帮助 查看可用指令。": "该指令尚未接入飞书。请在本群 @OOPZ 后发送“帮助”查看可用指令。",
-    }
-    if adapted in exact:
-        return exact[adapted]
-
-    # This is the normal start-recording acknowledgement.  Replace the whole
-    # trailing legacy instruction rather than merely removing its command.
-    adapted = re.sub(
-        r"发送\s*/oopz\s*(?:离开|leave|stop)\s*可提前结束录音。",
-        "如需提前结束，请在本群 @OOPZ 后发送“停止”。",
-        adapted,
-        flags=re.IGNORECASE,
-    )
-    replacements = (
-        (r"格式：\s*/oopz\s*设置\s*变量名=值；可用变量见\s*/oopz\s*设置状态。", "格式：发送“设置 变量名=值”；可用变量请发送“设置状态”查看。"),
-        (r"如需结束当前录音，请发送\s*/oopz\s*(?:离开|leave|stop)。", "如需结束当前录音，请在本群 @OOPZ 后发送“停止”。"),
-        (r"请用\s*/oopz\s*状态\s*查看进度。", "请在本群 @OOPZ 后发送“状态”查看进度。"),
-        (r"发送\s*/oopz\s*状态\s*可查看详情。", "请在本群 @OOPZ 后发送“状态”查看详情。"),
-        (r"请重新发送\s*/oopz\s*开始。", "请在本群 @OOPZ 后发送“开始录音”。"),
-        (r"发送\s*/oopz\s*帮助\s*查看可用指令。", "请在本群 @OOPZ 后发送“帮助”查看可用指令。"),
-        (r"可稍后使用\s*/oopz\s*待分析\s*重试。", "请在本群 @OOPZ 后发送“待分析”重试。"),
-        (r"/oopz\s*待分析", "“待分析”"),
-        (r"/oopz\s*离开", "“停止”"),
-        (r"/oopz\s*状态", "“状态”"),
-        (r"/oopz\s*开始", "“开始录音”"),
-        (r"/oopz\s*帮助", "“帮助”"),
-    )
-    for pattern, replacement in replacements:
-        adapted = re.sub(pattern, replacement, adapted, flags=re.IGNORECASE)
-
-    # A configured Feishu group has no privileged controller role.  These
-    # phrases occur in controller progress messages and should state the
-    # actual group-wide access model.
-    adapted = adapted.replace("另一位管理员", "另一位群成员")
-    adapted = adapted.replace("等待管理员确认", "等待本群成员确认")
-    adapted = adapted.replace("已保存到 .env", "已保存为本机运行配置")
-    return adapted
-
-
 class FeishuChannel(Protocol):
     async def send(self, to: str, message: Any, opts: Any = None) -> Any: ...
 
@@ -195,7 +134,6 @@ class FeishuGatewayConfig:
             output_root=output_root, state_root=state_root,
             capture_only=capture_only,
             authorization=SenderPolicy(frozenset({_CONTROLLER_PLACEHOLDER_ID})),
-            consent_confirmed=not capture_only,
             chunk_seconds=int(os.environ.get("OOPZ_CHUNK_SECONDS", "300")),
             cutoff_local_hour=int(os.environ.get("OOPZ_CUTOFF_LOCAL_HOUR", "4")),
             language=os.environ.get("OOPZ_LANGUAGE", "auto").strip(),
@@ -300,12 +238,12 @@ class FeishuGateway:
 
     def _digest_selection_card(self) -> dict[str, Any] | None:
         recent = find_recent_digests(self.config.controller_config.output_root, 7)
-        return self._selection_card(title="选择要重新发送的图片", hint="选择一场录音，把它的图片再发到本群。",
+        return self._selection_card(title="选择要重发的图片", hint="选一条录音，把它的图片再发到本群。",
                                     action="digest:send", sessions=recent, style="primary") if recent else None
 
     def _pending_selection_card(self) -> dict[str, Any] | None:
         pending = find_pending_sessions(self.config.controller_config.output_root, self.controller.busy_sessions())
-        return self._selection_card(title="选择待分析录音", hint="选择后开始分析，完成后图片会发到本群。",
+        return self._selection_card(title="选择要重新出图的录音", hint="选择后开始分析，完成后图片会发到本群。",
                                     action="pending:analyze", sessions=pending[:7], style="primary") if pending else None
 
     def _delete_selection_card(self) -> dict[str, Any] | None:
@@ -314,14 +252,14 @@ class FeishuGateway:
         for item in find_pending_sessions(root)[:7]:
             merged.setdefault(str(item["session_id"]), float(item["modified_ts"]))
         ids = sorted(merged, key=merged.__getitem__, reverse=True)[:7]
-        return self._selection_card(title="选择要删除的会话", hint="下一步还会要求确认；会永久删除本地录音、转写和图片。",
+        return self._selection_card(title="选择要删除的录音", hint="下一步还会要求确认；会永久删除本地录音、转写和图片。",
                                     action="delete:request", sessions=[{"session_id": i} for i in ids],
                                     style="danger") if ids else None
 
     def _delete_confirmation_card(self, session_id: str) -> dict[str, Any]:
         return {
             "config": {"wide_screen_mode": True},
-            "header": {"title": {"tag": "plain_text", "content": "确认删除会话"}},
+            "header": {"title": {"tag": "plain_text", "content": "确认删除录音"}},
             "elements": [
                 {"tag": "markdown", "content": f"将永久删除 **{self._session_label(session_id)}** 的本地录音、转写和图片。\n\nSession ID：`{session_id}`"},
                 {"tag": "action", "actions": [
@@ -363,20 +301,20 @@ class FeishuGateway:
         return {"reply": reply, "controller_message_id": raw["message_id"]}
 
     async def _direct_command(self, command: str, open_id: str) -> dict[str, Any] | None:
-        if command == "/oopz 最近图片":
+        if command == "/oopz 重发图片":
             card = self._digest_selection_card()
             return {"card": card} if card else {"text": "还没有出过图的录音。"}
-        if command == "/oopz 待分析":
+        if command == "/oopz 重新出图":
             card = self._pending_selection_card()
-            return {"card": card} if card else {"text": "没有待分析的录音。"}
-        if command == "/oopz 删除会话":
+            return {"card": card} if card else {"text": "没有需要重新出图的录音。"}
+        if command == "/oopz 删除录音":
             card = self._delete_selection_card()
-            return {"card": card} if card else {"text": "没有可删除的会话。"}
-        if command.startswith("/oopz 删除会话 "):
-            session_id = command.removeprefix("/oopz 删除会话 ").strip()
+            return {"card": card} if card else {"text": "没有可删除的录音。"}
+        if command.startswith("/oopz 删除录音 "):
+            session_id = command.removeprefix("/oopz 删除录音 ").strip()
             try:
                 if not self._session_dir(session_id).is_dir():
-                    return {"text": "会话目录不存在，未显示删除确认。"}
+                    return {"text": "找不到这条录音，未显示删除确认。"}
             except ValueError as error:
                 return {"text": str(error)}
             return {"card": self._delete_confirmation_card(session_id)}
@@ -418,15 +356,12 @@ class FeishuGateway:
             if command in {"/oopz 帮助", "/oopz help"}:
                 _atomic_json(path, {"feishu_message_id": inbound.message_id, "handled_as": "feishu_help", "received_at": _iso()})
                 self._audit("accepted_command", message_id=inbound.message_id, sender_open_id=inbound.sender_open_id, command="feishu_help")
-                outbound = {"text": CAPTURE_ONLY_HELP_TEXT if self.config.capture_only else FEISHU_HELP_TEXT}
+                outbound = {"text": CAPTURE_ONLY_HELP_TEXT if self.config.capture_only else HELP_TEXT}
             else:
                 outbound = await self._direct_command(command, inbound.sender_open_id) or {}
                 if not outbound:
                     dispatched = await self._controller_reply(command, inbound.sender_open_id)
                     outbound = {"text": str(dispatched["reply"].get("text") or "已处理。"), "controller_message_id": dispatched["controller_message_id"]}
-                    token = dispatched["reply"].get("capture_consent_token")
-                    if self.config.capture_only and token:
-                        outbound["card"] = self._capture_consent_card(str(token), outbound["text"])
                 _atomic_json(path, {
                     "feishu_message_id": inbound.message_id,
                     "controller_message_id": outbound.get("controller_message_id"),
@@ -447,18 +382,6 @@ class FeishuGateway:
     async def handle_card_action(self, *, action_id: str, open_id: str, event_id: str, chat_id: str) -> None:
         if chat_id != self.config.admin_chat_id:
             self._audit("rejected_card_action", action_id=action_id, chat_id=chat_id)
-            return
-        if self.config.capture_only and action_id.startswith("capture_consent:"):
-            token = action_id.removeprefix("capture_consent:")
-            if not re.fullmatch(r"[a-f0-9]{32}", token):
-                return
-            async with self._lock:
-                path = self._event_path(event_id)
-                if path.exists():
-                    return
-                dispatched = await self._controller_reply("capture_consent:" + token, open_id)
-                _atomic_json(path, {"received_at": _iso(), "handled_as": "capture_consent"})
-            await self._send_reply(str(dispatched["reply"].get("text") or "已处理。"))
             return
         if self.config.capture_only and not action_id.startswith("selection:"):
             await self._send_text(CAPTURE_ONLY_HELP_TEXT)
@@ -510,6 +433,8 @@ class FeishuGateway:
                 await self._send_card(outbound["card"])
             elif outbound.get("image_path"):
                 await self._send_image(Path(str(outbound["image_path"])))
+                if outbound.get("file_path"):
+                    await self._send_file(Path(str(outbound["file_path"])))
             else:
                 await self._send_text(str(outbound.get("text") or "已处理。"))
         except Exception:
@@ -519,19 +444,21 @@ class FeishuGateway:
 
     async def _extended_card_outbound(self, *, family: str, action: str, session_id: str, session_dir: Path, open_id: str) -> dict[str, Any]:
         if family == "digest" and action == "send":
-            png = digest_png(session_dir)
-            return {"image_path": str(png)} if png.is_file() else {"text": "这场录音还没有图片。"}
+            png, md = digest_png(session_dir), digest_md(session_dir)
+            if not png.is_file():
+                return {"text": "这条录音还没有图片。"}
+            return {"image_path": str(png)} | ({"file_path": str(md)} if md.is_file() else {})
 
         if family == "pending" and action == "analyze":
             if not session_dir.is_dir():
-                return {"text": "会话目录不存在，无法重新分析。"}
+                return {"text": "找不到这条录音，无法重新出图。"}
             if not self.controller._start_analysis_and_deliver(session_dir):
-                return {"text": f"{self._session_label(session_id)} 已在分析中，请发送“状态”查看进度。"}
-            return {"text": f"已开始分析 {self._session_label(session_id)}，完成后图片会发到本群。"}
+                return {"text": f"{self._session_label(session_id)} 正在分析，发送“状态”可看进度。"}
+            return {"text": f"已开始重新出图：{self._session_label(session_id)}，完成后图片会发到本群。"}
 
         if family == "delete":
             if not session_dir.is_dir():
-                return {"text": "会话目录不存在，未执行删除。"}
+                return {"text": "找不到这条录音，未执行删除。"}
             if action == "request":
                 return {"card": self._delete_confirmation_card(session_id)}
             if action == "cancel":
@@ -558,11 +485,9 @@ class FeishuGateway:
                 if item.get("image_path"):
                     await self._send_image(Path(str(item["image_path"])))
                 elif item.get("file_path"):
-                    path = Path(str(item["file_path"]))
-                    self._console("发件", f"文件={path.name}")
-                    await self.channel.send(self.config.admin_chat_id, {"file": {"source": str(path), "file_name": path.name}})
+                    await self._send_file(Path(str(item["file_path"])))
                 else:
-                    await self._send_text(adapt_controller_reply_for_feishu(str(item.get("text") or "")))
+                    await self._send_text(str(item.get("text") or ""))
                 acknowledge_send_request(self.state_root, str(item["send_request_id"]), status="sent")
                 sent += 1
             except Exception as error:
@@ -636,17 +561,6 @@ class FeishuGateway:
             removed += self._purge_stale_state_files()
         return removed
 
-    @staticmethod
-    def _capture_consent_card(token: str, text: str) -> dict[str, Any]:
-        return {"config": {"wide_screen_mode": True},
-                "header": {"title": {"tag": "plain_text", "content": "确认后开始录音"}},
-                "elements": [{"tag": "markdown", "content": text},
-                             {"tag": "action", "actions": [
-                                 {"tag": "button", "text": {"tag": "plain_text", "content": "已告知参与者并开始录音"},
-                                  "type": "primary", "value": {"action_id": "capture_consent:" + token}},
-                                 {"tag": "button", "text": {"tag": "plain_text", "content": "取消"},
-                                  "value": {"action_id": "selection:cancel"}}]}]}
-
     async def _send_text(self, text: str) -> None:
         self._console("发信", text[:500])
         result = await self.channel.send(self.config.admin_chat_id, {"text": text})
@@ -654,7 +568,6 @@ class FeishuGateway:
             raise RuntimeError(getattr(result, "error", "Feishu send failed"))
 
     async def _send_reply(self, text: str) -> None:
-        text = adapt_controller_reply_for_feishu(text)
         choices = re.findall(r"(?m)^(\d+)\.\s+(.+)$", text)
         if not choices or "请选择" not in text:
             await self._send_text(text)
@@ -666,7 +579,7 @@ class FeishuGateway:
         for line in text.splitlines():
             if re.fullmatch(r"\d+\.\s+.+", line):
                 continue
-            if line.strip().startswith("回复编号"):
+            if line.strip().startswith("点选按钮"):
                 continue
             elif line.strip():
                 prompt_lines.append(line.strip())
@@ -688,6 +601,12 @@ class FeishuGateway:
             "header": {"title": {"tag": "plain_text", "content": "OOPZ 请选择录音目标"}},
             "elements": elements,
         })
+
+    async def _send_file(self, path: Path) -> None:
+        self._console("发件", f"文件={path.name}")
+        result = await self.channel.send(self.config.admin_chat_id, {"file": {"source": str(path), "file_name": path.name}})
+        if getattr(result, "success", True) is False:
+            raise RuntimeError(getattr(result, "error", "Feishu file send failed"))
 
     async def _send_image(self, path: Path) -> None:
         self._console("发图", path.name)

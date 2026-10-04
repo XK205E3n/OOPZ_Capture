@@ -20,7 +20,7 @@ class Controller:
  async def handle(self,raw):self.received.append(raw);return {'text':'ok'}
 def forbidden(*a,**k):pytest.fail('Forbidden analysis/model call')
 def test_no_consent_no_analyzer_gateway_ready(cfg):
- assert cfg.capture_only and cfg.controller_config.capture_only and not cfg.controller_config.consent_confirmed
+ assert cfg.capture_only and cfg.controller_config.capture_only
  assert cfg.controller_config.device=='cpu' and cfg.controller_config.retain_audio
 def test_default_requires_analyzer(cfg,monkeypatch):
  monkeypatch.setenv('OOPZ_CAPTURE_ONLY','false')
@@ -58,7 +58,7 @@ def test_model_analysis_blocked_in_capture_only(cfg):
  async def run():
   assert not s._start_analysis_and_deliver(Path('unused'));await s._analyze_and_deliver(Path('unused'))
  asyncio.run(run())
-def test_channel_selection_waits_for_initiator_token(cfg,monkeypatch):
+def test_picking_the_channel_starts_the_recording_without_any_confirmation(cfg,monkeypatch):
  s=ControllerService(cfg.controller_config);ch=Channel();g=FeishuGateway(cfg,ch,controller=s)
  owner=synthetic_controller_id('ou_initiator')
  s._save_start_flow({'schema_version':START_FLOW_SCHEMA,'admin_id':owner,'stage':'awaiting_channel_selection','selected_area':{'area_id':'a','name':'area'},'channels':[{'channel_id':'c','display_name':'voice'}],'max_runtime_seconds':300})
@@ -66,18 +66,10 @@ def test_channel_selection_waits_for_initiator_token(cfg,monkeypatch):
  async def launch(message,command,**kw):calls.append(kw);return {'text':'started','message_id':message.message_id}
  monkeypatch.setattr(s,'_launch_capture',launch)
  async def run():
-  await g.handle_card_action(action_id='selection:1',open_id='ou_initiator',event_id='pick',chat_id='oc_test');assert not calls
-  f=s._load_start_flow();assert f['stage']=='awaiting_recording_consent';token=f['consent_token'];assert '已告知参与者并开始录音' in json.dumps(ch.sent,ensure_ascii=False)
-  for who,t,ev in [('ou_other',token,'other'),('ou_initiator','0'*32,'stale')]:
-   await g.handle_card_action(action_id='capture_consent:'+t,open_id=who,event_id=ev,chat_id='oc_test');assert not calls
-  await g.handle_card_action(action_id='capture_consent:'+token,open_id='ou_initiator',event_id='confirm',chat_id='oc_test');assert len(calls)==1 and calls[0]['consent_confirmed'] is True
-  await g.handle_card_action(action_id='capture_consent:'+token,open_id='ou_initiator',event_id='replay',chat_id='oc_test');assert len(calls)==1
+  await g.handle_card_action(action_id='selection:1',open_id='ou_initiator',event_id='pick',chat_id='oc_test')
+  assert len(calls)==1 and calls[0]['channel_id']=='c' and s._load_start_flow() is None
+  assert 'capture_consent' not in json.dumps(ch.sent,ensure_ascii=False) and '已告知' not in json.dumps(ch.sent,ensure_ascii=False)
  asyncio.run(run())
-def test_capture_direct_call_requires_consent(cfg):
- s=ControllerService(cfg.controller_config)
- async def run():
-  with pytest.raises(ValueError,match='explicit initiator confirmation'):await s._launch_capture(None,'start_capture',area_id='a',channel_id='c',area_name='area',channel_name='voice',max_runtime=300)
- asyncio.run(run());assert s._state.get('active') is None
 def test_completion_never_calls_model_without_requester(cfg):
  from oopz_capture.continuous import ContinuousRequest
  async def loader(*a):return object()
@@ -89,16 +81,3 @@ def test_completion_never_calls_model_without_requester(cfg):
   s._state['active']={'session_id':'test-session'};await s._run_session('test-session',req)
  asyncio.run(run());assert s._state['last_job']['status']=='capture_transcription_completed'
  assert not list_send_requests(cfg.state_root,statuses={'pending'})
-
-from datetime import datetime, timedelta, timezone
-@pytest.mark.parametrize('case',['expired','wrong_chat','cancelled'])
-def test_rejects_unusable_consent(cfg, monkeypatch, case):
- s=ControllerService(cfg.controller_config);g=FeishuGateway(cfg,Channel(),controller=s)
- token='a'*32
- s._save_start_flow({'schema_version':START_FLOW_SCHEMA,'admin_id':synthetic_controller_id('owner'),'stage':'awaiting_recording_consent','consent_token':token,'selected_area':{'area_id':'a','name':'area'},'selected_channel':{'channel_id':'c','display_name':'voice'}})
- if case=='expired':
-  data=s._load_start_flow();data['updated_at']=(datetime.now(timezone.utc)-timedelta(minutes=11)).isoformat();s._start_flow_path.write_text(json.dumps(data))
- elif case=='cancelled':s._clear_start_flow()
- async def forbidden(*a,**k):pytest.fail('Unusable consent launched capture')
- monkeypatch.setattr(s,'_launch_capture',forbidden)
- asyncio.run(g.handle_card_action(action_id='capture_consent:'+token,open_id='owner',event_id='evt',chat_id='wrong' if case=='wrong_chat' else 'oc_test'))

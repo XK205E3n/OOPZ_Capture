@@ -14,6 +14,7 @@
 - 删除：HTTP 分析流水线（`analysis_pipeline`、`analysis_windows`、`analyzer_job`、`deepseek_client`、`analyzer_cli`）、报告与 PDF（`reports`、`pdf_reports`、`weasy_pdf`、`tools/md_to_*`、`package.json`/`pnpm-lock.yaml`）、飞书文档/Base 发布器（`feishu_publisher`）、对应的 15 个测试模块与 `pdf` extra；`prepare_dependencies.sh`、`build_release.ps1`、`release_archive.py` 不再要求/安装它们。
 - 配置：删除全部 `ANALYZER_*`、`OOPZ_ANALYSIS_MAX_PARALLELISM`、`OOPZ_FEISHU_PUBLIC_*`/`BASE_*`、`OOPZ_PDF_BACKEND`；新增 `OOPZ_ANALYZER_CLI`、`OOPZ_ANALYZER_HOME`（必填，缺失则网关拒绝启动）、`OOPZ_ANALYZER_MODEL`、`OOPZ_ANALYZER_TIMEOUT_SECONDS`、`OOPZ_FONT_DIR`。服务器 `.env` 里遗留的旧键无害，可手动清理。
 - 验证：`python -m pytest` 257 通过、12 跳过（本机 Windows）；分析器与渲染在服务器会话 `2026-10-03_14-32-31_BJT`（12.9 小时、7834 段）上整场实跑多轮，成品图经用户验收。**真实飞书发图与整条链路尚未在服务器验证**。影响部署与配置：部署前须在服务器配置分析器与字体；回滚到上一个发布包即可（旧版本忽略新键）。
+- 同日补充：飞书指令改为更符合中文习惯的词表（`开始录音`/`录音`、`结束录音`/`结束`/`停止`、`状态`/`进度`、`重新出图`/`待分析`、`重发图片`/`最近图片`、`删除录音`/`删除会话`、`设置`、`帮助`），帮助文本缩短到 8 行以内，控制器回复直接用中文（删除 `adapt_controller_reply_for_feishu` 改写层与启动时的重复帮助）；成功出图后在图片之后再发 `digest.md`（图片上的文字稿）；删除 capture-only 模式里"已告知参与者并开始录音"的确认卡片和 `ControllerConfig.consent_confirmed`（点选频道后直接开始录音；底层 `ContinuousRequest.consent_confirmed` 字段与手动调试 CLI 的同名参数保持不变）。
 - 未做：出入频道记录与头像下载（图上的发言频率目前显示"缺少足够记录"）、MaiBot 联动。
 
 ### 2026-10-04 — 部署：服务账号改为 `ubuntu`，退役原专用账号

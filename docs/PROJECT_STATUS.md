@@ -22,7 +22,7 @@
 | 模块 | 职责 | 状态 | 证据 / 待办 |
 | --- | --- | --- | --- |
 | 飞书网关与卡片<br>`feishu_gateway/protocol/cli/setup` | 唯一远程入口、命令解析、卡片、图片发送、一键配置 | 新流程代码完成（指令精简、发图、无审核发布）；**真实飞书未验证** | 单元测试覆盖；待部署后用真实群验证发图 |
-| 控制器<br>`controller`、`controller_protocol`、`digest_job`、`sessions` | 录音任务状态机、录音后自动分析与发送、待分析重试 | 代码完成；分析线程、发件箱、失败文字、重启中断标记有测试 | 待服务器端到端 |
+| 控制器<br>`controller`、`controller_protocol`、`digest_job`、`sessions` | 录音任务状态机、录音后自动分析与发送、重新出图重试 | 代码完成；分析线程、发件箱、失败文字、重启中断标记有测试 | 待服务器端到端 |
 | 录音<br>`continuous`、`browser_probe`、`recorder`、`session`、`identity` | OOPZ 无头浏览器音频、按 UID 分轨、300 秒分片、断线处理 | **Ubuntu 实测通过** | 服务器会话 159/159 分片成功；待长时间稳定性与断线恢复实测；**出入频道记录与头像下载未实现**；有一条音轨未映射到成员（图上显示"未识别成员"） |
 | 转写<br>`vad`、`asr`、`transcript`、`speech_cli` | Silero VAD + SenseVoiceSmall（CPU） | **Ubuntu 实测通过** | 同上会话共 7834 段；15 分钟处理期限待在目标 CPU 上复核 |
 | 分析器<br>`analyzer/` | 转写 → 窗口笔记 → 汇总 → 编辑改写，Qoder CLI，证据校验与重试 | **服务器整场实跑通过**（12.9 小时、7 窗口、约 20 次调用、10–25 分钟） | 仍受语音识别错字影响：不同次运行挑的点不同；见 [设计文档](DESIGN_DIGEST_PIPELINE.md) |
