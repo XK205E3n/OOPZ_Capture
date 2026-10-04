@@ -83,7 +83,7 @@ def test_encode_addons_carries_exact_scopes_events_and_callbacks():
         "events": {"items": {"tenant": list(REQUIRED_TENANT_EVENTS), "user": []}},
         "callbacks": {"items": list(REQUIRED_CALLBACKS)},
     }
-    assert len(REQUIRED_TENANT_SCOPES) == 11
+    assert REQUIRED_TENANT_SCOPES == ("im:message.group_at_msg:readonly", "im:message:send_as_bot", "im:resource")
     assert "im:message" not in REQUIRED_TENANT_SCOPES
     assert REQUIRED_TENANT_EVENTS == ("im.message.receive_v1", "p2.im.chat.member.bot.added_v1")
     assert REQUIRED_CALLBACKS == ("card.action.trigger",)

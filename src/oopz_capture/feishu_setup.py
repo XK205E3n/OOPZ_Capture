@@ -47,21 +47,13 @@ SLOW_DOWN_EXTRA_SECONDS = 5.0
 DEFAULT_EXPIRES_IN_SECONDS = 600.0
 
 OOPZ_BOT_NAME = "OOPZ 管理机器人"
-OOPZ_BOT_DESCRIPTION = "OOPZ 语音频道录音、转写、分析与报告发布机器人"
+OOPZ_BOT_DESCRIPTION = "OOPZ 语音频道录音、转写与精华图机器人"
 
-# README_FEISHU_BOT_SETUP.md 第 4 节：11 项应用身份（tenant）权限；不要扩大。
+# README_FEISHU_BOT_SETUP.md 第 4 节：3 项应用身份（tenant）权限；不要扩大。
 REQUIRED_TENANT_SCOPES: tuple[str, ...] = (
     "im:message.group_at_msg:readonly",
     "im:message:send_as_bot",
     "im:resource",
-    "im:chat.members:read",
-    "docx:document:create",
-    "docx:document:write_only",
-    "docs:permission.setting:write_only",
-    "space:document:delete",
-    "base:record:create",
-    "base:record:update",
-    "base:record:delete",
 )
 # README 第 3.1 节：长连接事件（群内指令 + 首次入群自动绑定控制群）。
 REQUIRED_TENANT_EVENTS: tuple[str, ...] = (

@@ -6,6 +6,16 @@
 
 ## 未发布
 
+### 2026-10-04 — 新增：录音后自动分析并把精华图发到群里；移除审核/发布/PDF 流程
+
+- 新增分析器（`analyzer/`，Qoder CN CLI + Qwen3.8-Flash）：整场转写按说话人合并、分窗口、逐窗口出带证据的笔记，再汇总并由"编辑改写"一步写成"标题 + 一句吐槽"；所有输出走 `digest/contract.py` 校验（证据 id、逐字锚点、人物只能引用自己的发言、数字须出现在证据里等），被拒绝时带具体错误重试，渲染时超高则退回缩写。新增 `digest/`（V7 契约、统计、头像、离线 Pillow 渲染器，字体由 `scripts/download_fonts.py` 下载、不入 Git）。
+- 控制器录音结束后直接后台分析（`digest_job.run_digest`），不再询问是否分析；成品 `analysis/digest/digest.png` 以图片消息发到飞书群，只发图。失败时发一条带原因的文字，`待分析` 重试；重启时"分析中"的会话标为"分析被中断"。发件箱支持 `image_path`。
+- 飞书指令：新增 `最近图片`（重发已出的图）；删除 `最近报告`、`详细报告`、分析确认卡片、批准/不发布/撤回；`删除会话` 只删本地。飞书应用权限由 11 项减为 3 项（`im:message.group_at_msg:readonly`、`im:message:send_as_bot`、`im:resource`）。
+- 删除：HTTP 分析流水线（`analysis_pipeline`、`analysis_windows`、`analyzer_job`、`deepseek_client`、`analyzer_cli`）、报告与 PDF（`reports`、`pdf_reports`、`weasy_pdf`、`tools/md_to_*`、`package.json`/`pnpm-lock.yaml`）、飞书文档/Base 发布器（`feishu_publisher`）、对应的 15 个测试模块与 `pdf` extra；`prepare_dependencies.sh`、`build_release.ps1`、`release_archive.py` 不再要求/安装它们。
+- 配置：删除全部 `ANALYZER_*`、`OOPZ_ANALYSIS_MAX_PARALLELISM`、`OOPZ_FEISHU_PUBLIC_*`/`BASE_*`、`OOPZ_PDF_BACKEND`；新增 `OOPZ_ANALYZER_CLI`、`OOPZ_ANALYZER_HOME`（必填，缺失则网关拒绝启动）、`OOPZ_ANALYZER_MODEL`、`OOPZ_ANALYZER_TIMEOUT_SECONDS`、`OOPZ_FONT_DIR`。服务器 `.env` 里遗留的旧键无害，可手动清理。
+- 验证：`python -m pytest` 257 通过、12 跳过（本机 Windows）；分析器与渲染在服务器会话 `2026-10-03_14-32-31_BJT`（12.9 小时、7834 段）上整场实跑多轮，成品图经用户验收。**真实飞书发图与整条链路尚未在服务器验证**。影响部署与配置：部署前须在服务器配置分析器与字体；回滚到上一个发布包即可（旧版本忽略新键）。
+- 未做：出入频道记录与头像下载（图上的发言频率目前显示"缺少足够记录"）、MaiBot 联动。
+
 ### 2026-10-04 — 部署：服务账号改为 `ubuntu`，退役原专用账号
 
 - `scripts/linux/manage_release.py` 的 `--user` 默认值由 `oopz` 改为 `ubuntu`；`oopz-capture.service` 增加 `ProtectHome=yes`（与已有的 `NoNewPrivileges=yes`、`PrivateTmp=yes` 共同隔离）；`docs/DEPLOYMENT.md` 改为“全机只有 `ubuntu` 一个管理账号、不新建服务账号”，删除 `useradd oopz` 步骤并说明 `ProtectHome` 的后果（服务所需文件须在 `/opt/oopz/shared` 下）。

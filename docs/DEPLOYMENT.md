@@ -30,7 +30,7 @@ sudo apt-get install python3.12 python3.12-venv fonts-noto-cjk fonts-liberation 
 
 Provision a supported
 Node.js runtime from its official source and verify its published checksum.
-Minimum Node is **22.12.0**, as required by the locked PDF dependency tree.
+Minimum Node is **22.12.0**; it is used only by the Qoder CN CLI (the analyzer), not by the application itself.
 When using a Node tarball, put its complete contents (including `bin/node`,
 `bin/npm`, `bin/npx`, and `lib/node_modules`) in `/opt/oopz/shared/tools/node`.
 Do not link `node` to the tarball root. Preparation prefers that `bin` directory. The selected Node executable is recorded
@@ -47,101 +47,27 @@ browser MediaStream tracks. This still requires real browser/RTC testing.
 Never add `--no-sandbox` merely to hide an environment permission failure.
 
 The project needs outbound OOPZ API/WebSocket, Agora SDK/RTC, Feishu, the configured
-analysis API, and dependency/model registries. There is **no new business inbound
+Qoder CN service used by its CLI, and dependency/model registries. There is **no new business inbound
 port**. RTC firewall ranges must follow the deployed SDK/provider requirements
 and be validated on the test host; HTTPS alone is not a complete RTC test.
 No credentials belong in commands, logs, source, release ZIPs or audit reports.
 
-## Optional Linux PDF engine: WeasyPrint
+## Analyzer (Qoder CN CLI) and card fonts
 
-`OOPZ_PDF_BACKEND=chromium` is the compatibility default on every platform.
-Select `OOPZ_PDF_BACKEND=weasyprint` explicitly on the approved Linux target after
-validation. Windows retains Chromium. A missing or failing selected engine is an
-error; the application never silently switches engines. Existing shared `.env`
-files are preserved, so deployment alone does not enable the new backend.
+The analyzer runs the already-logged-in Qoder CN CLI headless (`-p --tools ""`, a plain
+text completion) as the service account; the application stores no analysis API key.
+Install it once under `/opt/oopz/shared/tools/` with its own HOME
+(`shared/tools/qodercn-home`, holding the login) readable and writable by the service
+user, then set `OOPZ_ANALYZER_CLI` and `OOPZ_ANALYZER_HOME` in `shared/config/.env`.
+The gateway refuses to start when either is missing. The CLI needs the pinned Node
+runtime above.
 
-Linux preparation installs the `pdf` extra, currently `weasyprint>=70,<71`.
-Version 70 contains the security fix for malicious EPS inputs; do not substitute
-an older distribution package. [Official advisory](https://github.com/Kozea/WeasyPrint/security/advisories/GHSA-r543-q48m-4c9j)
-Native dependencies on Ubuntu include `libpango-1.0-0`, `libpangoft2-1.0-0`,
-`libharfbuzz0b`, `libharfbuzz-subset0`, Fontconfig and `fonts-noto-cjk`.
-Use the isolated release environment, not an unrelated application's Python.
-[Official installation instructions](https://doc.courtbouillon.org/weasyprint/stable/first_steps.html)
+The digest card is rendered offline with Pillow. The fonts are not in Git or in the
+release: run `python scripts/download_fonts.py` (fixed URLs, SHA-256 checked) once into a
+shared directory such as `shared/assets/fonts` and set `OOPZ_FONT_DIR` to it.
 
-The existing Node Markdown parser and report CSS are shared with Chromium. Only
-HTML-to-PDF layout changes; rendering does not invoke an analysis model or Feishu.
-CSS page counters replace Chromium's footer template. Validate the resulting
-pagination, tables, CJK wrapping and fonts on representative reports; byte-for-byte
-or pixel-identical PDFs are not expected between engines.
-
-The worker blocks network/local resource fetching and all attachment channels,
-inline SVG and active embeds. Only signature-checked PNG/JPEG/GIF/WebP data URLs
-up to 2 MiB are permitted. It reads trusted report CSS directly and uses installed
-fonts; document-originated CSS/font URLs cannot fetch files or network resources.
-Original Markdown is not modified. Ordinary links and report text are retained;
-unsupported embeds cannot be used to read private files or create PDF attachments.
-Diagnostics retain counts, not the private document text or requested URLs.
-
-Limits are 10 MiB Markdown, 32 MiB expanded HTML, a 256 MiB Node heap, a 30-second
-Markdown stage, 1.5 GiB address space for the isolated WeasyPrint worker, and the
-existing 180-second outer process-group timeout. Failure/cancellation removes
-partial PDFs. These controls do not make arbitrary malicious documents risk-free
-or guarantee capacity; verify real workloads and continue operating as the
-authorized ordinary runtime user.
-
-Chromium remains required by the OOPZ recording SDK, and its sandbox/RTC acceptance
-is independent. Preparation intentionally retains its separate sandboxed browser
-gate even when the selected PDF backend is WeasyPrint. Keep its installation and
-approved security configuration; this new PDF backend does not remove that gate.
-Rollback can explicitly select Chromium, or activate an already prepared old
-release; old code ignores the new variable and uses its original renderer. Use a
-matching trusted old installer when reinstalling an older archive, since current
-archive validation requires the new backend helper files.
-
-## Release provenance and layout
-
-Formal artifacts still come only from `scripts/build_release.ps1` on a clean,
-committed HEAD, after tests and release audit. A source checkout or test fixture
-ZIP is not a formal release. Obtain the SHA-256 through a trusted release channel;
-a checksum downloaded from an untrusted source beside an archive is not proof of
-its authenticity. Use reviewed bootstrap scripts to validate the archive before
-executing anything from it. The updater extracts the complete verified archive,
-including all installer helpers, rather than extracting only install_release.sh.
-
-The same builder supports PowerShell 7 on Linux using `.venv/bin/python`; Windows
-keeps `.venv/Scripts/python.exe`. On Linux, invoke `pwsh -NoProfile -File
-scripts/build_release.ps1` after testing and committing. The builder preserves
-tracked dotfiles, writes portable ZIP entry paths, and refuses dirty source or an
-existing output. Do not use `-SkipTests` for a formal deployment build.
-
-```
-/opt/oopz/
-  releases/<release-id>/       # immutable code and independent .venv/node_modules
-  current -> releases/<id>
-  shared/config/.env           # credentials and persistent configuration
-  shared/models/              # verified model files
-  shared/output/              # sessions, transcripts and reports
-  shared/feishu_state/         # control state/outbox/audit
-  shared/logs/                # persistent runtime logs
-  shared/browsers/            # service-user Playwright cache
-  shared/home/                # fixed HOME and user caches
-  shared/tools/node/          # complete Node runtime
-  artifacts/                 # verified release downloads
-```
-
-Release `.env`, models, output, feishu_state and logs point into shared. Do not
-replace shared .env when upgrading. Configuration path precedence is explicit
-function argument, then OOPZ_ENV_FILE, then release .env; existing process
-environment values take precedence over file values. Relative config-file paths
-are relative to the release root. Avoid setting duplicate runtime configuration
-in systemd, since it would override later in-file changes. Settings writers retain
-in-place semantics for both Windows hardlinks and Linux symlinks.
-
-## First installation: prepare → configure/setup → activate
-
-Examples use reviewed bootstrap scripts in an operator-owned checkout. Replace
-ARTIFACT, SHA256 and RELEASE_ID with values from your verified artifact. Scripts
-are explicitly invoked with bash; ZIP executable bits are not required.
+Chromium remains required by the OOPZ recording SDK; its sandbox/RTC acceptance is
+independent (see below).
 
 ```bash
 sudo bash scripts/linux/install_release.sh prepare \
@@ -149,7 +75,7 @@ sudo bash scripts/linux/install_release.sh prepare \
 ```
 
 Preparation verifies and extracts the full package, builds an independent Python
-3.12 environment with CPU speech dependencies, installs frozen Node dependencies,
+3.12 environment with CPU speech dependencies,
 installs/launch-checks matching Chromium, verifies the pinned model, and records
 actual Python/Node versions. It establishes shared config links **before setup**.
 It never stops or switches the old service. A failed preparation retains a marked
@@ -173,12 +99,12 @@ Python to repair an OOPZ PATH selection problem.
 Chromium is installed without the legacy headless shell. The preparation check
 explicitly enables `chromium_sandbox=True` and uses the installed `chromium`
 channel. If an administrator-managed browser is required, pass its absolute
-path in the preparation process's `MD_TO_PDF_CHROME_PATH`; the check launches that
-exact executable with sandboxing enabled. Configure the same supported path for
-the later application/PDF runtime. No automatic disabling fallback is provided.
+path in the preparation process's `MD_TO_PDF_CHROME_PATH` (name kept for compatibility); the
+check launches that exact executable with sandboxing enabled. No automatic disabling
+fallback is provided.
 
 When configuration will be supplied later, stop after prepare and credential-free
-checks: imports/pip check, service-user browser and synthetic PCM, Chinese PDF,
+checks: imports/pip check, service-user browser and synthetic PCM, Pillow import,
 verified model/VAD/public-audio transcription. Leave the gateway inactive and
 disabled; do not run setup or activate with an empty configuration. These checks
 do not establish live OOPZ/Feishu/API or sustained-load acceptance.
@@ -186,18 +112,16 @@ do not establish live OOPZ/Feishu/API or sustained-load acceptance.
 On Ubuntu, a `No usable sandbox` Chromium error must be investigated independently
 of the Python browser tests. Different browser drivers can have different sandbox
 defaults: the current upstream OOPZ SDK uses Playwright's disabled-sandbox default,
-whereas the PDF renderer enables the browser's normal sandbox. SDK PCM success is
+whereas the preparation check enables the browser's normal sandbox. SDK PCM success is
 not sandbox readiness evidence. This adaptation does not patch that upstream SDK
-behavior. Preserve PDF Chromium sandboxing. Do not add `--no-sandbox`,
+behavior. Do not add `--no-sandbox`,
 disable AppArmor or globally relax user-namespace restrictions to make a check
 pass. Any needed host security-policy change requires explicit approval and must
 remain scoped to the verified browser executable.
 
 Configure `shared/config/.env` through the authorized secure operator flow. Do not
-paste secrets into chat. Keep the existing provider semantics: target DeepSeek
-Flash, thinking enabled, provider-default effort; no prompt rewrite or model
-substitution. All required ANALYZER fields and login/application settings still
-apply. For an existing configured app, skip setup. Creating/updating an app and
+paste secrets into chat. `OOPZ_ANALYZER_CLI`/`OOPZ_ANALYZER_HOME` and the login/application
+settings are required. For an existing configured app, skip setup. Creating/updating an app and
 its persistent permissions requires separate approval and user authorization.
 
 ```bash
@@ -281,8 +205,8 @@ cleanup. Test recording, transcription and API-wait interruptions independently.
 
 Record OS/kernel, CPU/memory/swap/disk, dependency freeze, release commit and hash;
 then test empty install and failed-prepare retry, real service-user Chromium,
-Chinese multipage PDF, model load/VAD/real audio, approved OOPZ capture and reconnect,
-approved analyzer/Feishu flow, updates/rollback/failure recovery, reboot/enablement,
+a real digest image from a recorded session, model load/VAD/real audio, approved OOPZ capture and reconnect,
+approved analyzer/Feishu image flow, updates/rollback/failure recovery, reboot/enablement,
 three shutdown phases and several hours of representative load. Initial target:
 chunk close to completed transcription ≤240 s; report actual distributions,
 queue growth, dropped chunks and peak resource use. Synthetic/mocked timings are

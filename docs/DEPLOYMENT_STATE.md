@@ -2,7 +2,7 @@
 
 > 这是本地代码与生产服务器差异的唯一事实来源。任何部署相关修改和每次生产发布都必须同步更新本文件。禁止记录密钥、密码、完整服务器地址或个人信息。
 
-更新时间：2026-10-03
+更新时间：2026-10-04
 
 ## 当前状态
 
@@ -17,7 +17,7 @@
 | 服务形态 | 无 `current` 链接、无持久 systemd 单元；采集测试进程由瞬时单元 `oopz-capture-test`（`systemd-run`）托管：`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`、`PrivateTmp=yes`、`UMask=0077`、`Restart=no`。**服务器重启后不会自动恢复** |
 | 运行进程 | `feishu_cli serve --capture-only`，运行版本 `4291aa894f7a`；capture-only 每次启动都要求全新的空 state/output 目录，当前使用 `shared/capture-tests/20261004T1145`；非正式环境 |
 | 最近一次实测 | 会话 `2026-10-03_14-32-31_BJT`（北京时间）：159 个分片全部转写成功、失败 0、共 7834 段，状态 `ready_for_analysis`；日志无错误。仅验证录音与转写；该会话音频已按用户批准删除，转写文本保留供分析测试 |
-| 配置 | `shared/config/.env` 仅 8 个键（飞书应用与管理群、OOPZ 登录、设备、音频保留、`OOPZ_PDF_BACKEND=weasyprint`）；**无分析 API 配置**，分析、报告、飞书文档发布均未配置、未验收 |
+| 配置 | `shared/config/.env` 仅 8 个键（飞书应用与管理群、OOPZ 登录、设备、音频保留、`OOPZ_PDF_BACKEND=weasyprint`）；无分析器配置（`OOPZ_ANALYZER_CLI`/`OOPZ_ANALYZER_HOME`）；分析、出图、发图均未验收 |
 | 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；Chromium 在 `/opt/oopz-browser-runtime` 与 `shared/browsers`；模型约 897 MB；分析器用的 Qoder CLI 在 `shared/tools/qodercn-*`（登录状态在 `qodercn-home`，须留在 `/opt` 下，`ProtectHome` 会挡住 `/home`） |
 
 ### 2026-10-04 服务账号迁移：退役原专用账号，OOPZ 改以 `ubuntu` 运行
@@ -79,7 +79,7 @@ Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux
 ## Ubuntu 验收待办
 
 - [ ] 建立 `current` 链接与 systemd 单元，使服务随开机恢复（当前为手动 nohup 测试进程）。
-- [ ] 补齐分析 API 配置，并验证分析、报告、群内审查与批准发布全链路。
+- [ ] 以含新流程的发布包（建议 0.12.0）部署：配置 `OOPZ_ANALYZER_CLI`/`OOPZ_ANALYZER_HOME`/`OOPZ_FONT_DIR`，把字体放到 `shared/assets/fonts`，在目标机验证"录音 → 自动分析 → 图发到群"全链路（本地 `main` 已实现，服务器仍运行旧的 capture-only 版本 `4291aa894f7a`）。
 - [ ] 在目标机验证无人频道退出、服务重启恢复与版本回滚演练。
 - [ ] 清理测试残留（测试网关进程、`artifacts/` 中的探测脚本与分片，磁盘仅剩约 12 GB）并设置告警。
 - [ ] 完成 4 vCPU 下的长时间负载与 15 分钟转写期限复核。

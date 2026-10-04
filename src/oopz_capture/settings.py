@@ -11,7 +11,6 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from urllib.parse import urlparse
 
 from .env_loader import project_env_path
 
@@ -23,13 +22,6 @@ _CUTOFF_RE = re.compile(r"^(?:([01]?\d|2[0-3])(?::00)?)$")
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)([smh]?)$", re.IGNORECASE)
 _DECIMAL_RE = re.compile(r"[0-9]+(?:\.[0-9]+)?")
 _MODEL_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$")
-_PROVIDERS = frozenset({"deepseek", "opencode-go", "openai-compatible"})
-_THINKING_MODES = frozenset({"auto", "enabled", "disabled"})
-
-
-def _https_url(value: str) -> bool:
-    parsed = urlparse(value)
-    return len(value) <= 512 and parsed.scheme == "https" and bool(parsed.netloc)
 
 
 def _number_between(value: str, minimum: float, maximum: float) -> bool:

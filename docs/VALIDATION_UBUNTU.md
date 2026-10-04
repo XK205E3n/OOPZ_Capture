@@ -1,5 +1,7 @@
 # Ubuntu adaptation validation record — 2026-10-01
 
+> Historical record. The PDF reports, WeasyPrint backend and Node PDF tools described below were removed on 2026-10-04 when the flow became "record → automatic analysis → digest image"; the browser/PCM/speech/release results remain valid.
+
 ## 2026-10-02 explicit WeasyPrint backend
 
 The new Linux backend is opt-in through `OOPZ_PDF_BACKEND=weasyprint`; existing

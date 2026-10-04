@@ -1,43 +1,42 @@
 # 项目状态
 
-更新：2026-10-03。本文回答“各模块现在做到哪一步”；服务器的实测细节见 [部署状态](DEPLOYMENT_STATE.md)，架构见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)。
+更新：2026-10-04。本文回答"各模块现在做到哪一步"；服务器的实测细节见 [部署状态](DEPLOYMENT_STATE.md)，架构见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)，分析与出图的设计见 [DESIGN_DIGEST_PIPELINE.md](DESIGN_DIGEST_PIPELINE.md)。
 
 ## 一句话
 
-录音、转写已在 Ubuntu 服务器上实测通过；分析、报告、飞书发布这几段在 Windows 上生产验证过，但在 Ubuntu 上还没跑过（服务器未配置分析 API）；服务器尚未服务化，只有一个手动启动的 capture-only 测试进程。
+目标流程"飞书控制 → 录音转写 → 自动分析 → 精华图 → 发到飞书群"的代码已在本地 `main` 完成并通过测试；录音与转写已在 Ubuntu 服务器实测，分析与出图已在服务器用真实会话整场实跑、成品图经用户验收；**含新流程的版本尚未部署，真实飞书发图尚未验证**，服务器仍运行旧的 capture-only 测试进程。
 
 ## 版本与三端对应
 
 | 端 | 内容 | 状态 |
 | --- | --- | --- |
-| GitHub `main` | Linux 主线，应用版本 0.11.15 | 与服务器运行代码同源（`4291aa8` 去掉生成文件后），未发布 |
-| GitHub `windows-legacy`、标签 `v0.11.*`、Release | Windows 部署线，最后为 v0.11.15（`3be0c95`），含完整原部署流程 | 已在生产验证、流程保持原样；Release 包均为 Windows 版；其更新脚本依赖 GitHub 的 latest Release |
-| GitHub `recovery/server-v0.11.15-snapshots` | 服务器 4 个发布包的原样快照 | 只读存档，非原始历史 |
-| 服务器 `/opt/oopz` | 4 个 `v0.11.15-*` 发布目录，运行的是 `4291aa894f7a` | 手动 nohup 的 capture-only 测试进程；无 `current` 链接、无 systemd |
+| GitHub `main` | Linux 主线，应用版本 0.11.15 | 含新流程的提交在本地，尚未推送；服务器运行的是 `4291aa8` |
+| GitHub `windows-legacy`、标签 `v0.11.*`、Release | Windows 部署线，最后为 v0.11.15 | 已在生产验证、流程保持原样；其更新脚本依赖 GitHub 的 latest Release |
+| GitHub `recovery/server-v0.11.15-snapshots` | 服务器 4 个发布包的原样快照 | 只读存档 |
+| 服务器 `/opt/oopz` | 4 个 `v0.11.15-*` 发布目录，运行的是 `4291aa894f7a` | 隔离的 capture-only 测试进程；无 `current` 链接、无 systemd 服务 |
 
-注意：四个内容不同的构建共用了 0.11.15，下一次发布必须使用新版本号（建议 0.12.0）。
+注意：四个内容不同的构建共用了 0.11.15，下一次发布必须使用新版本号（建议 0.12.0，`linux-v0.12.0` 标签，`--latest=false`）。
 
 ## 模块状态
 
 | 模块 | 职责 | 状态 | 证据 / 待办 |
 | --- | --- | --- | --- |
-| 飞书网关与卡片<br>`feishu_gateway/protocol/cli/setup` | 唯一远程入口、命令解析、卡片、一键配置 | Windows 生产验证；Ubuntu 仅在 capture-only 下运行 | 单元测试覆盖；待在 Ubuntu 完整模式下验证 |
-| 控制器<br>`controller`、`controller_protocol` | 录音任务状态机、群内指令、分析/发布决策 | 已稳定；capture-only、发起人确认卡、优雅关闭为 10-02/03 新增 | `test_controller`、`test_capture_only`；capture-only 已在服务器运行 |
-| 录音<br>`continuous`、`browser_probe`、`recorder`、`session`、`identity` | OOPZ 无头浏览器音频、按 UID 分轨、300 秒分片、断线处理 | **Ubuntu 实测通过** | 服务器会话 159/159 分片成功、失败 0；待长时间稳定性与断线恢复实测 |
+| 飞书网关与卡片<br>`feishu_gateway/protocol/cli/setup` | 唯一远程入口、命令解析、卡片、图片发送、一键配置 | 新流程代码完成（指令精简、发图、无审核发布）；**真实飞书未验证** | 单元测试覆盖；待部署后用真实群验证发图 |
+| 控制器<br>`controller`、`controller_protocol`、`digest_job`、`sessions` | 录音任务状态机、录音后自动分析与发送、待分析重试 | 代码完成；分析线程、发件箱、失败文字、重启中断标记有测试 | 待服务器端到端 |
+| 录音<br>`continuous`、`browser_probe`、`recorder`、`session`、`identity` | OOPZ 无头浏览器音频、按 UID 分轨、300 秒分片、断线处理 | **Ubuntu 实测通过** | 服务器会话 159/159 分片成功；待长时间稳定性与断线恢复实测；**出入频道记录与头像下载未实现**；有一条音轨未映射到成员（图上显示"未识别成员"） |
 | 转写<br>`vad`、`asr`、`transcript`、`speech_cli` | Silero VAD + SenseVoiceSmall（CPU） | **Ubuntu 实测通过** | 同上会话共 7834 段；15 分钟处理期限待在目标 CPU 上复核 |
-| 分析<br>`analysis_pipeline`、`analysis_windows`、`analyzer_job`、`deepseek_client` | 短/长窗口、最终综合、检查点复用、内容审核拆分 | Windows 生产验证（DeepSeek flash）；**Ubuntu 未验证** | 服务器 `.env` 无分析 API 配置；待配置后端到端验证 |
-| 报告与 PDF<br>`reports`、`pdf_reports`、`weasy_pdf`、`tools/md_to_pdf.*` | 内部 Markdown、候选公开 PDF | Chromium 路径 Windows 验证；Linux WeasyPrint 后端为新增 | 离线与真实中文 PDF 测试通过；待用真实报告在服务器验证 |
-| 发布/撤回/删除<br>`feishu_publisher` | 公开飞书文档、Base 索引、远程优先删除 | Windows 生产验证；**Ubuntu 未验证** | 依赖分析链路先打通 |
-| 部署工具<br>`scripts/linux/*`、`build_release.ps1` | 发布包构建；安装、更新、回滚、任务锁、事务恢复 | 隔离测试通过；**未在服务器激活** | 待建立 `current`、systemd 单元，做重启与回滚演练 |
-| 手动调试入口<br>`main`、`worker_cli`、`continuous_cli`、`analyzer_cli`、`analysis` | 手动探测、录音、分析接口诊断 | 生产路径基本不依赖；例外：控制器从 `main` 导入 `_config` | 可在后续结构整理时评估；`analyzer_cli` 的 API 诊断对排障有用 |
+| 分析器<br>`analyzer/` | 转写 → 窗口笔记 → 汇总 → 编辑改写，Qoder CLI，证据校验与重试 | **服务器整场实跑通过**（12.9 小时、7 窗口、约 20 次调用、10–25 分钟） | 仍受语音识别错字影响：不同次运行挑的点不同；见 [设计文档](DESIGN_DIGEST_PIPELINE.md) |
+| 渲染<br>`digest/`、`digest/render/` | 契约校验、发言频率统计、离线渲染 PNG/MD | 完成，成品图经用户验收 | 频率统计需要出入记录；缺少时图上如实写"缺少足够记录" |
+| 部署工具<br>`scripts/linux/*`、`build_release.ps1` | 发布包构建；安装、更新、回滚、任务锁与事务 | 隔离测试通过；**未在服务器激活** | 待建立 `current`、systemd 单元，做重启与回滚演练 |
+| 手动调试入口<br>`main`、`worker_cli`、`continuous_cli`、`analysis` | 手动探测、录音 | 生产路径基本不依赖；例外：控制器从 `main` 导入 `_config` | 可在后续结构整理时评估 |
 
 ## 测试
 
-`python -m pytest`：340 通过、20 跳过（缺 Linux 实机、符号链接权限或 PowerShell 条件）、0 失败（2026-10-03，本机 Windows）。测试覆盖飞书网关、控制器、录音与转写、分析流水线、报告/PDF、Linux 部署脚本；没有覆盖真实 OOPZ/飞书/分析 API，也没有长时间负载。
+`python -m pytest`：257 通过、12 跳过（缺 Linux 实机、符号链接权限或 PowerShell 条件）、0 失败（2026-10-04，本机 Windows）。覆盖飞书网关、控制器、录音与转写、分析器（含模型调用的假后端）、渲染与契约、Linux 部署脚本；没有覆盖真实 OOPZ/飞书/Qoder，也没有长时间负载。
 
 ## 还没做的事（按顺序）
 
-1. 在服务器上服务化：建立 `current` 与 systemd 单元，停掉测试残留进程。
-2. 配置分析 API，打通分析 → 报告 → 飞书发布的 Ubuntu 端到端。
-3. 重启恢复、版本回滚演练；4 vCPU 下的长时间负载与处理期限复核。
-4. 以新版本号构建并发布 Linux 版本；清理服务器上的测试产物与多余发布目录（磁盘已用约 79%）。
+1. **出入频道记录与头像**：录音时从已有的 30 秒成员刷新写 `presence_observations.json`（`oopz.presence.observations.v1`），下载头像，补上发言频率区块和头像；修正未映射音轨的身份。
+2. **部署并端到端验证**：配置分析器与字体，建立 `current` 与 systemd 单元，以 0.12.0 发布，在真实群里完整跑一遍。
+3. **MaiBot 联动**：图片生成后把图和 QQ 群号交给 MaiBot 插件（该插件已写、未测试；本项目一侧未开始）。
+4. 重启恢复、版本回滚演练；4 vCPU 下的长时间负载与处理期限复核；清理服务器上的测试残留与多余发布目录。

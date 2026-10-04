@@ -1,52 +1,75 @@
-# 目标流程与设计：录音 → 自动分析 → 图文回顾 → 飞书群
+# 录音 → 自动分析 → 精华图 → 飞书群：设计与实现
 
-本文是 Linux 主线的目标设计（2026-10-03 起实施）。取代 Windows 版“分析 → 群内审核 → 批准发布到飞书文档/Base”的流程；旧流程只保留在 `windows-legacy`。
+本文描述 Linux 主线的分析与出图实现（2026-10-03 起）。它取代 Windows 版"分析 → 群内审核 → 批准发布到飞书文档/Base"的流程；旧流程只保留在 `windows-legacy`。
 
-## 目标流程
+## 目标
 
 ```text
 飞书群 @机器人「开始录音」
-  → OOPZ 录音 + 分片转写 + 出入频道记录（presence）+ 头像下载
-  → 手动「停止」或自动退出（无人/断线/到点）
-  → 自动分析（Qoder CN CLI）→ 受校验的回顾内容 JSON
-  → 程序统计（发言频率）+ V7 模板渲染 → digest.png + digest.md
-  → 自动发送到飞书群：图片消息 + digest.md 文件
+  → OOPZ 录音 + 分片转写（出入频道记录与头像：待做）
+  → 手动「停止」或自动退出（无人 / 断线 / 到点）
+  → 自动分析（Qoder CN CLI）→ 受校验的内容 JSON
+  → 渲染 digest.png（+ digest.md）
+  → 图片消息发到同一个飞书群（只发图，没有任何文字）
 ```
 
-没有审核、批准、公开文档、Base 索引、撤回环节。后续任务（不在本阶段）：渲染好的图片与目标 QQ 群号交给 MaiBot 插件发送到 QQ 群。
+没有审核、批准、公开文档、Base 索引、撤回环节。之后的任务：图片与目标 QQ 群号交给 MaiBot 插件发到 QQ 群。
 
-## 数据契约（沿用 V7 交付包，不改）
+这张图是**宣传/吸引眼球**用的，不是总结：忽略大部分平淡内容，只留最有梗的几个点，用"标题 + 一句吐槽"。字数很少（约 400–700 字），不给人认真阅读。
 
-- 模型只产出 `oopz.digest.content.v2`（`content` + `people`）。每条必须带 1–6 个 `evidence_ids` 与一个原文 `anchor`；程序用 `contract.validate_content` 核对证据 ID、锚点、`speaker_id` 与昵称。模型输出里的 SVG/HTML/URL/路径只当文字。
-- 统计（发言频率）由程序用 `stats.compute_frequency_stats(transcript, duration_ms, presence, coverage_complete)` 确定性计算，模型不得给出数量、排名、百分比。
-- 运行层提供元信息（日期、时间、页脚、虚构标记）与头像（`speaker_id` → 已校验的本地 PNG）。
-- 叙述规则以 `NARRATIVE_RULES.txt` 为准，作为分析器系统提示词的基础。
+## 内容结构（图上的区块，自上而下）
 
-## 组件与代码位置
-
-| 组件 | 位置 | 来源 / 状态 |
+| 区块 | 来源 | 说明 |
 | --- | --- | --- |
-| 回顾契约、统计、头像下载、受控图标、Markdown 转义 | `src/oopz_capture/digest/` | V7 包 `contract_kit_upstream`（逐字复用，仅改相对导入） |
-| 渲染器（版面、绘制、Markdown） | `src/oopz_capture/digest/render/` | V7 包 `src/digest_render` |
-| 字体 | `assets/fonts/`（不入 Git） | `scripts/download_fonts.py`：固定 URL + SHA-256 |
-| 出入频道记录与头像采集 | `continuous.py`（已有 30 秒成员刷新） | 新增：每次成功刷新写一条 presence 观察；头像经 `digest.avatars` 下载 |
-| 分析器 | `src/oopz_capture/analyzer/` | 新写：证据构造 + Qoder CLI 后端 + 校验/重试；参考此前在服务器上留下的分析实验 |
-| 自动分析与投递编排 | `controller.py` + 飞书网关 | 精简：停止后自动分析，去掉审核/发布；网关新增图片消息 |
+| 固定小标语 + 日期时间 | 模板与运行层 | 不由模型生成 |
+| **今日之最：评价** | `odd_topic` + 编辑给的短评价 | 整场最离谱的一个话题；不含昵称 |
+| 大家的表现 | `people.profiles`（3–4 条） | 口语称号 + 一句吐槽；只能引用该人自己的发言 |
+| 发言频率 | 程序统计（`digest/stats.py`） | 模型不得给数量/排名；缺出入记录时如实写不生成排名 |
+| 这场聊了什么 | `moments`（话题怎么一路跑偏，3–4 步）、`topics`（3 条，必须带昵称） | 每块有编辑给的小角标 |
+| 还没聊完的线索 | `next_hooks` | 独立面板，与话题区分 |
+| 这场怎么聊下来的 | 各窗口的时间范围 + 编辑写的短标题 | 最后一块，卡片网格 |
+
+没有"总览"：模型不再生成总览，卡片也不显示（大标题改为固定小标语）。
+
+## 数据契约
+
+- 模型只产出 `oopz.digest.content.v2`（`content` + `people`）。每条必须带 1–6 个 `evidence_ids` 与一个原文 `anchor`（逐字、4–80 字）；`digest/contract.py` 校验证据 id、锚点、顺序、`speaker_id` 与昵称，并拒绝引号/网址/Markdown、绝对化用词（"最"等）、证据里没有的数字、`odd_topic` 里的昵称。人物条目只能引用该人自己的发言（合计至少 16 字）。
+- 统计（发言频率）由程序用出入记录和转写确定性计算，模型不得给出。
+- 运行层提供元信息（日期、时间、页脚、时间线、角标）。模型输出里的 SVG/HTML/URL/路径只当文字。
+- 叙述规则以 `analyzer/narrative_rules.txt`（V7 规则原文）为基础，`analyzer/prompts.py` 在其上加语气、各阶段的要求和格式约束。
+
+## 分析器（`analyzer/`）
+
+```text
+transcript.jsonl → 按说话人合并成连续发言（run，证据 id r0001…）
+   → 按字数/静音切成窗口 → 逐窗口出带证据的笔记（并行 3 路）
+   → （窗口多于 12 个时先分组合并）
+   → 汇总：挑出整场最有梗的点（odd_topic、topics、moments、next_hooks、people）
+   → 编辑改写：每条改成"标题 + 一句吐槽"，同时给角标和时间线短标题
+   → 渲染一次检查是否超高（超高退回缩写）
+```
+
+要点：
+
+- **全量、不抽样**：每条发言恰好出现在一个窗口里；失败的窗口记入 `coverage` 并如实在页脚说明，不会静默消失。
+- **说话人别名**：给模型看 `s1…sN`，不暴露 32 位十六进制 id；昵称按名单原样引用。
+- **机械校验 + 带位置的重试**：同一个校验器检查窗口笔记、合并结果、汇总、改写；被拒绝时把全部错误（带位置、详细原因）一起反馈，最多 4 次。
+- **风格检查**（程序强制）：人物 ≤4 条且不得是"未识别成员"；话题和转场的标题或正文必须含昵称；转场步骤 ≤4 个；超过 15 字的正文必须有标点；改写不得把话题或人物删到少于 3 条（草稿本来更少除外）。
+- **转写错字**：不做单独的纠错调用，只在提示词里要求先结合上下文判断、没把握的不写。因此不同次运行会挑不同的点，这是已知的限制。
+- **审计**：`calls.jsonl` 记录每次模型调用（阶段、耗时、错误、被拒绝的原文），`windows.json` 是各窗口结果；失败时 `failure.json`。
 
 ## Qoder CN CLI 后端（实测事实）
 
-- 路径：`/opt/oopz/shared/tools/qodercn-1.1.65/node_modules/.bin/qoderclicn`，需以服务账户运行并使用其独立 HOME（已登录；免费额度，费用 0）。
-- 无头调用：`-p`（print）、`--output-format json`、`--tools ""`（禁用全部工具，等同纯文本补全）、`--no-session-persistence`、`--system-prompt`、`-m`。
-- `--thinking enabled` 必须同时给 `--thinking-budget <tokens>`，否则直接报错；此前的带思考调用曾返回空结果，需要在后端做“空结果即失败并重试”。
-- 单次调用约 11–65 秒（证据约 12 KB）。输出的 `result` 字段是模型文本，需解析 JSON。
+- 路径：`/opt/oopz/shared/tools/qodercn-1.1.65/node_modules/.bin/qoderclicn`，运行用户使用独立 HOME（保存登录，须在 `/opt` 下，`ProtectHome` 挡 `/home`）；免费额度。
+- 无头调用：`-p`、`--tools ""`（纯文本补全）、`--no-session-persistence`、`--output-format json`、`--system-prompt`、`-m Qwen3.8-Flash`；用户消息从 stdin 传入。`--thinking enabled` 必须同时给 `--thinking-budget`，本项目不用思考模式。
+- 单次调用约 25–280 秒；3 路并行可行；空结果视为失败并重试。
 
-## 分阶段实施
+## 渲染（`digest/render/`）
 
-1. **渲染器集成（离线可测）**：移植 V7 渲染器与契约代码，字体脚本，保留有价值的测试，用 V7 的合成样例验证。
-2. **分析器**：证据构造（长会话分窗/抽样）、Qoder 后端、提示词（以 `NARRATIVE_RULES` 为基础）、程序校验 + 一次带错误反馈的重试；评审者（二次 LLM 核查）作为可选项，按真实效果再决定默认值。
-3. **录音端升级**：presence 观察落盘（契约 `oopz.presence.observations.v1`）、头像下载。
-4. **飞书流程精简**：停止/自动退出 → 自动分析 → 发送图片与 md；重写指令文本与卡片；删除审核/发布/撤回/Base。
-5. **清理**：删除被取代的 HTTP 分析流水线、PDF 报告、发布器及其测试；全仓精简防御性代码。
-6. **（之后）** MaiBot 联动：把图片与 QQ 群号交给 MaiBot 插件。
+离线 Pillow 渲染，固定画布 1080 宽、高度上限 12000；视图（view）是单一事实来源，PNG 与 Markdown 由它生成，两者文字逐块一致（有测试）。字体不入 Git，`scripts/download_fonts.py` 按固定 URL 与 SHA-256 下载，`OOPZ_FONT_DIR` 指定目录。
 
-每个阶段完成后：测试通过、更新 `CHANGELOG.md` 与 `docs/PROJECT_STATUS.md`。部署（服务化）不在这些阶段内，待流程在服务器上端到端跑通后再做。
+## 已知限制与待办
+
+- 语音识别错字使挑选不稳定；需要稳定性时可考虑转写清洗，目前按用户决定不做。
+- 出入频道记录（`oopz.presence.observations.v1`）与头像下载未实现；有一条音轨没映射到成员。
+- 见 [项目状态](PROJECT_STATUS.md) 的待办顺序。

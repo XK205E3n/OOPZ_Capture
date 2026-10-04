@@ -11,27 +11,33 @@
 ```text
 飞书消息/卡片
   → FeishuGateway → ControllerService → OOPZ 录音与分片
-  → 本地转写与修复 → 分析检查点 → 用户配置的分析 API
-  → 内部 Markdown、候选公开 PDF、飞书群审查卡片
-  → 飞书公开文档 → Base 索引
+  → 本地转写与修复 → 录音结束后自动分析（Qoder CN CLI）
+  → analysis/ 目录（content.json 等）+ digest/digest.png
+  → 发件箱（图片消息）→ 飞书群
 ```
 
-会话文件保存在 `OOPZ_OUTPUT_ROOT`（默认 `output`），网关事件、审查决定和审计日志保存在 `OOPZ_FEISHU_STATE_ROOT`（默认 `feishu_state`）。控制器、转写和分析可在后续命令中从文件状态恢复；分析会复用完成的短/长窗口。
+会话文件保存在 `OOPZ_OUTPUT_ROOT`（默认 `output`），网关事件、发件箱和审计日志保存在 `OOPZ_FEISHU_STATE_ROOT`（默认 `feishu_state`）。控制器、转写和分析可在后续命令中从文件状态恢复。
 
-录音使用 OOPZ SDK 的无头浏览器语音后端；每个远端 Agora UID 单独采集 PCM。录音按最多 300 秒分片，分片结束后以本地 Silero VAD 和 SenseVoiceSmall（CPU）转写；默认 `OOPZ_RETAIN_AUDIO=false`，成功转写的分片音频随即删除。PDF 默认由项目内 Node 运行时调用 Chromium/Chrome 无头渲染；Linux 上可用 `OOPZ_PDF_BACKEND=weasyprint` 显式切换到独立 Python 进程的 WeasyPrint 后端（不自动回退）。
+录音使用 OOPZ SDK 的无头浏览器语音后端；每个远端 Agora UID 单独采集 PCM。录音按最多 300 秒分片，分片结束后以本地 Silero VAD 和 SenseVoiceSmall（CPU）转写；默认 `OOPZ_RETAIN_AUDIO=false`，成功转写的分片音频随即删除。
+
+## 录音后的自动分析
+
+录音与转写结束（`ready_for_analysis`）后，控制器在后台线程运行 `digest_job.run_digest(会话目录)`，不需要任何确认：
+
+1. `analyzer.transcript.load_session` 读 `session.json`、`lifecycle.json`、`users.json`、`transcript.jsonl`，按说话人合并成连续发言（run）。
+2. 按字数和静音切成窗口，每个窗口交给模型生成带证据的笔记；窗口多于 12 个时先分组合并。
+3. 汇总：模型从各窗口笔记里挑出整场的"今日之最"、话题、转场、悬念、人物；每一项都带 1–6 个证据 id 和逐字锚点，由 `digest/contract.py` 校验，被拒绝时带着具体错误重试。
+4. 编辑改写：另一次调用把汇总改写成"标题 + 一句吐槽"，同时给出各块的角标和时间线短标题；证据字段不得改动，仍走同一校验；实际渲染一次，超高则退回缩写。
+5. `digest/render` 离线渲染 `digest.png` 和 `digest.md`（Pillow，字体在 `OOPZ_FONT_DIR`）。
+
+输出写入 `<会话>/analysis/`：`content.json`、`bundle.json`、`meta.json`、`stats.json`、`windows.json`、`coverage.json`、`calls.jsonl`（每次模型调用的审计）、`digest/digest.png`。失败时写 `failure.json`，并向群里发一条文字说明；`待分析` 重新运行。控制器重启会把"分析中"的会话标成"分析被中断"，同样可用 `待分析` 重试。
+
+发件箱（`feishu_state/send_requests`）持久保存待发消息；网关每秒检查，发送失败会重试。只有图片消息 `{"image": {"source": 路径}}` 和失败说明文字；没有总结文字。
 
 ## 录音浏览器依赖
 
-录音浏览器与 PDF 浏览器是两项独立依赖：默认录音后端使用 Playwright 的 Chromium 通道，必须通过该版本 Python 环境执行 `python -m playwright install --no-shell chromium` 并验证启动；已安装系统浏览器不会自动满足此要求。PDF 使用 Playwright Chromium（Linux 优先）或系统 Chrome/Edge，或选择 WeasyPrint 后端。
+录音后端使用 Playwright 的 Chromium 通道，必须通过该版本 Python 环境执行 `python -m playwright install --no-shell chromium` 并验证启动；已安装系统浏览器不会自动满足此要求。Qoder CLI 需要 Node（`OOPZ_NODE_PATH`），分析进程只调用 CLI，不使用 Node 渲染。
 
-## 分析模型
+## 保留与删除
 
-`configured-api` 是控制器的生产入口。全部 `ANALYZER_*` 配置必须由用户显式提供，程序不推断供应商、不补全 API 地址、不选择模型，也不为超时、重试、Token、思考模式或 JSON 模式提供环境默认值；缺少任意一项时生产网关拒绝启动。
-
-模型仅推荐 MiMo V2.5，不推荐供应商，也不设模型默认值。流水线将转录分为短窗口、长窗口和最终综合；每个非静音的 300 秒短窗口单独调用一次 API，不进行多窗口文本合并。`OOPZ_ANALYSIS_MAX_PARALLELISM=4` 仍是独立的窗口并行默认。用户应根据自行选择的服务配置 API 地址、模型标识及兼容的思考与 JSON 模式。
-
-## 发布、撤回与删除
-
-未批准的报告只在受控群内可见。批准操作以审查时公开 Markdown 的 SHA-256 为准，避免审查后内容变化而被发布。发布会创建飞书文档、开放“持链接可读”、并写入 Base 记录；Base 是稳定的公开索引，不承载报告正文。
-
-撤回会将文档改为非公开并将 Base 状态改为“已撤回”。明确删除或到期清理时，系统先删除远程文档和 Base 记录；任一远程删除失败都会保留本地会话以便后续重试。默认保留 15 天（`OOPZ_RETENTION_HOURS=360`）。
+会话默认保留 15 天（`OOPZ_RETENTION_HOURS=360`），到期由网关每分钟清理一次本地会话和过期的控制文件。`删除会话` 在二次确认后只删除本地会话目录。
