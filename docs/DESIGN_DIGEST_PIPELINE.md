@@ -30,14 +30,14 @@
 | 渲染器（版面、绘制、Markdown） | `src/oopz_capture/digest/render/` | V7 包 `src/digest_render` |
 | 字体 | `assets/fonts/`（不入 Git） | `scripts/download_fonts.py`：固定 URL + SHA-256 |
 | 出入频道记录与头像采集 | `continuous.py`（已有 30 秒成员刷新） | 新增：每次成功刷新写一条 presence 观察；头像经 `digest.avatars` 下载 |
-| 分析器 | `src/oopz_capture/analyzer/` | 新写：证据构造 + Qoder CLI 后端 + 校验/重试；参考 dot 在服务器上的实验 |
+| 分析器 | `src/oopz_capture/analyzer/` | 新写：证据构造 + Qoder CLI 后端 + 校验/重试；参考此前在服务器上留下的分析实验 |
 | 自动分析与投递编排 | `controller.py` + 飞书网关 | 精简：停止后自动分析，去掉审核/发布；网关新增图片消息 |
 
 ## Qoder CN CLI 后端（实测事实）
 
 - 路径：`/opt/oopz/shared/tools/qodercn-1.1.65/node_modules/.bin/qoderclicn`，需以服务账户运行并使用其独立 HOME（已登录；免费额度，费用 0）。
 - 无头调用：`-p`（print）、`--output-format json`、`--tools ""`（禁用全部工具，等同纯文本补全）、`--no-session-persistence`、`--system-prompt`、`-m`。
-- `--thinking enabled` 必须同时给 `--thinking-budget <tokens>`，否则直接报错；dot 的带思考调用曾返回空结果，需要在后端做“空结果即失败并重试”。
+- `--thinking enabled` 必须同时给 `--thinking-budget <tokens>`，否则直接报错；此前的带思考调用曾返回空结果，需要在后端做“空结果即失败并重试”。
 - 单次调用约 11–65 秒（证据约 12 KB）。输出的 `result` 字段是模型文本，需解析 JSON。
 
 ## 分阶段实施
