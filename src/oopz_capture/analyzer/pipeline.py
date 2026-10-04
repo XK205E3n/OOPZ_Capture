@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -109,7 +110,14 @@ def _entries(content: dict):
     return [e for e in found if isinstance(e, dict)]
 
 
+PUNCTUATION = re.compile(r"[，。！？、；…,.!?;]")
+
+
 def check_style(content: dict) -> None:
+    for index, entry in enumerate(_entries(content)):
+        if len(entry.get("text", "")) > 15 and not PUNCTUATION.search(entry["text"]):
+            raise ValueError(f"style:text of '{entry.get('title', '')}' has no punctuation; break it into readable "
+                             "sentences with full-width commas and periods")
     for moment in content["content"]["moments"]:
         if len(moment.get("stages", [])) > MAX_STAGES:
             raise ValueError(f"style:moment has {len(moment['stages'])} stages but at most {MAX_STAGES} fit in one row; "

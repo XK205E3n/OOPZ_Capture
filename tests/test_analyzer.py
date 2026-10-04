@@ -67,7 +67,7 @@ class FakeModel:
                    *section["next_hooks"], *draft["people"]["profiles"]]
         for entry in entries:
             if entry["evidence_ids"]:
-                entry["title"], entry["text"] = "改写后的标题", "改写后的一句吐槽"
+                entry["title"], entry["text"] = "改写后的标题", "改写后，一句吐槽"
         labels = {"odd": "离谱至极", "topics": ["笑出声"] * len(section["topics"]),
                   "moments": ["跑偏现场"] * len(section["moments"]), "timeline": ["小标题"] * len(request["flow"])}
         return json.dumps(draft | {"labels": labels}, ensure_ascii=False)
@@ -77,22 +77,22 @@ class FakeModel:
         if request["mode"] == "window":
             first = evidence[0]
             own = [e for e in evidence if e["speaker_id"] == first["speaker_id"]][:4]
-            summary = {"title": "这一段的标题", "text": "这一段大家在聊设备和游戏的事情", "evidence_ids": [first["id"]],
+            summary = {"title": "这一段的标题", "text": "这一段大家在聊，设备和游戏的事情", "evidence_ids": [first["id"]],
                        "anchor": anchor or first["text"][:8]}
-            person = {"title": "先把设备调好", "text": "这一段里这位朋友主要在处理设备问题",
+            person = {"title": "先把设备调好", "text": "这一段里，这位朋友主要在处理设备问题",
                       "evidence_ids": [e["id"] for e in own], "anchor": own[0]["text"][:8],
                       "speaker_id": first["speaker_id"],
                       "nickname": next(p["nickname"] for p in request["people"] if p["speaker_id"] == first["speaker_id"])}
         else:
             first = evidence[0]                       # a window_summary (or section summary)
-            summary = {"title": "整场的标题", "text": "整场主要聊了设备调试和接下来想玩的游戏", "evidence_ids": [first["id"]],
+            summary = {"title": "整场的标题", "text": "整场主要聊了设备调试，和接下来想玩的游戏", "evidence_ids": [first["id"]],
                        "anchor": anchor or first["text"][:6]}
             person = None
             runs = [e for e in evidence if e["kind"] == "asr_excerpt"]
             if runs:
                 first_run = runs[0]
                 own = [e for e in runs if e["speaker_id"] == first_run["speaker_id"]][:4]
-                person = {"title": "先把设备调好", "text": "整场里这位朋友多次处理设备问题",
+                person = {"title": "先把设备调好", "text": "整场里，这位朋友多次处理设备问题",
                           "evidence_ids": [e["id"] for e in own], "anchor": own[0]["text"][:8],
                           "speaker_id": first_run["speaker_id"],
                           "nickname": next(p["nickname"] for p in request["people"]
@@ -353,3 +353,13 @@ def test_window_results_of_an_earlier_run_can_be_reused(tmp_path):
     model = FakeModel()
     again = analyze_session(session, model, windows=windows, units=first.units)
     assert "window" not in {mode for mode, _ in model.requests} and again.content["content"]["summary"]["title"]
+
+
+def test_long_text_without_punctuation_is_refused():
+    from oopz_capture.analyzer.pipeline import check_style
+    content = {"content": {"summary": {"title": "标题", "text": "一" * 20}, "odd_topic": {"status": "none", "title": "无", "text": "无，"},
+                           "topics": [], "moments": [], "next_hooks": []}, "people": {"profiles": []}}
+    with pytest.raises(ValueError, match="no punctuation"):
+        check_style(content)
+    content["content"]["summary"]["text"] = "一" * 10 + "，" + "二" * 10
+    check_style(content)
