@@ -11,7 +11,7 @@ REQUIRED = {
     'RELEASE_MANIFEST.json', 'pyproject.toml', '.env.example',
     'scripts/linux/install_release.sh', 'scripts/linux/update_release.sh',
     'scripts/linux/rollback_release.sh', 'scripts/linux/manage_release.py',
-    'scripts/linux/release_archive.py', 'scripts/linux/release_locks.py',
+    'scripts/linux/release_archive.py', 'scripts/linux/release_cleanup.py', 'scripts/linux/release_locks.py',
     'scripts/linux/release_transaction.py', 'scripts/linux/prepare_dependencies.sh',
     'scripts/linux/oopz-capture.service', 'scripts/linux/oopz-capture.logrotate',
     'scripts/download_sensevoice_model.py',

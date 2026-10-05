@@ -133,8 +133,8 @@ SETTABLE_KEYS: dict[str, dict[str, object]] = {
         "secret": False,
     },
     "OOPZ_RETENTION_HOURS": {
-        "validator": lambda value: value.isdigit() and 1 <= int(value) <= 360,
-        "description": "文本和报告保留小时数 1-360",
+        "validator": lambda value: value.isdigit() and 1 <= int(value) <= 720,
+        "description": "文本和报告保留小时数 1-720（默认 720，即 30 天）",
         "secret": False,
     },
     "OOPZ_DEVICE": {
@@ -174,7 +174,7 @@ SETTING_DEFAULTS: dict[str, str] = {
     "OOPZ_RECONNECT_ATTEMPT_TIMEOUT_SECONDS": "30",
     "OOPZ_LANGUAGE": "auto",
     "OOPZ_RETAIN_AUDIO": "false",
-    "OOPZ_RETENTION_HOURS": "360",
+    "OOPZ_RETENTION_HOURS": "720",
     "OOPZ_DEVICE": "cpu",
 }
 

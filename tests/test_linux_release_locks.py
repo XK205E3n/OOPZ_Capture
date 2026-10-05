@@ -85,3 +85,29 @@ def test_activation_entrypoint_rejects_registered_analysis_before_any_switch(tmp
     with pytest.raises(RuntimeError, match='pending analysis/work'):
         manager.main(['activate', '--root', str(root), '--release-id', release.name])
     assert (root / 'current').read_text(encoding='utf-8') == 'original current placeholder'
+
+
+def test_prune_keeps_only_the_new_release_and_its_files(tmp_path: Path) -> None:
+    cleanup_spec = importlib.util.spec_from_file_location('cleanup_under_test', SCRIPTS / 'release_cleanup.py')
+    cleanup = importlib.util.module_from_spec(cleanup_spec)
+    cleanup_spec.loader.exec_module(cleanup)
+    root = tmp_path / 'oopz'
+    new, old = 'v0.12.1-' + 'a' * 12, 'v0.12.0-' + 'b' * 12
+    for release in (new, old, '.preparing-' + 'v0.12.2-' + 'c' * 12, 'notes'):
+        (root / 'releases' / release).mkdir(parents=True)
+        (root / 'releases' / release / 'file').write_text('x')
+    try:
+        (root / 'releases' / old / 'logs').symlink_to(tmp_path)
+        (root / 'current').symlink_to(root / 'releases' / new)
+    except OSError:
+        pass                       # no symlink privilege here: the rest of the rules are still checked
+    art = root / 'artifacts'
+    (art / 'bootstrap-v0.12.0').mkdir(parents=True)
+    (art / 'bootstrap-v0.12.1' / 'scripts').mkdir(parents=True)
+    for name in (f'oopz-capture-{old}.zip', f'oopz-capture-{old}.zip.sha256', f'oopz-capture-{new}.zip',
+                 'prepare-v0.12.0b.log', 'update-v0.12.1.log', 'keep-me.txt'):
+        (art / name).write_text('x')
+    removed = cleanup.prune_superseded(root, new, running_from=art / 'bootstrap-v0.12.1' / 'scripts')
+    assert sorted(p.name for p in (root / 'releases').iterdir()) == ['.preparing-v0.12.2-' + 'c' * 12, 'notes', new]
+    assert sorted(p.name for p in art.iterdir()) == ['bootstrap-v0.12.1', 'keep-me.txt', f'oopz-capture-{new}.zip', 'update-v0.12.1.log']
+    assert tmp_path.is_dir() and 'releases/' + old in removed       # a symlink inside the old release was not followed

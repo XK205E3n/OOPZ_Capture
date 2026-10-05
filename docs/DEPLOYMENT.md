@@ -151,6 +151,10 @@ sudo bash scripts/linux/rollback_release.sh \
   --root /opt/oopz --user ubuntu --release-id "$PREVIOUS_RELEASE_ID"
 ```
 
+`update_release.sh` removes the superseded release directories and the older versions' packages,
+checksums, `bootstrap-*` folders and logs once the switch has succeeded (`--keep-old` keeps them), so
+rolling back means building the old tag again.
+
 Before stopping anything, guards reject active tasks, corrupt/illegal PID locks,
 symlink locks and unreadable state. Only a valid demonstrably dead PID is stale.
 The guard also checks controller `last_job` and the analysis lifecycle's

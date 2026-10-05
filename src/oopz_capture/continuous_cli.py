@@ -39,7 +39,7 @@ def _parser() -> argparse.ArgumentParser:
     start.add_argument("--language", choices=["auto", "zh", "en", "yue", "ja", "ko"], default="auto")
     start.add_argument("--retain-audio", action="store_true", help="retain multitrack audio after transcription for ASR experiments")
     start.add_argument("--deadline-seconds", type=int, default=900, dest="processing_deadline_seconds")
-    start.add_argument("--retention-hours", type=int, default=360)
+    start.add_argument("--retention-hours", type=int, default=720)
     start.add_argument("--poll-interval", type=float, default=0.25, dest="poll_interval_seconds")
     start.add_argument("--membership-refresh-seconds", type=float, default=30.0)
     start.add_argument("--membership-timeout-seconds", type=float, default=10.0)

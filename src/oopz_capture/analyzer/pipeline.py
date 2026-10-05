@@ -25,12 +25,34 @@ from .transcript import UNKNOWN_MEMBER, Session, clock
 from .windows import Window, split_windows
 
 ATTEMPTS = 4          # model answers tried per call before giving up
-MAX_PROFILES = 4      # people block is about as big as the topics block; none is fine when nobody stood out
 MIN_TOPICS = 3        # the editor may drop unreadable entries but keeps at least this many (if the draft had them)
 MIN_PROFILES = 3
 MAX_STAGES = 4        # the stage track is one row of at most this many
 MERGE_ABOVE = 12      # more windows than this are merged in groups before the final digest
 MERGE_GROUP = 8
+
+
+@dataclass(frozen=True)
+class Budget:
+    """How much the poster may carry; grows with the length of the recording (never a reason to pad:
+    fewer entries are fine when there is nothing good to say)."""
+    topics: int
+    moments: int
+    hooks: int
+    profiles: int
+    chars: tuple[int, int]      # guidance for the total body text
+
+
+TIERS = ((2.5, Budget(3, 1, 1, 4, (400, 700))),
+         (5.0, Budget(4, 2, 2, 5, (550, 950))),
+         (9.0, Budget(5, 3, 2, 6, (700, 1200))),
+         (float("inf"), Budget(6, 4, 3, 7, (850, 1450))))
+LARGEST = TIERS[-1][1]
+
+
+def budget_for(duration_ms: int) -> Budget:
+    hours = max(0, duration_ms) / 3_600_000
+    return next(budget for limit, budget in TIERS if hours <= limit)
 
 
 class AnalysisError(RuntimeError):
@@ -113,7 +135,7 @@ def _entries(content: dict):
 PUNCTUATION = re.compile(r"[，。！？、；…,.!?;]")
 
 
-def check_style(content: dict) -> None:
+def check_style(content: dict, budget: Budget = LARGEST) -> None:
     for index, entry in enumerate(_entries(content)):
         if len(entry.get("text", "")) > 15 and not PUNCTUATION.search(entry["text"]):
             raise ValueError(f"style:text of '{entry.get('title', '')}' has no punctuation; break it into readable "
@@ -126,10 +148,14 @@ def check_style(content: dict) -> None:
         if profile["nickname"].startswith(UNKNOWN_MEMBER):
             raise ValueError(f"style:profiles must not feature {UNKNOWN_MEMBER} (an audio track not matched to a member); "
                              "remove that entry")
-    count = len(content["people"]["profiles"])
-    if count > MAX_PROFILES:
-        raise ValueError(f"style:people.profiles has {count} entries but at most {MAX_PROFILES} are wanted; "
-                         "keep only the people with the most notable contribution")
+    section = content["content"]
+    for name, count, limit in (("topics", len(section["topics"]), budget.topics),
+                               ("moments", len(section["moments"]), budget.moments),
+                               ("next_hooks", len(section["next_hooks"]), budget.hooks),
+                               ("people.profiles", len(content["people"]["profiles"]), budget.profiles)):
+        if count > limit:
+            raise ValueError(f"style:{name} has {count} entries but at most {limit} fit this poster; "
+                             "keep only the best ones" + (" (leave it empty if nothing is really unresolved)" if name == "next_hooks" else ""))
 
 
 def check_named(content: dict, roster: list[dict]) -> None:
@@ -196,6 +222,36 @@ def drop_repeats(content: dict) -> None:
         section[field] = [e for e in section[field] if any(e is s for s in survivors)]
 
 
+def repair(content: dict, bundle: dict) -> dict:
+    """Mechanical fixes that never change what the card says: drop evidence ids that do not exist (when
+    others remain), give stages the icon_category the contract demands, and complete the odd topic's
+    status and participants from the lines it cites."""
+    evidence = {e["id"]: e for e in bundle["evidence"]}
+
+    def known(entry: dict) -> None:
+        refs = entry.get("evidence_ids")
+        if isinstance(refs, list) and all(isinstance(r, str) for r in refs):
+            kept = [r for r in refs if r in evidence]
+            if kept:
+                entry["evidence_ids"] = kept
+
+    for entry in _entries(content):
+        known(entry)
+        for stage in entry.get("stages") if isinstance(entry.get("stages"), list) else []:
+            if isinstance(stage, dict):
+                known(stage)
+                if not isinstance(stage.get("icon_category"), str):
+                    stage["icon_category"] = "other"
+    odd = content.get("content", {}).get("odd_topic")
+    if isinstance(odd, dict) and odd.get("status") != "none" and isinstance(odd.get("evidence_ids"), list):
+        odd.setdefault("status", "supported")
+        if "participant_ids" not in odd:
+            speakers = [evidence[r]["speaker_id"] for r in odd["evidence_ids"]
+                        if r in evidence and evidence[r]["kind"] == "asr_excerpt" and evidence[r].get("speaker_id")]
+            odd["participant_ids"] = list(dict.fromkeys(speakers))[:6]
+    return content
+
+
 def _strip(value):
     if isinstance(value, str):
         return value.strip()
@@ -225,7 +281,7 @@ def _complete(backend, system: str, body: str) -> tuple[str, dict]:
 
 
 def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, recorder: Recorder, *,
-        stage: str, unit: str, extra=None, prepare=None, distinct: bool = False) -> dict:
+        stage: str, unit: str, extra=None, prepare=None, distinct: bool = False, budget: Budget = LARGEST) -> dict:
     """Ask until the answer passes the validator (at most ATTEMPTS times); returns content with real ids.
     ``distinct``: blocks must not retell one event; the last attempt repairs instead of rejecting."""
     body = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
@@ -235,9 +291,9 @@ def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, rec
         reply, usage = _complete(backend, system, body + note)
         try:
             parsed = _strip(parse_json_object(reply))
-            content = normalize(aliases.to_real(prepare(parsed) if prepare else parsed))
+            content = repair(normalize(aliases.to_real(prepare(parsed) if prepare else parsed)), bundle)
             validate_content(content, bundle)
-            check_style(content)
+            check_style(content, budget)
             if distinct:
                 check_distinct(content) if attempt < ATTEMPTS else drop_repeats(content)
             if extra:
@@ -347,7 +403,7 @@ def check_labels(labels, content: dict, flow: list[dict]) -> dict:
 
 
 def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases: Aliases, recorder: Recorder,
-                 fit=None, coverage: dict | None = None) -> tuple[dict, dict]:
+                 fit=None, coverage: dict | None = None, budget: Budget = LARGEST) -> tuple[dict, dict]:
     """Rewrite the validated draft as poster copy.  Returns (content, labels); evidence is untouched
     (the same validator runs again), entries the editor judges unreadable are dropped."""
     pool = {e["id"]: e for e in bundle["evidence"]}
@@ -379,7 +435,7 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
                                                             for f, t in zip(flow, held["checked"]["timeline"])])
 
     edited = ask(backend, prompts.system_prompt("editor"), request, aliases, bundle, recorder,
-                 stage="edit", unit="all", extra=extra, prepare=prepare)
+                 stage="edit", unit="all", extra=extra, prepare=prepare, budget=budget)
     return edited, held["checked"]
 
 
@@ -409,13 +465,14 @@ def analyze_session(session: Session, backend, *, parallelism: int = 3,
                 lambda pair: merge_group(backend, pair[1], pair[0], pool, aliases, coverage, recorder), numbered))
     request, bundle = synthesis_request("final", level, pool, aliases, coverage)
     flow = [{"time": u["time"], "text": u["notes"]["content"]["summary"]["title"]} for u in level]
+    budget = budget_for(session.duration_ms)
     try:
-        content = ask(backend, prompts.system_prompt("final"), request, aliases, bundle, recorder,
-                      stage="final", unit="all", distinct=True)
+        content = ask(backend, prompts.system_prompt("final", budget), request, aliases, bundle, recorder,
+                      stage="final", unit="all", distinct=True, budget=budget)
     except AnalysisError as error:
         raise AnalysisError(str(error), units, recorder.calls) from None
     try:
-        edited, labels = edit_content(backend, content, bundle, flow, aliases, recorder, fit, coverage)
+        edited, labels = edit_content(backend, content, bundle, flow, aliases, recorder, fit, coverage, budget)
     except (AnalysisError, BackendError) as error:     # keep the checked draft rather than lose the run
         print(f"EDITOR FAILED, plain draft is used: {error}", flush=True)
         return Analysis(content, bundle, units, coverage, recorder.calls, flow, {}, False)

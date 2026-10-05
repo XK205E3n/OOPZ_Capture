@@ -20,6 +20,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from release_archive import extract, validate
+from release_cleanup import prune_superseded
 from release_locks import check_idle
 from release_transaction import atomic_write, recover, switch, systemctl
 
@@ -219,6 +220,13 @@ def bootstrap_update(args) -> None:
         extra = (['--force'] if args.force else []) + (['--enable'] if args.enable else [])
         subprocess.run(['bash', installer, 'activate', '--release-id', release_id,
                         '--health-timeout', str(args.health_timeout), *extra, *common], check=True)
+    if not args.keep_old:        # reached only when the switch succeeded (check=True raises otherwise)
+        try:
+            removed = prune_superseded(args.root, release_id, running_from=HERE)
+        except OSError as error:
+            print(f'Warning: the update succeeded but old files could not be removed: {error}', file=sys.stderr)
+        else:
+            print('Removed superseded files: ' + (', '.join(removed) if removed else 'none'))
 
 
 def main(argv=None) -> int:
@@ -233,6 +241,7 @@ def main(argv=None) -> int:
     parser.add_argument('--logrotate-dir', type=Path, default=Path('/etc/logrotate.d'))
     parser.add_argument('--health-timeout', type=float, default=90)
     parser.add_argument('--force', action='store_true', help='Explicitly bypass idle-state guard; may interrupt work')
+    parser.add_argument('--keep-old', action='store_true', help='Keep older releases and installer files after update')
     parser.add_argument('--enable', action='store_true', help='Enable service at boot (otherwise preserve prior setting)')
     args = parser.parse_args(argv)
     args.root = args.root.absolute()

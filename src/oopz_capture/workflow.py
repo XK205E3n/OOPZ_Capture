@@ -38,7 +38,7 @@ class WorkflowRequest:
     consent_confirmed: bool
     language: str = "auto"
     processing_deadline_seconds: int = 900
-    retention_hours: int = 360
+    retention_hours: int = 720
     poll_interval_seconds: float = 0.25
     retain_audio: bool = False
     rtc_uid: str | None = None
@@ -63,15 +63,15 @@ class WorkflowRequest:
             raise ValueError("area_id and channel_id are required")
         duration = float(value.get("duration_seconds", 0))
         deadline = int(value.get("processing_deadline_seconds", 900))
-        retention = int(value.get("retention_hours", 360))
+        retention = int(value.get("retention_hours", 720))
         poll = float(value.get("poll_interval_seconds", 0.25))
         language = str(value.get("language", "auto"))
         if duration <= 0:
             raise ValueError("duration_seconds must be greater than zero for an automatic job")
         if not 60 <= deadline <= 3600:
             raise ValueError("processing_deadline_seconds must be 60 to 3600")
-        if not 1 <= retention <= 360:
-            raise ValueError("retention_hours must be 1 to 360")
+        if not 1 <= retention <= 720:
+            raise ValueError("retention_hours must be 1 to 720")
         if not 0.05 <= poll <= 5:
             raise ValueError("poll_interval_seconds must be 0.05 to 5")
         if language not in {"auto", "zh", "en", "yue", "ja", "ko"}:

@@ -463,10 +463,11 @@ def test_usage_of_reads_the_cli_envelope_and_tolerates_missing_fields():
     assert usage_of({})["context_ratio"] == 0.0
 
 
-def test_a_long_quiet_session_is_cut_by_time_into_several_windows():
-    runs = [Run(id=f"r{i:04d}", speaker_id="a" * 32, start_ms=i * 600_000, end_ms=i * 600_000 + 1000,
-                text="一句话说得很长" * 30) for i in range(12)]
-    assert len(split_windows(runs)) >= 2
+def test_a_very_long_quiet_session_is_cut_by_time():
+    runs = [Run(id=f"r{i:04d}", speaker_id="a" * 32, start_ms=i * 1_800_000, end_ms=i * 1_800_000 + 1000,
+                text="一句话说得很长" * 30) for i in range(6)]
+    assert len(split_windows(runs)) == 2          # 2 hours is the longest a window may span
+    assert len(split_windows(runs[:4])) == 1
 
 
 def test_usage_text_lists_model_requests_and_time():
@@ -478,3 +479,53 @@ def test_usage_text_lists_model_requests_and_time():
     assert text.splitlines() == ["分析用量", "模型：Qwen3.8-Flash", "请求：4 次（其中 1 次因校验未通过而重试）",
                                  "总耗时：5 分 10 秒（模型调用合计 4 分 19 秒）"]
     assert "重试" not in usage_text("m", [{"seconds": 5.0, "error": None}], 8)
+
+
+def test_budget_grows_with_the_recording_and_reaches_the_prompt():
+    from oopz_capture.analyzer import prompts
+    from oopz_capture.analyzer.pipeline import budget_for
+
+    hour = 3_600_000
+    short, long = budget_for(2 * hour), budget_for(12 * hour)
+    assert (short.topics, short.moments, short.hooks) == (3, 1, 1)
+    assert long.topics > short.topics and long.chars[1] > short.chars[1] and long.profiles == 7
+    assert budget_for(4 * hour).topics == 4 and budget_for(0).topics == 3
+    prompt = prompts.system_prompt("final", short)
+    assert "最多3项" in prompt and "400到700" in prompt and "写空数组" in prompt and "@" not in prompt
+    assert "summary" not in prompts.system_prompt("final", short).split("【输出结构示例")[1].split("odd_topic 没有候选")[0]
+    assert '"summary":' in prompts.system_prompt("window")
+
+
+def test_style_enforces_the_budget_counts():
+    from oopz_capture.analyzer.pipeline import Budget, check_style
+
+    tiny = Budget(1, 0, 0, 1, (1, 2))
+    card = _card(topics=[_entry("r1")], moments=[_entry("r2", stages=[])])
+    with pytest.raises(ValueError, match="moments has 1 entries but at most 0"):
+        check_style(card, tiny)
+    check_style(card)                                              # the largest budget accepts it
+
+
+def test_repair_fixes_only_mechanical_gaps():
+    from oopz_capture.analyzer.pipeline import repair
+
+    bundle = {"people": [], "evidence": [
+        {"id": "r1", "kind": "asr_excerpt", "speaker_id": "u1", "text": "甲说的话"},
+        {"id": "r2", "kind": "asr_excerpt", "speaker_id": "u2", "text": "乙说的话"},
+        {"id": "r3", "kind": "asr_excerpt", "speaker_id": "u1", "text": "甲又说了"}]}
+    card = _card(odd={"title": "t", "text": "x", "evidence_ids": ["r1", "r2", "r1", "r99"], "anchor": "甲说的话"},
+                 moments=[_entry("r3", "r99", stages=[{"label": "步", "evidence_ids": ["rX", "r1"], "anchor": "甲说"}])])
+    repair(card, bundle)
+    odd = card["content"]["odd_topic"]
+    assert odd["status"] == "supported" and odd["participant_ids"] == ["u1", "u2"]
+    assert odd["evidence_ids"] == ["r1", "r2", "r1"]               # the unknown id went, duplicates are normalize's job
+    moment = card["content"]["moments"][0]
+    assert moment["evidence_ids"] == ["r3"] and moment["stages"][0]["icon_category"] == "other"
+    assert moment["stages"][0]["evidence_ids"] == ["r1"]
+    lone = _card(topics=[_entry("r99")])
+    repair(lone, bundle)
+    assert lone["content"]["topics"][0]["evidence_ids"] == ["r99"]  # nothing known is left: the validator will say so
+
+
+def test_json_reply_may_carry_text_after_the_object():
+    assert parse_json_object('说明\n{"a": {"b": 1}}\n{"c": 2} 多余') == {"a": {"b": 1}}

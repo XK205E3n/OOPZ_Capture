@@ -23,12 +23,14 @@ FORMAT_GUARD = """【格式约束（程序会拒绝违反者，请严格遵守�
 - title、text 里不要出现任何引号（包括英文半角的双引号和单引号，也包括「」“”‘’）、尖括号、网址，不要用 Markdown。英文双引号会破坏JSON，需要强调时直接去掉引号。
 - 每个条目的 evidence_ids 必须有1到6个不重复的id，不能为空，不能超过6个。
 - 不要出现这些词：最（“最后、最近、最初、最终”除外）、唯一、全员、所有人、冠军、第一名、百分之。
-- 不要写任何数字、日期、时间、次数，除非该数字原样出现在你所引用的 evidence 文本里。
+- title、text、label 里一律不要出现阿拉伯数字（0到9）、日期、时间；数量用汉字或模糊说法（几个、一堆、一路、好几次）。程序会拒绝任何没出现在所引用 evidence 里的数字。
 - 人物条目的 evidence_ids 只能是该人自己的发言（speaker_id 相同的 asr_excerpt），合计至少16个字。
 - odd_topic 的 title、text 里不要出现任何人的昵称或ID。
 - anchor 必须是你所引用的某一条 evidence 的 text 里原样连续的4到80个字，逐字复制，不要改标点或空格。
 - speaker_id 只能用输入 people 里给出的值，nickname 必须与之完全一致。
-- people.profiles 的每一项不要写 icon_category（只有 topics、moments 及其 stages 可以选填）。
+- moments 的 stages 里每一步都必须带 icon_category（字符串，不确定就写 other）；其余条目（odd_topic、topics、moments 本身、people.profiles）不要写 icon_category。
+- evidence_ids 里的 id 必须原样复制自输入 evidence 的 id 字段，不要编造、不要改写。
+- 下面的结构示例里每个字段都必须出现（stages 只有 moments 条目才有），少一个字段整份输出都会被拒绝重来。
 - 人物（profiles）条数遵守本模式的说明；没有亮点就让 profiles 为空数组，不要凑数。"""
 
 WINDOW_MODE = """【窗口模式】这不是整场海报，只是整场录音中的一个时间窗口（输入里的 window 是第几段，of 是共几段）。输入 evidence 是该窗口内的全部发言片段，按时间排序，没有遗漏，kind 全部是 asr_excerpt。这一段的结果之后会和其他段合在一起，由别人再挑出最有梗的部分，所以这里要把有梗的点都留下来。
@@ -45,12 +47,12 @@ SECTION_MODE = """【合并模式】输入 windows 是同一场录音中相邻�
 
 FINAL_MODE = """【汇总模式】输入 windows 是同一场录音按时间顺序的分段分析结果（每条都已由程序核对过证据），evidence 是它们引用的原始发言片段（kind 为 asr_excerpt）和各段概述（kind 为 window_summary），已按时间顺序排列；coverage 说明哪些时间没有分析到。请从中挑出整场最有梗的几个点，输出 content/people 结构。这是海报，整张图的正文要非常少。海报不展示总览：JSON 的 content 里不要输出 summary 字段（只有 odd_topic、topics、moments、next_hooks 四项），上面编辑规则里关于 summary 的要求在本模式下全部不适用：
 - odd_topic：整场最离奇的一个话题或概念，title 12个字左右，text 一句话（30到50字）说它为什么离谱；只是玩笑或比喻要写明。
-- topics：最多3项，只选最有梗的；title 是一句把画面写出来的标题（12到20个字），text 是一句短吐槽（20到45字），不是事实陈述。
-- moments：最多2项，写话题是怎么一路跑偏的。必须写 stages：3到4个（不要超过4个），label 是不超过6个字的短词，按时间顺序，evidence_ids 和 anchor 取自 evidence，顺序和 evidence 的时间顺序一致；moment 自己的 title 是这一路跑偏的标题，text 一句短吐槽（20到40字）。一个 moment 能讲清就只写一个。
-- next_hooks：最多2项，真正悬而未决、下次可以接着聊的事，text 一句话（15到35字）。
-- people.profiles：写 3到4 条，和 topics 的体量大致相当（人物板块不能比聊天内容板块更少）。title 是给这个人的口语称号或标签（8到14个字，贴合当场发生的事，不是通用奖项），text 一句短吐槽（20到45字）说这个人做了什么好玩的事。真的只有少数人有亮点才可以少于3条，没有亮点才留空，不要编造。
+- topics：最多@TOPICS@项，只选最有梗的，不够好就少写，不要凑数；title 是一句把画面写出来的标题（12到20个字），text 是一句短吐槽（20到45字），不是事实陈述。
+- moments：最多@MOMENTS@项，写话题是怎么一路跑偏的，没有明显跑偏的过程可以是空数组。必须写 stages：3到4个（不要超过4个），label 是不超过6个字的短词，按时间顺序，evidence_ids 和 anchor 取自 evidence，顺序和 evidence 的时间顺序一致；moment 自己的 title 是这一路跑偏的标题，text 一句短吐槽（20到40字）。一个 moment 能讲清就只写一个。
+- next_hooks：最多@HOOKS@项，真正悬而未决、下次可以接着聊的事，text 一句话（15到35字）；没有合适的就写空数组，不要为了凑数硬写，这一项可有可无。
+- people.profiles：写 3到@PROFILES@ 条，和 topics 的体量大致相当（人物板块不能比聊天内容板块更少）。title 是给这个人的口语称号或标签（8到14个字，贴合当场发生的事，不是通用奖项），text 一句短吐槽（20到45字）说这个人做了什么好玩的事。真的只有少数人有亮点才可以少于3条，没有亮点才留空，不要编造。
 - 同一件事（同一个情节）只在一个模块里写，其他模块不要重复提它。程序会核对：odd_topic、topics、moments、people.profiles 各条引用的发言（evidence_ids）里，同一批发言不能被两条以上共用；一个人的 profiles 要写这个人另外干的事（引用他别的发言），不要把话题里的同一件事再写一遍；整场内容不够多时宁可少写几条。next_hooks 只写话题里还没解决的悬念，不要复述已经写过的经过。
-- 整张图正文合计 400到700 字，是硬指望：宁可少写，也不要写满。
+- 整张图正文合计 @LOW@到@HIGH@ 字，是硬指望：宁可少写，也不要写满。
 - evidence_ids 和 anchor 只能取自输入 evidence。topics、moments、next_hooks、odd_topic 可以引用 window_summary；人物条目只能引用该人自己的 asr_excerpt。
 - coverage 里有缺失的时间段时，措辞要谨慎，不要把缺失的时间当作什么都没发生。"""
 
@@ -64,8 +66,27 @@ EDITOR_MODE = """【编辑改写模式】输入 draft 是一份已经核对过�
 - 另外输出 labels：odd 是对 odd_topic 的一句短评价（2到6个字，例如：离谱至极、荒诞拉满、细思极恐，不要重复这些例子，要贴合内容），海报上会显示为今日之最：评价；topics 是每个话题一个角标（2到6个字，如：笑出声、跑偏现场、名场面，必须和改写后的 topics 条数相同、顺序一致）；moments 同理，每个转场一个角标；timeline 是 flow 里每一段改写成不超过14个字的口语小标题，条数和 flow 一致。角标里不要出现“最”字、数字和引号。
 - 输出格式：根对象有三个并列的字段 content、people、labels（labels 不在 people 里面），形如 {"content":{...},"people":{"profiles":[...]},"labels":{"odd":"...","topics":[...],"moments":[...],"timeline":[...]}}，注意括号配对，只输出这一个JSON。"""
 
+
+SUMMARY = '{"title":"","text":"","evidence_ids":["r0001"],"anchor":"逐字复制的片段"}'
+
+SKELETON = """【输出结构示例（字段名和嵌套必须完全一致，值换成你的内容；没有内容的数组写 []）】
+{"content":{@SUMMARY@"odd_topic":{"status":"supported","title":"","text":"","evidence_ids":["r0001"],"anchor":"逐字复制的片段","participant_ids":["s1"]},"topics":[{"title":"","text":"","evidence_ids":["r0001"],"anchor":"从evidence逐字复制的片段"}],"moments":[{"title":"","text":"","evidence_ids":["r0001"],"anchor":"逐字复制的片段","stages":[{"label":"","icon_category":"other","evidence_ids":["r0001"],"anchor":"逐字复制的片段"}]}],"next_hooks":[{"title":"","text":"","evidence_ids":["r0001"],"anchor":"从evidence逐字复制的片段"}]},"people":{"profiles":[{"title":"","text":"","evidence_ids":["r0001"],"anchor":"从该人自己的发言逐字复制的片段","speaker_id":"s1","nickname":"与people里完全一致"}]}}
+odd_topic 没有候选时整项写成：{"status":"none","title":"没有明显候选","text":"本次可用记录中，没有可确认的明显离奇话题或概念。","evidence_ids":[],"anchor":"","participant_ids":[]}"""
+
 MODES = {"window": WINDOW_MODE, "section": SECTION_MODE, "final": FINAL_MODE, "editor": EDITOR_MODE}
 
 
-def system_prompt(mode: str) -> str:
-    return "\n\n".join((RULES, TONE, MODES[mode], FORMAT_GUARD))
+def system_prompt(mode: str, budget=None) -> str:
+    """``budget`` (pipeline.Budget) sets how many entries and how much text the final poster may carry."""
+    text = MODES[mode]
+    if mode == "final":
+        from .pipeline import LARGEST
+        b = budget or LARGEST
+        for key, value in (("@TOPICS@", b.topics), ("@MOMENTS@", b.moments), ("@HOOKS@", b.hooks),
+                           ("@PROFILES@", b.profiles), ("@LOW@", b.chars[0]), ("@HIGH@", b.chars[1])):
+            text = text.replace(key, str(value))
+    parts = [RULES, TONE, text]
+    if mode in ("window", "section", "final"):
+        parts.append(SKELETON.replace("@SUMMARY@", "" if mode == "final" else '"summary":' + SUMMARY + ","))
+    parts.append(FORMAT_GUARD)
+    return "\n\n".join(parts)

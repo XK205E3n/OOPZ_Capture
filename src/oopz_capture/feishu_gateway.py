@@ -140,7 +140,7 @@ class FeishuGatewayConfig:
             retain_audio=True if capture_only else _env_bool("OOPZ_RETAIN_AUDIO"),
             transcription_repair_attempts=int(os.environ.get("OOPZ_TRANSCRIPTION_REPAIR_ATTEMPTS", "1")),
             processing_deadline_seconds=int(os.environ.get("OOPZ_PROCESSING_DEADLINE_SECONDS", "900")),
-            retention_hours=int(os.environ.get("OOPZ_RETENTION_HOURS", "360")),
+            retention_hours=int(os.environ.get("OOPZ_RETENTION_HOURS", "720")),
             poll_interval_seconds=float(os.environ.get("OOPZ_POLL_INTERVAL_SECONDS", "0.25")),
             membership_refresh_seconds=float(os.environ.get("OOPZ_MEMBERSHIP_REFRESH_SECONDS", "30")),
             membership_timeout_seconds=float(os.environ.get("OOPZ_MEMBERSHIP_TIMEOUT_SECONDS", "10")),

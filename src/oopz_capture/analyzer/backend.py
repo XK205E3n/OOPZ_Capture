@@ -91,10 +91,10 @@ def usage_of(envelope: dict) -> dict:
 
 def parse_json_object(text: str) -> dict:
     """The first JSON object in the model's reply (tolerates a code fence or a leading sentence)."""
-    start, end = text.find("{"), text.rfind("}")
-    if start < 0 or end <= start:
+    start = text.find("{")
+    if start < 0:
         raise ValueError("json:no_object_in_reply")
-    value = json.loads(text[start:end + 1])
+    value, _ = json.JSONDecoder().raw_decode(text, start)       # whatever follows the first object is ignored
     if not isinstance(value, dict):
         raise ValueError("json:not_an_object")
     return value

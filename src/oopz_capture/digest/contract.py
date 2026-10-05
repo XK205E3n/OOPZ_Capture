@@ -163,7 +163,7 @@ def validate_content(content: Any, bundle: dict) -> dict:
             raise DigestValidationError("odd_topic:invalid_absence")
     else:
         collect("odd_topic", item, odd_topic, odd=True)
-    for field, limit in (("topics", 3), ("moments", 2), ("next_hooks", 2)):
+    for field, limit in (("topics", 6), ("moments", 4), ("next_hooks", 3)):
         items = section[field]
         if not isinstance(items, list) or len(items) > limit:
             raise DigestValidationError(field + ":count")

@@ -203,7 +203,7 @@ def test_u1_update_runs_real_installer_with_all_helpers(host):
     assert not list((host['root']/'artifacts').glob('.verified-*'))
 
 
-@pytest.mark.parametrize('missing',['scripts/linux/release_transaction.py','scripts/linux/release_locks.py','scripts/linux/release_archive.py','scripts/linux/prepare_dependencies.sh'])
+@pytest.mark.parametrize('missing',['scripts/linux/release_transaction.py','scripts/linux/release_locks.py','scripts/linux/release_cleanup.py','scripts/linux/release_archive.py','scripts/linux/prepare_dependencies.sh'])
 def test_missing_helper_rejected_before_any_service_or_dependency(host,missing):
     archive,digest=artifact(host,missing=missing)
     result=call(host,'update','--artifact',str(archive),'--sha256',digest)

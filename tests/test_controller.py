@@ -227,3 +227,22 @@ def test_a_failed_analysis_is_reported_in_text_and_can_be_retried(tmp_path: Path
     queued = list_send_requests(service.state_root, statuses={"pending"})
     assert len(queued) == 1 and "model unreachable" in queued[0]["text"] and "重新出图" in queued[0]["text"]
     assert service._state["last_job"]["status"] == "analysis_failed" and "s1" not in service.busy_sessions()
+
+
+def test_an_expired_session_is_found_and_removed_with_every_file(tmp_path: Path) -> None:
+    from datetime import datetime, timezone
+
+    from oopz_capture.feishu_gateway import FeishuGateway
+
+    config = controller_config(tmp_path)
+    session = config.output_root / "2026-10-05_02-02-26_BJT"
+    for name in ("analysis/digest/digest.png", "analysis/digest/digest.md", "avatars/a.png", "chunks/0001/x.json", "transcript.md"):
+        (session / name).parent.mkdir(parents=True, exist_ok=True)
+        (session / name).write_bytes(b"x")
+    (session / "lifecycle.json").write_text('{"delete_after": "2026-11-04T00:00:00+00:00"}', encoding="utf-8")
+    before = datetime(2026, 11, 3, tzinfo=timezone.utc)
+    after = datetime(2026, 11, 5, tzinfo=timezone.utc)
+    assert FeishuGateway._expired_session_ids(config.output_root, now=before) == []
+    assert FeishuGateway._expired_session_ids(config.output_root, now=after) == [session.name]
+    ControllerService(config)._delete_session(session.name)
+    assert not session.exists() and list(config.output_root.iterdir()) == []

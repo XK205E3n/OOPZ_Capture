@@ -94,7 +94,7 @@ class ControllerConfig:
     retain_audio: bool = False
     transcription_repair_attempts: int = 1
     processing_deadline_seconds: int = 900
-    retention_hours: int = 360
+    retention_hours: int = 720
     poll_interval_seconds: float = 0.25
     membership_refresh_seconds: float = 30.0
     membership_timeout_seconds: float = 10.0

@@ -98,6 +98,7 @@ try {
                 'scripts/linux/rollback_release.sh',
                 'scripts/linux/manage_release.py',
                 'scripts/linux/release_archive.py',
+                'scripts/linux/release_cleanup.py',
                 'scripts/linux/release_locks.py',
                 'scripts/linux/release_transaction.py',
                 'scripts/linux/prepare_dependencies.sh',

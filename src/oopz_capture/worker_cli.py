@@ -39,7 +39,7 @@ def _parser() -> argparse.ArgumentParser:
     run.add_argument("--language", choices=["auto", "zh", "en", "yue", "ja", "ko"], default="auto")
     run.add_argument("--retain-audio", action="store_true", help="retain multitrack audio after transcription for ASR experiments")
     run.add_argument("--deadline-seconds", type=int, default=900, dest="processing_deadline_seconds")
-    run.add_argument("--retention-hours", type=int, default=360)
+    run.add_argument("--retention-hours", type=int, default=720)
     run.add_argument("--poll-interval", type=float, default=0.25, dest="poll_interval_seconds")
     run.add_argument("--rtc-uid")
     run.add_argument("--consent-confirmed", action="store_true")

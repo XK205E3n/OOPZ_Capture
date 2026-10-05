@@ -76,7 +76,7 @@ def test_request_rejects_missing_consent_and_more_than_fifteen_days() -> None:
     with pytest.raises(ValueError, match="consent_confirmed"):
         request(consent_confirmed=False)
     with pytest.raises(ValueError, match="retention_hours"):
-        request(retention_hours=361)
+        request(retention_hours=721)
 
 
 def test_validate_transcript_preserves_utf8_and_ids(tmp_path: Path) -> None:

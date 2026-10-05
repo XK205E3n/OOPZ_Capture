@@ -95,7 +95,7 @@ class ContinuousRequest:
     cutoff_local_hour: int = 4
     language: str = "auto"
     processing_deadline_seconds: int = 900
-    retention_hours: int = 360
+    retention_hours: int = 720
     poll_interval_seconds: float = 0.25
     membership_refresh_seconds: float = 30.0
     membership_timeout_seconds: float = 10.0
@@ -133,8 +133,8 @@ class ContinuousRequest:
             raise ValueError("cutoff_local_hour must be 0 to 23")
         if not 60 <= self.processing_deadline_seconds <= 3600:
             raise ValueError("processing_deadline_seconds must be 60 to 3600")
-        if not 1 <= self.retention_hours <= 360:
-            raise ValueError("retention_hours must be 1 to 360")
+        if not 1 <= self.retention_hours <= 720:
+            raise ValueError("retention_hours must be 1 to 720")
         if not 0.05 <= self.poll_interval_seconds <= 5:
             raise ValueError("poll_interval_seconds must be 0.05 to 5")
         if not 5 <= self.membership_refresh_seconds <= 600:
@@ -594,7 +594,7 @@ async def repair_continuous_session(
     else:
         # Keep a recovered session for the maximum retention horizon when the
         # crash happened before the deadline was persisted.
-        delete_after = stopped_at + timedelta(hours=360)
+        delete_after = stopped_at + timedelta(hours=720)
     handoff = _write_final_handoff(
         session_dir, request, stopped_at=stopped_at, delete_after=delete_after,
         segment_count=segment_count, chunk_results=results, analysis_requested_at=utc_now(),
