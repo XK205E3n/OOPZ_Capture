@@ -158,23 +158,23 @@ def check_style(content: dict, budget: Budget = LARGEST) -> None:
                              "keep only the best ones" + (" (leave it empty if nothing is really unresolved)" if name == "next_hooks" else ""))
 
 
-MAX_TITLE = 8         # the poster's big headings are short, punchy phrases; the detail lives in the text
-MIN_TITLE = 6         # but not so squeezed that nobody can tell what happened (4-5 character headings read as riddles)
+MAX_TITLE = 10        # the poster's big headings are short, punchy phrases; the detail lives in the text
+TITLE_BREAKS = re.compile(r"[，。！？、；,.!?;]")      # a connector such as ：or - is fine, sentence punctuation is not
+REVIEW_ROUNDS = 2     # how many times the editor re-reads its own copy for Chinese readability
 
 
-def check_titles(content: dict, limit: int = MAX_TITLE, floor: int = MIN_TITLE) -> None:
+def check_titles(content: dict, limit: int = MAX_TITLE) -> None:
     for entry in _entries(content):
         title = entry.get("title", "")
         if entry.get("status") == "none":
             continue
         if len(title) > limit:
             raise ValueError(f"style:title '{title}' has {len(title)} characters but at most {limit} are allowed; "
-                             "write a punchy phrase of at most 8 characters (summary, quip or joke), "
+                             f"write a punchy phrase of at most {limit} characters (summary, quip or joke), "
                              "and move the detail into the text")
-        if len(title) < floor:
-            raise ValueError(f"style:title '{title}' has only {len(title)} characters; use {floor} to {limit}: a readable "
-                             "mini-sentence (who or what, plus what happened) that a reader who was not there understands, "
-                             "not a squeezed 4-5 character fragment")
+        if TITLE_BREAKS.search(title):
+            raise ValueError(f"style:title '{title}' contains sentence punctuation; a title is one phrase "
+                             "(a connector like ： or - between two parts is allowed, commas and full stops are not)")
 
 
 _NOT_WORDS = re.compile(r"[\s，。！？、；：,.!?;:…“”\"'（）()]")
@@ -478,7 +478,20 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
 
     edited = ask(backend, prompts.system_prompt("editor"), request, aliases, bundle, recorder,
                  stage="edit", unit="all", extra=extra, prepare=prepare, budget=budget)
-    return edited, held["checked"]
+    labels = held["checked"]
+    for round_number in range(1, REVIEW_ROUNDS + 1):      # the editor re-reads its own copy; a failed review keeps the last good one
+        review = {**request, "mode": "review", "current": aliases.to_alias(edited), "labels": labels}
+        try:
+            reviewed = ask(backend, prompts.system_prompt("review"), review, aliases, bundle, recorder,
+                           stage="review", unit=f"round{round_number}", extra=extra, prepare=prepare, budget=budget)
+        except (AnalysisError, BackendError) as error:
+            print(f"[审稿] 第{round_number}轮未通过，保留上一版：{error}", flush=True)
+            break
+        unchanged = reviewed == edited
+        edited, labels = reviewed, held["checked"]
+        if unchanged:
+            break
+    return edited, labels
 
 
 def analyze_session(session: Session, backend, *, parallelism: int = 3,

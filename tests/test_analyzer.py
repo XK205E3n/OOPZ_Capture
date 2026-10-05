@@ -55,6 +55,8 @@ class FakeModel:
             raise BackendError("simulated outage")
         if request["mode"] == "editor":
             return self._edit(request)
+        if request["mode"] == "review":       # a reader with nothing to improve returns the copy as it is
+            return json.dumps(request["current"] | {"labels": request["labels"]}, ensure_ascii=False)
         if self.bad_first and not feedback:
             return self._digest(request, anchor="这句话根本不在证据里")
         return self._digest(request)
@@ -194,7 +196,7 @@ def test_many_windows_are_merged_in_groups_before_the_final_digest(tmp_path, mon
     session = make_session(tmp_path)
     model = FakeModel()
     analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=500))
-    assert "section" in {mode for mode, _ in model.requests} and [m for m, _ in model.requests][-2:] == ["final", "editor"]
+    assert "section" in {mode for mode, _ in model.requests} and [m for m, _ in model.requests][-3:] == ["final", "editor", "review"]
     validate_content(analysis.content, analysis.bundle)
 
 
@@ -323,6 +325,37 @@ def test_editor_rewrites_text_keeps_evidence_and_supplies_tags(tmp_path):
     assert "summary" not in analysis.content["content"] and analysis.content["people"]["profiles"][0]["evidence_ids"]  # evidence untouched and revalidated
     assert analysis.labels["timeline"] == ["小标题"] * len(analysis.flow)
     assert build_metadata(session, analysis.coverage, analysis.flow, analysis.labels).get("topic_labels", []) == []
+
+
+def test_the_editor_rereads_its_copy_and_keeps_a_good_review(tmp_path):
+    class Reviewer(FakeModel):
+        def complete(self, system, user):
+            request = json.loads(user.partition("\n\n【上一次输出被程序拒绝】")[0])
+            if request["mode"] == "review":
+                self.requests.append(("review", ""))
+                current = request["current"]
+                current["people"]["profiles"][0]["title"] = current["people"]["profiles"][0]["title"][:2] + "读顺了"
+                return json.dumps(current | {"labels": request["labels"]}, ensure_ascii=False)
+            return super().complete(system, user)
+
+    session = make_session(tmp_path)
+    model = Reviewer()
+    analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=100_000))
+    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"].endswith("读顺了")
+    assert [m for m, _ in model.requests].count("review") == 2         # a changed copy is read once more
+
+
+def test_a_failed_review_keeps_the_last_good_copy(tmp_path, capsys):
+    class BadReviewer(FakeModel):
+        def complete(self, system, user):
+            if json.loads(user.partition("\n\n【上一次输出被程序拒绝】")[0])["mode"] == "review":
+                return "not json"
+            return super().complete(system, user)
+
+    session = make_session(tmp_path)
+    analysis = analyze_session(session, BadReviewer(), windows=split_windows(session.runs, max_chars=100_000))
+    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"].endswith("改写")
+    assert "[审稿]" in capsys.readouterr().out
 
 
 def test_editor_with_wrong_tag_count_is_sent_back_then_falls_back_to_the_draft(tmp_path, capsys):
@@ -535,18 +568,20 @@ def test_titles_must_be_short_after_editing():
     from oopz_capture.analyzer.pipeline import check_titles
 
     short = _card(topics=[_entry("r1", title="萝卜被偷成惨案")])
-    short["content"]["topics"][0]["title"] = "萝卜被偷成惨案"
+    short["content"]["topics"][0]["title"] = "萝卜惨案"            # short is fine: no minimum
     check_titles(short)
-    short["content"]["topics"][0]["title"] = "萝卜惨案"
-    with pytest.raises(ValueError, match="only 4 characters"):
+    short["content"]["topics"][0]["title"] = "龙蛋大业：一句话蒸发"   # a connector is allowed, 10 characters
+    check_titles(short)
+    short["content"]["topics"][0]["title"] = "龙蛋大业，一句话蒸发"
+    with pytest.raises(ValueError, match="sentence punctuation"):
         check_titles(short)
     long = _card(topics=[_entry("r1")], profiles=[_entry("r2")])
-    long["content"]["topics"][0]["title"] = "一二三四五六七八九"
-    with pytest.raises(ValueError, match="9 characters but at most 8"):
+    long["content"]["topics"][0]["title"] = "一二三四五六七八九十一"
+    with pytest.raises(ValueError, match="11 characters but at most 10"):
         check_titles(long)
     long["content"]["topics"][0]["title"] = "一二三四五六七八"
-    long["people"]["profiles"][0]["title"] = "人物称号也不能超过八个字啊"
-    with pytest.raises(ValueError, match="at most 8"):
+    long["people"]["profiles"][0]["title"] = "人物称号也不能超过十个字啊真的"
+    with pytest.raises(ValueError, match="at most 10"):
         check_titles(long)
 
 
