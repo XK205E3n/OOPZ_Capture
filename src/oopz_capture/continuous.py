@@ -775,7 +775,9 @@ async def run_continuous_capture(
     membership_started_ms = 0
     avatar_cache = AvatarCache(session_dir / "avatars")
     avatar_files: dict[str, str] = {}
-    avatar_attempted: set[tuple[str, str]] = set()
+    avatar_tries: dict[tuple[str, str], int] = {}        # downloads started per (uid, url)
+    avatar_next: dict[tuple[str, str], float] = {}       # earliest time of the next try after a failure
+    avatar_done: set[tuple[str, str]] = set()
     avatar_tasks: set[asyncio.Task[None]] = set()
     joined = False
     capture_started = False
@@ -878,22 +880,33 @@ async def run_continuous_capture(
             presence.gap(at_ms=session_ms(loop_time), reason=reason)
 
     async def fetch_avatar(oopz_uid: str, url: str) -> None:
-        """Best effort: a failed or refused download just leaves the placeholder avatar."""
+        """Best effort: a failed or refused download leaves the placeholder avatar, and is tried again on a
+        later membership refresh (a few times, with a growing pause)."""
+        key = (oopz_uid, url)
         try:
             path = await asyncio.to_thread(avatar_cache.get, oopz_uid, url)
             if path is not None:
                 avatar_files[oopz_uid] = path.name
+                avatar_done.add(key)
                 write_json(session_dir / "avatars" / "index.json", avatar_files)
-        except Exception:
+                return
+            reason = avatar_cache.last_failure or "unknown"
+        except Exception as error:
+            reason = type(error).__name__
             LOGGER.debug("avatar download failed", exc_info=True)
+        tries = avatar_tries.get(key, 1)
+        avatar_next[key] = loop.time() + 60.0 * tries
+        print(f"[头像] 下载失败（{oopz_uid[:6]}，第{tries}次）：{reason}", flush=True)
 
     def request_avatars() -> None:
         for person in current_membership:
             key = (person.oopz_uid, person.avatar_url)
-            if not person.avatar_url or key in avatar_attempted or getattr(person, "is_bot", False):
+            if (not person.avatar_url or key in avatar_done or getattr(person, "is_bot", False)
+                    or avatar_tries.get(key, 0) >= 5 or avatar_next.get(key, 0.0) > loop.time()
+                    or any(t.get_name() == f"oopz_avatar:{key[0]}" for t in avatar_tasks)):
                 continue
-            avatar_attempted.add(key)
-            task = asyncio.create_task(fetch_avatar(*key), name="oopz_avatar")
+            avatar_tries[key] = avatar_tries.get(key, 0) + 1
+            task = asyncio.create_task(fetch_avatar(*key), name=f"oopz_avatar:{key[0]}")
             avatar_tasks.add(task)
             task.add_done_callback(avatar_tasks.discard)
 

@@ -353,6 +353,7 @@ class AvatarCache:
         self.resolver = resolver or _system_resolve
         self.transport = transport or _https_transport
         self._failures: OrderedDict[str, float] = OrderedDict()
+        self.last_failure = ""      # why the latest get() returned None (a fixed phrase or exception class, never a URL)
         self._lock = threading.RLock()
         self._directory_ids: dict[tuple[str, ...], tuple[int, int]] = {}
         self._missing_directories: set[tuple[str, ...]] = set()
@@ -410,8 +411,9 @@ class AvatarCache:
                 png = _normalize_image(response.body, self.limits)
                 return self._store(path, png)
             return None
-        except Exception:
-            # Fail closed, without URLs, headers or exception strings in logs.
+        except Exception as error:
+            # Fail closed, without URLs, headers or exception strings in logs; only the reason class is kept.
+            self.last_failure = str(error) if isinstance(error, UnsafeAvatar) else type(error).__name__
             if key:
                 with self._lock:
                     self._failures[key] = time.monotonic() + self.limits.failure_retry_seconds

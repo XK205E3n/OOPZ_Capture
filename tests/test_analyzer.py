@@ -534,9 +534,12 @@ def test_json_reply_may_carry_text_after_the_object():
 def test_titles_must_be_short_after_editing():
     from oopz_capture.analyzer.pipeline import check_titles
 
-    short = _card(topics=[_entry("r1", title="萝卜惨案")])
-    short["content"]["topics"][0]["title"] = "萝卜惨案"
+    short = _card(topics=[_entry("r1", title="萝卜被偷成惨案")])
+    short["content"]["topics"][0]["title"] = "萝卜被偷成惨案"
     check_titles(short)
+    short["content"]["topics"][0]["title"] = "萝卜惨案"
+    with pytest.raises(ValueError, match="only 4 characters"):
+        check_titles(short)
     long = _card(topics=[_entry("r1")], profiles=[_entry("r2")])
     long["content"]["topics"][0]["title"] = "一二三四五六七八九"
     with pytest.raises(ValueError, match="9 characters but at most 8"):

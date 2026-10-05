@@ -159,15 +159,22 @@ def check_style(content: dict, budget: Budget = LARGEST) -> None:
 
 
 MAX_TITLE = 8         # the poster's big headings are short, punchy phrases; the detail lives in the text
+MIN_TITLE = 6         # but not so squeezed that nobody can tell what happened (4-5 character headings read as riddles)
 
 
-def check_titles(content: dict, limit: int = MAX_TITLE) -> None:
+def check_titles(content: dict, limit: int = MAX_TITLE, floor: int = MIN_TITLE) -> None:
     for entry in _entries(content):
         title = entry.get("title", "")
-        if entry.get("status") != "none" and len(title) > limit:
+        if entry.get("status") == "none":
+            continue
+        if len(title) > limit:
             raise ValueError(f"style:title '{title}' has {len(title)} characters but at most {limit} are allowed; "
                              "write a punchy phrase of at most 8 characters (summary, quip or joke), "
                              "and move the detail into the text")
+        if len(title) < floor:
+            raise ValueError(f"style:title '{title}' has only {len(title)} characters; use {floor} to {limit}: a readable "
+                             "mini-sentence (who or what, plus what happened) that a reader who was not there understands, "
+                             "not a squeezed 4-5 character fragment")
 
 
 _NOT_WORDS = re.compile(r"[\s，。！？、；：,.!?;:…“”\"'（）()]")
