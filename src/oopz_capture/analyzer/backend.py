@@ -94,7 +94,17 @@ def parse_json_object(text: str) -> dict:
     start = text.find("{")
     if start < 0:
         raise ValueError("json:no_object_in_reply")
-    value, _ = json.JSONDecoder().raw_decode(text, start)       # whatever follows the first object is ignored
+    value, end = json.JSONDecoder().raw_decode(text, start)     # whatever follows the first object is ignored
+    rest = text[end:].strip()
+    if isinstance(value, dict) and rest.startswith(","):
+        # The model closed the root one brace too early and wrote the next field outside it:
+        # {"content":..,"people":{..}},"labels":{..}}.  Read the stray fields as siblings.
+        try:
+            stray = json.loads("{" + rest[1:])
+        except ValueError:
+            stray = None
+        if isinstance(stray, dict):
+            value = {**stray, **value}
     if not isinstance(value, dict):
         raise ValueError("json:not_an_object")
     return value

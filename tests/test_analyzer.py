@@ -529,3 +529,26 @@ def test_repair_fixes_only_mechanical_gaps():
 
 def test_json_reply_may_carry_text_after_the_object():
     assert parse_json_object('说明\n{"a": {"b": 1}}\n{"c": 2} 多余') == {"a": {"b": 1}}
+
+
+def test_titles_must_be_short_after_editing():
+    from oopz_capture.analyzer.pipeline import check_titles
+
+    short = _card(topics=[_entry("r1", title="萝卜惨案")])
+    short["content"]["topics"][0]["title"] = "萝卜惨案"
+    check_titles(short)
+    long = _card(topics=[_entry("r1")], profiles=[_entry("r2")])
+    long["content"]["topics"][0]["title"] = "一二三四五六七八九"
+    with pytest.raises(ValueError, match="9 characters but at most 8"):
+        check_titles(long)
+    long["content"]["topics"][0]["title"] = "一二三四五六七八"
+    long["people"]["profiles"][0]["title"] = "人物称号也不能超过八个字啊"
+    with pytest.raises(ValueError, match="at most 8"):
+        check_titles(long)
+
+
+def test_a_field_written_after_an_early_closed_root_is_still_read():
+    reply = '{"content":{"a":1},"people":{"profiles":[]}},"labels":{"odd":"x","topics":["y"]}}'
+    assert parse_json_object(reply) == {"content": {"a": 1}, "people": {"profiles": []},
+                                        "labels": {"odd": "x", "topics": ["y"]}}
+    assert parse_json_object('{"a":1},oops') == {"a": 1}

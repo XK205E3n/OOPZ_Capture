@@ -158,6 +158,18 @@ def check_style(content: dict, budget: Budget = LARGEST) -> None:
                              "keep only the best ones" + (" (leave it empty if nothing is really unresolved)" if name == "next_hooks" else ""))
 
 
+MAX_TITLE = 8         # the poster's big headings are short, punchy phrases; the detail lives in the text
+
+
+def check_titles(content: dict, limit: int = MAX_TITLE) -> None:
+    for entry in _entries(content):
+        title = entry.get("title", "")
+        if entry.get("status") != "none" and len(title) > limit:
+            raise ValueError(f"style:title '{title}' has {len(title)} characters but at most {limit} are allowed; "
+                             "write a punchy phrase of at most 8 characters (summary, quip or joke), "
+                             "and move the detail into the text")
+
+
 def check_named(content: dict, roster: list[dict]) -> None:
     """Topics and moments must say who did it: a roster nickname appears in the title or text."""
     names = [p["nickname"] for p in roster if not p["nickname"].startswith(UNKNOWN_MEMBER)]
@@ -428,6 +440,7 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
             if after < min(wanted, before):
                 raise ValueError(f"style:{name} has {after} entries but at least {min(wanted, before)} are required; "
                                  "rewrite the weak ones instead of deleting them")
+        check_titles(edited)
         check_named(edited, aliases.roster)
         held["checked"] = check_labels(held["labels"], edited, flow)
         if fit:
