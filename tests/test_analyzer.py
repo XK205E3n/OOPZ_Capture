@@ -67,7 +67,7 @@ class FakeModel:
                    *section["next_hooks"], *draft["people"]["profiles"]]
         for entry in entries:
             if entry["evidence_ids"]:
-                entry["title"], entry["text"] = "改写后的标题", "改写后，一句吐槽"
+                entry["title"], entry["text"] = entry["title"][:4] + "改写", "改写后，一句吐槽"
         labels = {"odd": "离谱至极", "topics": ["笑出声"] * len(section["topics"]),
                   "moments": ["跑偏现场"] * len(section["moments"]), "timeline": ["小标题"] * len(request["flow"])}
         return json.dumps(draft | {"labels": labels}, ensure_ascii=False)
@@ -319,7 +319,7 @@ def test_editor_rewrites_text_keeps_evidence_and_supplies_tags(tmp_path):
     from oopz_capture.analyzer.outputs import build_metadata
     session = make_session(tmp_path)
     analysis = analyze_session(session, FakeModel(), windows=split_windows(session.runs, max_chars=100_000))
-    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"] == "改写后的标题"
+    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"].endswith("改写")
     assert "summary" not in analysis.content["content"] and analysis.content["people"]["profiles"][0]["evidence_ids"]  # evidence untouched and revalidated
     assert analysis.labels["timeline"] == ["小标题"] * len(analysis.flow)
     assert build_metadata(session, analysis.coverage, analysis.flow, analysis.labels).get("topic_labels", []) == []
@@ -552,3 +552,16 @@ def test_a_field_written_after_an_early_closed_root_is_still_read():
     assert parse_json_object(reply) == {"content": {"a": 1}, "people": {"profiles": []},
                                         "labels": {"odd": "x", "topics": ["y"]}}
     assert parse_json_object('{"a":1},oops') == {"a": 1}
+
+
+def test_a_heading_must_use_words_from_its_story():
+    from oopz_capture.analyzer.pipeline import check_title_words
+
+    pool = {"r1": {"text": "现在开始步入洋葱时代"}, "r2": {"text": "龙追了我一路"}}
+    draft = _card(topics=[_entry("r1", title="种菜宣布", text="有人宣布种菜是新时代")])
+    good = _card(topics=[_entry("r1", title="洋葱时代")])
+    check_title_words(draft, good, pool)
+    bad = _card(topics=[_entry("r1", title="蔬菜封年")])
+    with pytest.raises(ValueError, match="uses no word from what was said"):
+        check_title_words(draft, bad, pool)
+    check_title_words(draft, _card(topics=[_entry("r2", title="x")]), pool)     # a one-character title is not judged

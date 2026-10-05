@@ -170,6 +170,27 @@ def check_titles(content: dict, limit: int = MAX_TITLE) -> None:
                              "and move the detail into the text")
 
 
+_NOT_WORDS = re.compile(r"[\s，。！？、；：,.!?;:…“”\"'（）()]")
+
+
+def check_title_words(draft: dict, edited: dict, pool: dict) -> None:
+    """A rewritten heading must be built from words of the story: at least one two-character run of the
+    title appears in the draft entry or in the lines it cites.  Stops invented idioms."""
+    sources = {}
+    for entry in _entries(draft):
+        sources[tuple(entry.get("evidence_ids", []))] = entry.get("title", "") + entry.get("text", "")
+    for entry in _entries(edited):
+        title = _NOT_WORDS.sub("", entry.get("title", ""))
+        if entry.get("status") == "none" or len(title) < 2:
+            continue
+        refs = tuple(entry.get("evidence_ids", []))
+        source = _NOT_WORDS.sub("", sources.get(refs, "") + "".join(pool[r]["text"] for r in refs if r in pool))
+        if not any(title[i:i + 2] in source for i in range(len(title) - 1)):
+            raise ValueError(f"style:title '{entry['title']}' uses no word from what was said or from the draft; "
+                             "build the heading from words that really occur in this story, "
+                             "not from an invented phrase")
+
+
 def check_named(content: dict, roster: list[dict]) -> None:
     """Topics and moments must say who did it: a roster nickname appears in the title or text."""
     names = [p["nickname"] for p in roster if not p["nickname"].startswith(UNKNOWN_MEMBER)]
@@ -441,6 +462,7 @@ def edit_content(backend, content: dict, bundle: dict, flow: list[dict], aliases
                 raise ValueError(f"style:{name} has {after} entries but at least {min(wanted, before)} are required; "
                                  "rewrite the weak ones instead of deleting them")
         check_titles(edited)
+        check_title_words(content, edited, pool)
         check_named(edited, aliases.roster)
         held["checked"] = check_labels(held["labels"], edited, flow)
         if fit:
