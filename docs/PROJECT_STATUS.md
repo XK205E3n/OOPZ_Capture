@@ -1,6 +1,6 @@
 # 项目状态
 
-更新：2026-10-04。本文回答"各模块现在做到哪一步"；服务器的实测细节见 [部署状态](DEPLOYMENT_STATE.md)，架构见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)，分析与出图的设计见 [DESIGN_DIGEST_PIPELINE.md](DESIGN_DIGEST_PIPELINE.md)。
+更新：2026-10-06（验收通过，转入长期运行）。本文回答"各模块现在做到哪一步"；服务器的实测细节见 [部署状态](DEPLOYMENT_STATE.md)，架构见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)，分析与出图的设计见 [DESIGN_DIGEST_PIPELINE.md](DESIGN_DIGEST_PIPELINE.md)。
 
 ## 一句话
 
@@ -10,10 +10,10 @@
 
 | 端 | 内容 | 状态 |
 | --- | --- | --- |
-| GitHub `main`、标签 `linux-v0.12.0` | Linux 主线，应用版本 0.12.0 | 已推送；服务器运行的就是它（提交 `18d560a`） |
+| GitHub `main`、标签 `linux-v0.13.1` | Linux 主线，应用版本 0.13.1 | 已推送；服务器运行的就是它 |
 | GitHub `windows-legacy`、标签 `v0.11.*`、Release | Windows 部署线，最后为 v0.11.15 | 已在生产验证、流程保持原样；其更新脚本依赖 GitHub 的 latest Release |
 | GitHub `recovery/server-v0.11.15-snapshots` | 服务器 4 个发布包的原样快照 | 只读存档 |
-| 服务器 `/opt/oopz` | `current` → `v0.12.0-18d560a7f329`（唯一发布目录） | `oopz-capture.service` 运行中、开机自启 |
+| 服务器 `/opt/oopz` | `current` → `v0.13.1-645606439991`（唯一发布目录） | `oopz-capture.service` 运行中、开机自启 |
 
 注意：此前四个内容不同的构建共用了 0.11.15；0.12.0 起每个发布对应唯一内容，下一次修改须使用新版本号。Linux 发布使用 `linux-vX.Y.Z` 标签，GitHub Release（如要发）不得设为 Latest。
 
@@ -36,6 +36,5 @@
 
 ## 还没做的事（按顺序）
 
-1. **真实群里的第一次完整录音验证**（发图、头像下载、出入记录、音频删除）；部署已完成。
-2. **QQ 发图（外挂模块，0.13.0）**：本项目一侧已实现并通过本地测试（含对本机假接口的真实 HTTP 往返），见 [QQ 发图](QQ_BRIDGE.md)；**尚未在服务器上真实发送**：需要用户在 MaiBot 后台启用接口、把目标群移出黑名单，并把口令写进服务器 `.env` 后再测试。
-3. 重启恢复、版本回滚演练；4 vCPU 下的长时间负载与处理期限复核；清理服务器上的测试残留与多余发布目录。
+1. **长期运行观察**：下一次真实录音确认头像重试与失败原因日志；留意 QQ 发图在黑名单/不在群内时的真实提示。
+2. 重启恢复、版本回滚演练；4 vCPU 下的长时间负载与处理期限复核。
