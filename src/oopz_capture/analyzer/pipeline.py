@@ -142,6 +142,60 @@ def check_named(content: dict, roster: list[dict]) -> None:
                                  "exactly from people (not an unidentified member)")
 
 
+REAL_LINE = re.compile(r"r\d+$")     # ids of spoken lines; window summaries (w01, s01) are not events
+SAME_STORY = 0.5                    # two blocks citing at least this share of the smaller one's lines tell one story
+
+
+def _lines(entry: dict) -> set[str]:
+    ids = list(entry.get("evidence_ids", []))
+    for stage in entry.get("stages", []):
+        ids += stage["evidence_ids"]
+    return {i for i in ids if REAL_LINE.match(i)}
+
+
+def _shared(a: set[str], b: set[str]) -> float:
+    return len(a & b) / min(len(a), len(b)) if a and b else 0.0
+
+
+def _blocks(content: dict) -> list[tuple[str, dict, bool]]:
+    """(name, entry, is_person) for every block that must stand for its own story; hooks are exempt
+    (they point at what stayed open, which may sit right after a story)."""
+    section = content["content"]
+    found = [] if section["odd_topic"].get("status") == "none" else [("odd_topic", section["odd_topic"], False)]
+    for field in ("topics", "moments"):
+        found += [(f"{field}[{i}]", e, False) for i, e in enumerate(section[field])]
+    return found + [(f"profiles[{i}]", p, True) for i, p in enumerate(content["people"]["profiles"])]
+
+
+def check_distinct(content: dict) -> None:
+    """No two blocks of the card may cite (nearly) the same spoken lines: one event is told once."""
+    items = [(name, _lines(entry), person) for name, entry, person in _blocks(content)]
+    for j, (later, lines_j, person_j) in enumerate(items):
+        for earlier, lines_i, _ in items[:j]:
+            if _shared(lines_i, lines_j) >= SAME_STORY:
+                shared = ", ".join(sorted(lines_i & lines_j))
+                advice = ("tell another thing this person did, citing other lines of theirs, or leave this person out"
+                          if person_j else "choose a different event from the evidence, or leave this block out")
+                raise ValueError(f"style:{later} tells the same story as {earlier} (both cite {shared}); one event is "
+                                 f"told in one block only: {advice}")
+
+
+def drop_repeats(content: dict) -> None:
+    """Last resort when the model keeps repeating itself: keep the odd topic, then the moments, then the
+    topics, and drop a topic or moment that retells one already kept.  People are left alone."""
+    section = content["content"]
+    kept = [] if section["odd_topic"].get("status") == "none" else [_lines(section["odd_topic"])]
+    for field in ("moments", "topics"):
+        survivors = []
+        for entry in section[field]:
+            lines = _lines(entry)
+            if any(_shared(other, lines) >= SAME_STORY for other in kept):
+                continue
+            kept.append(lines)
+            survivors.append(entry)
+        section[field] = [e for e in section[field] if any(e is s for s in survivors)]
+
+
 def _strip(value):
     if isinstance(value, str):
         return value.strip()
@@ -164,30 +218,39 @@ class Recorder:
                   f"{entry['input_chars']} chars in, {(entry['error'] or 'accepted')[:160]}", flush=True)
 
 
+def _complete(backend, system: str, body: str) -> tuple[str, dict]:
+    if hasattr(backend, "complete_with_usage"):
+        return backend.complete_with_usage(system, body)
+    return backend.complete(system, body), {}
+
+
 def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, recorder: Recorder, *,
-        stage: str, unit: str, extra=None, prepare=None) -> dict:
-    """Ask until the answer passes the validator (at most ATTEMPTS times); returns content with real ids."""
+        stage: str, unit: str, extra=None, prepare=None, distinct: bool = False) -> dict:
+    """Ask until the answer passes the validator (at most ATTEMPTS times); returns content with real ids.
+    ``distinct``: blocks must not retell one event; the last attempt repairs instead of rejecting."""
     body = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
     note, last = "", ""
     for attempt in range(1, ATTEMPTS + 1):
         started = time.monotonic()
-        reply = backend.complete(system, body + note)
+        reply, usage = _complete(backend, system, body + note)
         try:
             parsed = _strip(parse_json_object(reply))
             content = normalize(aliases.to_real(prepare(parsed) if prepare else parsed))
             validate_content(content, bundle)
             check_style(content)
+            if distinct:
+                check_distinct(content) if attempt < ATTEMPTS else drop_repeats(content)
             if extra:
                 extra(content)
         except ValueError as error:          # bad JSON or DigestValidationError
             last = str(error)
             recorder.add(stage=stage, unit=unit, attempt=attempt, seconds=round(time.monotonic() - started, 1),
-                         input_chars=len(body), error=last, reply=reply)
+                         input_chars=len(body), output_chars=len(reply), usage=usage, error=last, reply=reply)
             note = ("\n\n【上一次输出被程序拒绝】原因：" + last + "（@ 后面是出错位置）。上一次的输出如下，"
                     "请只修正出错的位置，重新输出完整的JSON：\n" + reply)
             continue
         recorder.add(stage=stage, unit=unit, attempt=attempt, seconds=round(time.monotonic() - started, 1),
-                     input_chars=len(body), error=None)
+                     input_chars=len(body), output_chars=len(reply), usage=usage, error=None)
         return content
     raise AnalysisError(f"{stage} {unit}: rejected {ATTEMPTS} times, last reason {last}")
 
@@ -348,7 +411,7 @@ def analyze_session(session: Session, backend, *, parallelism: int = 3,
     flow = [{"time": u["time"], "text": u["notes"]["content"]["summary"]["title"]} for u in level]
     try:
         content = ask(backend, prompts.system_prompt("final"), request, aliases, bundle, recorder,
-                      stage="final", unit="all")
+                      stage="final", unit="all", distinct=True)
     except AnalysisError as error:
         raise AnalysisError(str(error), units, recorder.calls) from None
     try:

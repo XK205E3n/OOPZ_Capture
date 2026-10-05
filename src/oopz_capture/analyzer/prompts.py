@@ -49,7 +49,7 @@ FINAL_MODE = """【汇总模式】输入 windows 是同一场录音按时间顺�
 - moments：最多2项，写话题是怎么一路跑偏的。必须写 stages：3到4个（不要超过4个），label 是不超过6个字的短词，按时间顺序，evidence_ids 和 anchor 取自 evidence，顺序和 evidence 的时间顺序一致；moment 自己的 title 是这一路跑偏的标题，text 一句短吐槽（20到40字）。一个 moment 能讲清就只写一个。
 - next_hooks：最多2项，真正悬而未决、下次可以接着聊的事，text 一句话（15到35字）。
 - people.profiles：写 3到4 条，和 topics 的体量大致相当（人物板块不能比聊天内容板块更少）。title 是给这个人的口语称号或标签（8到14个字，贴合当场发生的事，不是通用奖项），text 一句短吐槽（20到45字）说这个人做了什么好玩的事。真的只有少数人有亮点才可以少于3条，没有亮点才留空，不要编造。
-- 同一件事（同一个情节）只在一个模块里写，其他模块不要重复提它。
+- 同一件事（同一个情节）只在一个模块里写，其他模块不要重复提它。程序会核对：odd_topic、topics、moments、people.profiles 各条引用的发言（evidence_ids）里，同一批发言不能被两条以上共用；一个人的 profiles 要写这个人另外干的事（引用他别的发言），不要把话题里的同一件事再写一遍；整场内容不够多时宁可少写几条。next_hooks 只写话题里还没解决的悬念，不要复述已经写过的经过。
 - 整张图正文合计 400到700 字，是硬指望：宁可少写，也不要写满。
 - evidence_ids 和 anchor 只能取自输入 evidence。topics、moments、next_hooks、odd_topic 可以引用 window_summary；人物条目只能引用该人自己的 asr_excerpt。
 - coverage 里有缺失的时间段时，措辞要谨慎，不要把缺失的时间当作什么都没发生。"""

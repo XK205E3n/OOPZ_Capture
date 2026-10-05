@@ -988,10 +988,8 @@ class ControllerService:
             chunk_status, segments, audio_note = value.split(":", 2)
             if chunk_status == "recording":
                 text = f"[录制进度] 分片 {index}：正在录音。"
-            elif chunk_status == "transcribing":
-                text = f"[转写进度] 分片 {index}：开始转写。"
-            elif chunk_status == "transcribed":
-                text = f"[转写进度] 分片 {index}：完成；段落={segments}{audio_note}。"
+            elif chunk_status in {"transcribing", "transcribed"}:
+                continue          # the capture worker already prints these two lines itself
             elif chunk_status == "failed":
                 text = f"[转写进度] 分片 {index}：失败；音频保留，待重试。"
             else:
@@ -1089,6 +1087,8 @@ class ControllerService:
             output = await asyncio.to_thread(self.analysis_runner, session_dir)
             self._queue_to_group(text="", source="digest:image", image_path=str(output["png"]))
             self._queue_to_group(text="", source="digest:md", file_path=str(output["md"]))      # the text that is on the image
+            if output.get("usage_text"):
+                self._queue_to_group(text=str(output["usage_text"]), source="digest:usage")
             print(f"[分析进度] Session={session_dir.name} 的图和文字稿已排队发送到飞书。", flush=True)
         except Exception as error:
             status = "analysis_failed"

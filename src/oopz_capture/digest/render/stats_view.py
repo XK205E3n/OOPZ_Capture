@@ -64,11 +64,11 @@ def build_stats_view(stats: Mapping | None, *, metadata: Mapping, labels: Mappin
         lowest = _card(labels["stats_lowest"], stats["least_frequent"], labels)
     except (KeyError, TypeError, ValueError) as exc:
         raise RenderError("stats:malformed", type(exc).__name__) from exc
-    half = f"{float(Fraction(duration, 120_000)):g}"
+    half = round(Fraction(duration, 120_000))
     view: dict[str, Any] = {
         "status": "available", "simulated": simulated, "notice": None, "scope_note": None,
         "rows": [highest, lowest],
-        "method_note": f"只有观测接入严格超过{half}分钟才参评；频率＝合并发言段数÷观测在场分钟。恰好一半的参与者被排除。",
+        "method_note": f"在场观测超过整场一半（约{half}分钟）才参与排名；频率＝发言段数÷在场分钟。",
     }
     if simulated:
         notice = sanitize_text(stats.get("simulation_notice") or "") or "统计演示：进出时间/发言计数为模拟"

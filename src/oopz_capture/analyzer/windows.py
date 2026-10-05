@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from .transcript import Run
 
 MAX_CHARS = 12_000        # text per model call (medium density is roughly 25-30k characters per hour)
-MAX_SPAN_MS = 2 * 3_600_000
+MAX_SPAN_MS = 45 * 60_000      # also bounds the timeline: a long, quiet session still gets several steps
 QUIET_MS = 90_000         # a pause this long is a preferred place to cut
 SOFT_FRACTION = 0.6       # start looking for a pause once the window is this full
 MIN_CHARS = 300           # a window with less text than this is merged into its neighbour

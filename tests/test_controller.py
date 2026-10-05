@@ -195,7 +195,7 @@ def test_a_finished_recording_is_analysed_and_the_image_and_text_file_are_queued
         png.write_bytes(b"png")
         md = png.with_name("digest.md")
         md.write_text("text", encoding="utf-8")
-        return {"png": str(png), "md": str(md)}
+        return {"png": str(png), "md": str(md), "usage_text": "分析用量\n模型：m"}
 
     service = ControllerService(controller_config(tmp_path), config_loader=loader, capture_runner=capture, analysis_runner=analyse)
 
@@ -208,8 +208,8 @@ def test_a_finished_recording_is_analysed_and_the_image_and_text_file_are_queued
     asyncio.run(run())
     assert analysed == ["s1"]
     queued = list_send_requests(service.state_root, statuses={"pending"})
-    assert [(q["image_path"] or q["file_path"]).rsplit("digest", 1)[1] for q in queued] == [".png", ".md"]
-    assert all(q["text"] == "" for q in queued)
+    assert [(q["image_path"] or q["file_path"] or "").rsplit("digest", 1)[-1] for q in queued] == [".png", ".md", ""]
+    assert [q["text"] for q in queued] == ["", "", "分析用量\n模型：m"]          # image, text file, then the usage note
     assert service._state["last_job"]["status"] == "analysis_completed"
 
 

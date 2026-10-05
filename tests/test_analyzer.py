@@ -413,3 +413,68 @@ def test_load_session_applies_the_inference_and_avatars_follow_the_roster(tmp_pa
     assert {p["nickname"] for p in session.roster} == {"Alice", "Rola"}
     assert session.identity_inferred[0]["oopz_uid"] == "u2"
     assert avatar_paths(session, tmp_path) == {"u1": str(tmp_path / "avatars" / "a.png")}      # only people on the roster, only files that exist
+
+
+def _entry(*ids, **extra):
+    return {"title": "t", "text": "x", "evidence_ids": list(ids)} | extra
+
+
+def _card(odd=None, topics=(), moments=(), profiles=()):
+    odd = odd or {"status": "none", "evidence_ids": []}
+    return {"content": {"odd_topic": odd, "topics": list(topics), "moments": list(moments), "next_hooks": []},
+            "people": {"profiles": list(profiles)}}
+
+
+def test_distinct_rejects_a_story_told_twice_and_names_both_blocks():
+    card = _card(topics=[_entry("r1", "r2", "r3")], moments=[_entry("r1", "r2", "r9", stages=[])],
+                 profiles=[_entry("r7", "r8")])
+    with pytest.raises(ValueError, match=r"moments\[0\] tells the same story as topics\[0\]"):
+        pipeline.check_distinct(card)
+    card["content"]["moments"] = [_entry("r5", "r6")]
+    pipeline.check_distinct(card)                                 # different lines: fine
+    card["people"]["profiles"] = [_entry("r1", "r4")]            # a person retelling half of a topic
+    with pytest.raises(ValueError, match=r"profiles\[0\] tells the same story as topics\[0\].*leave this person out"):
+        pipeline.check_distinct(card)
+
+
+def test_distinct_counts_stage_lines_and_ignores_window_summaries():
+    moment = _entry("r1", stages=[{"label": "a", "evidence_ids": ["r2"]}, {"label": "b", "evidence_ids": ["r3"]}])
+    with pytest.raises(ValueError):
+        pipeline.check_distinct(_card(topics=[_entry("r2", "r3")], moments=[moment]))
+    pipeline.check_distinct(_card(topics=[_entry("w01")], moments=[_entry("w01")]))
+
+
+def test_drop_repeats_keeps_odd_then_moments_and_leaves_people():
+    card = _card(odd=_entry("r1", status="supported"), topics=[_entry("r1", "r2"), _entry("r4", "r5"), _entry("r6", "r7")],
+                 moments=[_entry("r6", "r8")], profiles=[_entry("r1", "r2")])
+    pipeline.drop_repeats(card)
+    assert [t["evidence_ids"] for t in card["content"]["topics"]] == [["r4", "r5"]]
+    assert len(card["content"]["moments"]) == 1 and len(card["people"]["profiles"]) == 1
+
+
+def test_usage_of_reads_the_cli_envelope_and_tolerates_missing_fields():
+    from oopz_capture.analyzer.backend import usage_of
+
+    got = usage_of({"duration_ms": 1200, "duration_api_ms": 1100, "num_turns": 1, "total_cost_usd": 0,
+                    "usage": {"input_tokens": 0, "output_tokens": 5, "cache_read_input_tokens": 3,
+                              "context_usage_ratio": 0.1}})
+    assert got["cli_ms"] == 1200 and got["output_tokens"] == 5 and got["cache_read_tokens"] == 3
+    assert got["context_ratio"] == 0.1 and got["credits"] == 0
+    assert usage_of({})["context_ratio"] == 0.0
+
+
+def test_a_long_quiet_session_is_cut_by_time_into_several_windows():
+    runs = [Run(id=f"r{i:04d}", speaker_id="a" * 32, start_ms=i * 600_000, end_ms=i * 600_000 + 1000,
+                text="一句话说得很长" * 30) for i in range(12)]
+    assert len(split_windows(runs)) >= 2
+
+
+def test_usage_text_lists_model_requests_and_time():
+    from oopz_capture.digest_job import usage_text
+
+    calls = [{"seconds": 97.0, "error": "x", "usage": {"cli_runs": 1}}, {"seconds": 130.0, "error": None, "usage": {"cli_runs": 2}},
+             {"seconds": 31.7, "error": None}]
+    text = usage_text("Qwen3.8-Flash", calls, 310.4)
+    assert text.splitlines() == ["分析用量", "模型：Qwen3.8-Flash", "请求：4 次（其中 1 次因校验未通过而重试）",
+                                 "总耗时：5 分 10 秒（模型调用合计 4 分 19 秒）"]
+    assert "重试" not in usage_text("m", [{"seconds": 5.0, "error": None}], 8)
