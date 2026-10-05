@@ -135,6 +135,9 @@ def _entries(content: dict):
 PUNCTUATION = re.compile(r"[，。！？、；…,.!?;]")
 
 
+MAX_STAGE_LABEL = 7     # a longer label wraps to a second line under its icon
+
+
 def check_style(content: dict, budget: Budget = LARGEST) -> None:
     for index, entry in enumerate(_entries(content)):
         if len(entry.get("text", "")) > 15 and not PUNCTUATION.search(entry["text"]):
@@ -144,6 +147,10 @@ def check_style(content: dict, budget: Budget = LARGEST) -> None:
         if len(moment.get("stages", [])) > MAX_STAGES:
             raise ValueError(f"style:moment has {len(moment['stages'])} stages but at most {MAX_STAGES} fit in one row; "
                              "keep the most important ones")
+        for stage in moment.get("stages", []):
+            if len(stage.get("label", "")) > MAX_STAGE_LABEL:
+                raise ValueError(f"style:stage label '{stage['label']}' has {len(stage['label'])} characters but at most "
+                                 f"{MAX_STAGE_LABEL} fit under its icon; use a shorter label")
     for profile in content["people"]["profiles"]:
         if profile["nickname"].startswith(UNKNOWN_MEMBER):
             raise ValueError(f"style:profiles must not feature {UNKNOWN_MEMBER} (an audio track not matched to a member); "
@@ -158,23 +165,20 @@ def check_style(content: dict, budget: Budget = LARGEST) -> None:
                              "keep only the best ones" + (" (leave it empty if nothing is really unresolved)" if name == "next_hooks" else ""))
 
 
-MAX_TITLE = 10        # the poster's big headings are short, punchy phrases; the detail lives in the text
-TITLE_BREAKS = re.compile(r"[，。！？、；,.!?;]")      # a connector such as ：or - is fine, sentence punctuation is not
+MAX_TITLE = 12        # characters of the big heading, punctuation and spaces not counted; the detail lives in the text
 REVIEW_ROUNDS = 2     # how many times the editor re-reads its own copy for Chinese readability
+
+
+def title_length(title: str) -> int:
+    return len(re.sub(r"[^\w]", "", title))
 
 
 def check_titles(content: dict, limit: int = MAX_TITLE) -> None:
     for entry in _entries(content):
         title = entry.get("title", "")
-        if entry.get("status") == "none":
-            continue
-        if len(title) > limit:
-            raise ValueError(f"style:title '{title}' has {len(title)} characters but at most {limit} are allowed; "
-                             f"write a punchy phrase of at most {limit} characters (summary, quip or joke), "
-                             "and move the detail into the text")
-        if TITLE_BREAKS.search(title):
-            raise ValueError(f"style:title '{title}' contains sentence punctuation; a title is one phrase "
-                             "(a connector like ： or - between two parts is allowed, commas and full stops are not)")
+        if entry.get("status") != "none" and title_length(title) > limit:
+            raise ValueError(f"style:title '{title}' has {title_length(title)} characters (punctuation not counted) but at most "
+                             f"{limit} are allowed; shorten it and move the detail into the text")
 
 
 _NOT_WORDS = re.compile(r"[\s，。！？、；：,.!?;:…“”\"'（）()]")

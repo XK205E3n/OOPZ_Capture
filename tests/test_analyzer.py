@@ -564,25 +564,258 @@ def test_json_reply_may_carry_text_after_the_object():
     assert parse_json_object('说明\n{"a": {"b": 1}}\n{"c": 2} 多余') == {"a": {"b": 1}}
 
 
-def test_titles_must_be_short_after_editing():
-    from oopz_capture.analyzer.pipeline import check_titles
+def test_titles_may_carry_any_punctuation_that_is_not_counted():
+    from oopz_capture.analyzer.pipeline import check_titles, title_length
 
-    short = _card(topics=[_entry("r1", title="萝卜被偷成惨案")])
-    short["content"]["topics"][0]["title"] = "萝卜惨案"            # short is fine: no minimum
-    check_titles(short)
-    short["content"]["topics"][0]["title"] = "龙蛋大业：一句话蒸发"   # a connector is allowed, 10 characters
-    check_titles(short)
-    short["content"]["topics"][0]["title"] = "龙蛋大业，一句话蒸发"
-    with pytest.raises(ValueError, match="sentence punctuation"):
-        check_titles(short)
-    long = _card(topics=[_entry("r1")], profiles=[_entry("r2")])
-    long["content"]["topics"][0]["title"] = "一二三四五六七八九十一"
-    with pytest.raises(ValueError, match="11 characters but at most 10"):
-        check_titles(long)
-    long["content"]["topics"][0]["title"] = "一二三四五六七八"
-    long["people"]["profiles"][0]["title"] = "人物称号也不能超过十个字啊真的"
-    with pytest.raises(ValueError, match="at most 10"):
-        check_titles(long)
+    card = _card(topics=[_entry("r1")], profiles=[_entry("r2")])
+    for title in ("萝卜惨案", "工作台居然被狼叼走了？！", "三秒钟社会性死亡……", "龙蛋大业：一句话蒸发"):
+        card["content"]["topics"][0]["title"] = title
+        check_titles(card)
+    assert title_length("工作台居然被狼叼走了？！") == 10
+    card["content"]["topics"][0]["title"] = "一二三四五六七八九十一二三"
+    with pytest.raises(ValueError, match="13 characters .* at most 12"):
+        check_titles(card)
+    card["content"]["topics"][0]["title"] = "一二三四五六七八"
+    card["people"]["profiles"][0]["title"] = "人物称号也不能超过十二个字啊真的！"
+    with pytest.raises(ValueError, match="at most 12"):
+        check_titles(card)
+
+
+def test_the_editor_rereads_its_copy_and_keeps_a_good_review(tmp_path):
+    class Reviewer(FakeModel):
+        def complete(self, system, user):
+            request = json.loads(user.partition("\n\n【上一次输出被程序拒绝】")[0])
+            if request["mode"] == "review":
+                self.requests.append(("review", ""))
+                current = request["current"]
+                current["people"]["profiles"][0]["title"] = current["people"]["profiles"][0]["title"][:2] + "读顺了"
+                return json.dumps(current | {"labels": request["labels"]}, ensure_ascii=False)
+            return super().complete(system, user)
+
+    session = make_session(tmp_path)
+    model = Reviewer()
+    analysis = analyze_session(session, model, windows=split_windows(session.runs, max_chars=100_000))
+    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"].endswith("读顺了")
+    assert [m for m, _ in model.requests].count("review") == 2         # a changed copy is read once more
+
+
+def test_a_failed_review_keeps_the_last_good_copy(tmp_path, capsys):
+    class BadReviewer(FakeModel):
+        def complete(self, system, user):
+            if json.loads(user.partition("\n\n【上一次输出被程序拒绝】")[0])["mode"] == "review":
+                return "not json"
+            return super().complete(system, user)
+
+    session = make_session(tmp_path)
+    analysis = analyze_session(session, BadReviewer(), windows=split_windows(session.runs, max_chars=100_000))
+    assert analysis.edited and analysis.content["people"]["profiles"][0]["title"].endswith("改写")
+    assert "[审稿]" in capsys.readouterr().out
+
+
+def test_editor_with_wrong_tag_count_is_sent_back_then_falls_back_to_the_draft(tmp_path, capsys):
+    class BadEditor(FakeModel):
+        def _edit(self, request):
+            return json.dumps(request["draft"] | {"labels": {"odd": "x", "topics": ["多余"], "moments": [], "timeline": []}},
+                              ensure_ascii=False)
+
+    session = make_session(tmp_path)
+    analysis = analyze_session(session, BadEditor(), windows=split_windows(session.runs, max_chars=100_000))
+    assert not analysis.edited and analysis.labels == {}
+    assert analysis.content["people"]["profiles"][0]["title"] == "先把设备调好"       # the checked draft is kept
+    assert "EDITOR FAILED" in capsys.readouterr().out
+
+
+def test_topics_must_name_who_did_it():
+    from oopz_capture.analyzer.pipeline import check_named
+    roster = [{"speaker_id": "a" * 32, "nickname": "问夏"}, {"speaker_id": "b" * 32, "nickname": "未识别成员"}]
+    content = {"content": {"topics": [{"title": "萝卜惨案", "text": "问夏数萝卜数到崩溃"}], "moments": []}}
+    check_named(content, roster)
+    content["content"]["topics"][0]["text"] = "有人数萝卜数到崩溃"
+    with pytest.raises(ValueError, match="topics.0. names nobody"):
+        check_named(content, roster)
+
+
+def test_window_results_of_an_earlier_run_can_be_reused(tmp_path):
+    session = make_session(tmp_path)
+    windows = split_windows(session.runs, max_chars=600)
+    first = analyze_session(session, FakeModel(), windows=windows)
+    model = FakeModel()
+    again = analyze_session(session, model, windows=windows, units=first.units)
+    assert "window" not in {mode for mode, _ in model.requests} and again.content["people"]["profiles"]
+
+
+def test_long_text_without_punctuation_is_refused():
+    from oopz_capture.analyzer.pipeline import check_style
+    content = {"content": {"summary": {"title": "标题", "text": "一" * 20}, "odd_topic": {"status": "none", "title": "无", "text": "无，"},
+                           "topics": [], "moments": [], "next_hooks": []}, "people": {"profiles": []}}
+    with pytest.raises(ValueError, match="no punctuation"):
+        check_style(content)
+    content["content"]["summary"]["text"] = "一" * 10 + "，" + "二" * 10
+    check_style(content)
+
+
+def _user(uid, nickname, status="inferred_person_pid", evidence=("Person PID has not yet appeared",), is_bot=False):
+    return {"oopz_uid": uid, "nickname": nickname, "status": status, "evidence": list(evidence), "is_bot": is_bot}
+
+
+def _segments():
+    return [{"oopz_uid": "u1", "speaker": "Alice", "agora_uid": 11, "start_ms": 0, "end_ms": 1000, "text": "hello"},
+            {"oopz_uid": "", "speaker": "nickname-unavailable", "agora_uid": 99, "start_ms": 2000, "end_ms": 3000, "text": "hi there"}]
+
+
+def test_the_one_unmapped_track_goes_to_the_one_member_left_by_elimination():
+    from oopz_capture.analyzer.transcript import infer_unmapped_speaker
+    users = {"u1": _user("u1", "Alice", evidence=("OOPZ data_stream contained matching uid/cid",)),
+             "u2": _user("u2", "Rola"),                                                    # only a person-id guess, never spoke
+             "u3": _user("u3", "Cold", evidence=("OOPZ data_stream contained matching uid/cid",)),
+             "bot": _user("bot", "Bot", is_bot=True)}
+    segments = _segments()
+    assert infer_unmapped_speaker(segments, users) == [{"agora_uid": 99, "oopz_uid": "u2", "nickname": "Rola", "method": "elimination"}]
+    assert segments[1]["oopz_uid"] == "u2" and segments[1]["speaker"] == "Rola"
+
+
+def test_elimination_changes_nothing_when_it_is_not_unique():
+    from oopz_capture.analyzer.transcript import infer_unmapped_speaker
+    two_guesses = {"u1": _user("u1", "Alice"), "u2": _user("u2", "Rola"), "u3": _user("u3", "Third")}
+    segments = _segments()
+    assert infer_unmapped_speaker(segments, two_guesses) == [] and segments[1]["oopz_uid"] == ""
+    two_tracks = _segments() + [{"oopz_uid": "", "speaker": "x", "agora_uid": 77, "start_ms": 5000, "end_ms": 6000, "text": "yo"}]
+    assert infer_unmapped_speaker(two_tracks, {"u2": _user("u2", "Rola")}) == []
+
+
+def test_load_session_applies_the_inference_and_avatars_follow_the_roster(tmp_path):
+    from oopz_capture.analyzer.outputs import avatar_paths
+    from oopz_capture.analyzer.transcript import load_session
+    (tmp_path / "session.json").write_text(json.dumps({"session_id": "s", "started_at": "2026-10-03T06:00:00+00:00"}), encoding="utf-8")
+    (tmp_path / "lifecycle.json").write_text(json.dumps({"stopped_at": "2026-10-03T07:00:00+00:00"}), encoding="utf-8")
+    users = [_user("u1", "Alice", evidence=("data_stream",)), _user("u2", "Rola")]
+    (tmp_path / "users.json").write_text(json.dumps(users), encoding="utf-8")
+    (tmp_path / "transcript.jsonl").write_text("\n".join(json.dumps(s) for s in _segments()), encoding="utf-8")
+    (tmp_path / "avatars").mkdir()
+    (tmp_path / "avatars" / "a.png").write_bytes(b"png")
+    (tmp_path / "avatars" / "index.json").write_text(json.dumps({"u1": "a.png", "u2": "missing.png", "stranger": "a.png"}), encoding="utf-8")
+
+    session = load_session(tmp_path)
+
+    assert {p["nickname"] for p in session.roster} == {"Alice", "Rola"}
+    assert session.identity_inferred[0]["oopz_uid"] == "u2"
+    assert avatar_paths(session, tmp_path) == {"u1": str(tmp_path / "avatars" / "a.png")}      # only people on the roster, only files that exist
+
+
+def _entry(*ids, **extra):
+    return {"title": "t", "text": "x", "evidence_ids": list(ids)} | extra
+
+
+def _card(odd=None, topics=(), moments=(), profiles=()):
+    odd = odd or {"status": "none", "evidence_ids": []}
+    return {"content": {"odd_topic": odd, "topics": list(topics), "moments": list(moments), "next_hooks": []},
+            "people": {"profiles": list(profiles)}}
+
+
+def test_distinct_rejects_a_story_told_twice_and_names_both_blocks():
+    card = _card(topics=[_entry("r1", "r2", "r3")], moments=[_entry("r1", "r2", "r9", stages=[])],
+                 profiles=[_entry("r7", "r8")])
+    with pytest.raises(ValueError, match=r"moments\[0\] tells the same story as topics\[0\]"):
+        pipeline.check_distinct(card)
+    card["content"]["moments"] = [_entry("r5", "r6")]
+    pipeline.check_distinct(card)                                 # different lines: fine
+    card["people"]["profiles"] = [_entry("r1", "r4")]            # a person retelling half of a topic
+    with pytest.raises(ValueError, match=r"profiles\[0\] tells the same story as topics\[0\].*leave this person out"):
+        pipeline.check_distinct(card)
+
+
+def test_distinct_counts_stage_lines_and_ignores_window_summaries():
+    moment = _entry("r1", stages=[{"label": "a", "evidence_ids": ["r2"]}, {"label": "b", "evidence_ids": ["r3"]}])
+    with pytest.raises(ValueError):
+        pipeline.check_distinct(_card(topics=[_entry("r2", "r3")], moments=[moment]))
+    pipeline.check_distinct(_card(topics=[_entry("w01")], moments=[_entry("w01")]))
+
+
+def test_drop_repeats_keeps_odd_then_moments_and_leaves_people():
+    card = _card(odd=_entry("r1", status="supported"), topics=[_entry("r1", "r2"), _entry("r4", "r5"), _entry("r6", "r7")],
+                 moments=[_entry("r6", "r8")], profiles=[_entry("r1", "r2")])
+    pipeline.drop_repeats(card)
+    assert [t["evidence_ids"] for t in card["content"]["topics"]] == [["r4", "r5"]]
+    assert len(card["content"]["moments"]) == 1 and len(card["people"]["profiles"]) == 1
+
+
+def test_usage_of_reads_the_cli_envelope_and_tolerates_missing_fields():
+    from oopz_capture.analyzer.backend import usage_of
+
+    got = usage_of({"duration_ms": 1200, "duration_api_ms": 1100, "num_turns": 1, "total_cost_usd": 0,
+                    "usage": {"input_tokens": 0, "output_tokens": 5, "cache_read_input_tokens": 3,
+                              "context_usage_ratio": 0.1}})
+    assert got["cli_ms"] == 1200 and got["output_tokens"] == 5 and got["cache_read_tokens"] == 3
+    assert got["context_ratio"] == 0.1 and got["credits"] == 0
+    assert usage_of({})["context_ratio"] == 0.0
+
+
+def test_a_very_long_quiet_session_is_cut_by_time():
+    runs = [Run(id=f"r{i:04d}", speaker_id="a" * 32, start_ms=i * 1_800_000, end_ms=i * 1_800_000 + 1000,
+                text="一句话说得很长" * 30) for i in range(6)]
+    assert len(split_windows(runs)) == 2          # 2 hours is the longest a window may span
+    assert len(split_windows(runs[:4])) == 1
+
+
+def test_usage_text_lists_model_requests_and_time():
+    from oopz_capture.digest_job import usage_text
+
+    calls = [{"seconds": 97.0, "error": "x", "usage": {"cli_runs": 1}}, {"seconds": 130.0, "error": None, "usage": {"cli_runs": 2}},
+             {"seconds": 31.7, "error": None}]
+    text = usage_text("Qwen3.8-Flash", calls, 310.4)
+    assert text.splitlines() == ["分析用量", "模型：Qwen3.8-Flash", "请求：4 次（其中 1 次因校验未通过而重试）",
+                                 "总耗时：5 分 10 秒（模型调用合计 4 分 19 秒）"]
+    assert "重试" not in usage_text("m", [{"seconds": 5.0, "error": None}], 8)
+
+
+def test_budget_grows_with_the_recording_and_reaches_the_prompt():
+    from oopz_capture.analyzer import prompts
+    from oopz_capture.analyzer.pipeline import budget_for
+
+    hour = 3_600_000
+    short, long = budget_for(2 * hour), budget_for(12 * hour)
+    assert (short.topics, short.moments, short.hooks) == (3, 1, 1)
+    assert long.topics > short.topics and long.chars[1] > short.chars[1] and long.profiles == 7
+    assert budget_for(4 * hour).topics == 4 and budget_for(0).topics == 3
+    prompt = prompts.system_prompt("final", short)
+    assert "最多3项" in prompt and "400到700" in prompt and "写空数组" in prompt and "@" not in prompt
+    assert "summary" not in prompts.system_prompt("final", short).split("【输出结构示例")[1].split("odd_topic 没有候选")[0]
+    assert '"summary":' in prompts.system_prompt("window")
+
+
+def test_style_enforces_the_budget_counts():
+    from oopz_capture.analyzer.pipeline import Budget, check_style
+
+    tiny = Budget(1, 0, 0, 1, (1, 2))
+    card = _card(topics=[_entry("r1")], moments=[_entry("r2", stages=[])])
+    with pytest.raises(ValueError, match="moments has 1 entries but at most 0"):
+        check_style(card, tiny)
+    check_style(card)                                              # the largest budget accepts it
+
+
+def test_repair_fixes_only_mechanical_gaps():
+    from oopz_capture.analyzer.pipeline import repair
+
+    bundle = {"people": [], "evidence": [
+        {"id": "r1", "kind": "asr_excerpt", "speaker_id": "u1", "text": "甲说的话"},
+        {"id": "r2", "kind": "asr_excerpt", "speaker_id": "u2", "text": "乙说的话"},
+        {"id": "r3", "kind": "asr_excerpt", "speaker_id": "u1", "text": "甲又说了"}]}
+    card = _card(odd={"title": "t", "text": "x", "evidence_ids": ["r1", "r2", "r1", "r99"], "anchor": "甲说的话"},
+                 moments=[_entry("r3", "r99", stages=[{"label": "步", "evidence_ids": ["rX", "r1"], "anchor": "甲说"}])])
+    repair(card, bundle)
+    odd = card["content"]["odd_topic"]
+    assert odd["status"] == "supported" and odd["participant_ids"] == ["u1", "u2"]
+    assert odd["evidence_ids"] == ["r1", "r2", "r1"]               # the unknown id went, duplicates are normalize's job
+    moment = card["content"]["moments"][0]
+    assert moment["evidence_ids"] == ["r3"] and moment["stages"][0]["icon_category"] == "other"
+    assert moment["stages"][0]["evidence_ids"] == ["r1"]
+    lone = _card(topics=[_entry("r99")])
+    repair(lone, bundle)
+    assert lone["content"]["topics"][0]["evidence_ids"] == ["r99"]  # nothing known is left: the validator will say so
+
+
+def test_json_reply_may_carry_text_after_the_object():
+    assert parse_json_object('说明\n{"a": {"b": 1}}\n{"c": 2} 多余') == {"a": {"b": 1}}
 
 
 def test_a_field_written_after_an_early_closed_root_is_still_read():
