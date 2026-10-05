@@ -20,6 +20,7 @@ from .jsonio import atomic_json as _atomic_json, iso_utc as _iso, read_json_or_n
 from .feishu_protocol import HELP_TEXT
 from .controller_protocol import SenderPolicy, ControllerInboundMessage, make_reply, parse_command
 from .digest_job import run_digest
+from .qq_bridge import deliver_digest, failure_notice
 from .sessions import digest_png
 from .send_request import enqueue_send_request
 from .settings import SETTABLE_KEYS, apply_setting, canonical_setting_key, setting_status
@@ -139,6 +140,7 @@ class ControllerConfig:
 ConfigLoader = Callable[[bool], Awaitable[Any]]
 CaptureRunner = Callable[..., Awaitable[Path]]
 AnalysisRunner = Callable[[Path], dict[str, Any]]
+QqRunner = Callable[[Path, Path], "dict[str, Any] | None"]      # (session dir, digest image) -> QQ bridge outcome
 
 
 async def _default_config_loader(show_browser: bool) -> Any:
@@ -154,12 +156,14 @@ class ControllerService:
         config_loader: ConfigLoader = _default_config_loader,
         capture_runner: CaptureRunner = run_continuous_capture,
         analysis_runner: AnalysisRunner = run_digest,
+        qq_runner: QqRunner = deliver_digest,
     ):
         config.validate()
         self.config = config
         self.config_loader = config_loader
         self.capture_runner = capture_runner
         self.analysis_runner = analysis_runner
+        self.qq_runner = qq_runner
         self.state_root = config.state_root.resolve()
         self.output_root = config.output_root.resolve()
         self.state_root.mkdir(parents=True, exist_ok=True)
@@ -1089,6 +1093,7 @@ class ControllerService:
             self._queue_to_group(text="", source="digest:md", file_path=str(output["md"]))      # the text that is on the image
             if output.get("usage_text"):
                 self._queue_to_group(text=str(output["usage_text"]), source="digest:usage")
+            extra |= await self._deliver_to_qq(session_dir, Path(output["png"]))
             print(f"[分析进度] Session={session_dir.name} 的图和文字稿已排队发送到飞书。", flush=True)
         except Exception as error:
             status = "analysis_failed"
@@ -1104,6 +1109,22 @@ class ControllerService:
             if isinstance(last, dict) and last.get("session_id") == session_dir.name:
                 self._state["last_job"] = {**last, "status": status, "analysis_finished_at": _iso(), **extra}
                 self._save_state()
+
+    async def _deliver_to_qq(self, session_dir: Path, image: Path) -> dict[str, Any]:
+        """The QQ bridge (add-on module): never lets a QQ problem change the analysis result; a problem
+        that needs a person is reported to the Feishu group as one text."""
+        try:
+            outcome = await asyncio.to_thread(self.qq_runner, session_dir, image)
+        except Exception as error:
+            outcome = {"status": "failed", "error": f"{type(error).__name__}: {str(error)[:200]}"}
+        if outcome is None:
+            return {}
+        print(f"[QQ发图] Session={session_dir.name}：状态={outcome.get('status')}"
+              + (f"；原因={outcome.get('error')}" if outcome.get("error") else "") + "。", flush=True)
+        notice = failure_notice(outcome)
+        if notice:
+            self._queue_to_group(text=notice, source="qq_bridge")
+        return {"qq_relay": str(outcome.get("status"))}
 
     def _delete_session(self, session_id: str) -> None:
         root = self.output_root.resolve()

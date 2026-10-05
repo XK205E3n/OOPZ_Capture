@@ -137,6 +137,7 @@ def test_feishu_setting_classification_keeps_security_boundaries_local() -> None
         "OOPZ_FEISHU_APP_ID", "OOPZ_FEISHU_APP_SECRET", "OOPZ_FEISHU_ADMIN_CHAT_ID",
         "OOPZ_FEISHU_STATE_ROOT",
         "OOPZ_APP_VERSION",
+        "OOPZ_QQ_GROUP_ID", "OOPZ_QQ_RELAY_TOKEN", "OOPZ_QQ_RELAY_URL",
     }
     assert set(LOCAL_ONLY_SETTING_KEYS) == expected_local
     assert not expected_local & FEISHU_SETTING_KEYS

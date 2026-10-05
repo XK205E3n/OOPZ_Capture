@@ -77,6 +77,9 @@ LOCAL_ONLY_SETTING_INFO: dict[str, tuple[str, str]] = {
         "本地录音、转写和报告根目录",
         "未设置，使用 output",
     ),
+    "OOPZ_QQ_GROUP_ID": ("QQ 发图（外挂模块）的目标群号", "未设置，不往 QQ 发图"),
+    "OOPZ_QQ_RELAY_TOKEN": ("QQ 发图接口的口令", "未设置，不往 QQ 发图"),
+    "OOPZ_QQ_RELAY_URL": ("QQ 发图接口地址（只能是本机）", "未设置，使用 http://127.0.0.1:18764"),
 }
 LOCAL_ONLY_SETTING_KEYS = tuple(LOCAL_ONLY_SETTING_INFO)
 _SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")

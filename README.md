@@ -2,7 +2,7 @@
 
 通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，用本地 CPU 模型分片转写；录音结束后自动用 Qoder CN CLI（免费 Qwen 模型）分析整场转写，生成一张"语音精华"长图并发到飞书群。
 
-当前主线应用版本 **0.12.4（Linux 主线）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前主线应用版本 **0.13.0（Linux 主线）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 核心能力
 
@@ -23,6 +23,7 @@
 | `vad.py`、`asr.py`、`transcript.py`、`speech_cli.py`、`pipeline.py` | 语音检测、模型推理、转写输出 |
 | `analyzer/` | 分析器：转写分段 → 窗口分析 → 汇总 → 编辑改写，调用 Qoder CLI，校验证据（见 [设计](docs/DESIGN_DIGEST_PIPELINE.md)） |
 | `digest/` | 回顾内容契约与校验、发言频率统计、头像、离线渲染器（`digest/render/`，Pillow） |
+| `qq_bridge/` | **外挂模块**：成品图经 MaiBot 本机接口发到 QQ 群（群号留空即关闭，见 [QQ 发图](docs/QQ_BRIDGE.md)） |
 | `digest_job.py`、`sessions.py` | 控制器调用的"一场录音 → 图"入口；查找没出图/已出图的录音 |
 | `settings.py`、`env_loader.py` | 配置读取与 `.env` 原地写入 |
 | `scripts/linux/`、`scripts/build_release.ps1`、`scripts/download_fonts.py` | Ubuntu 发布管理、发布包构建、出图字体下载 |
@@ -114,4 +115,4 @@ python -m oopz_capture.analyzer render <输出目录>                    # 只�
 python -m pytest
 ```
 
-提交约定与变更记录规则见 [AGENTS.md](AGENTS.md)。文档索引：[项目状态](docs/PROJECT_STATUS.md)、[分析与出图设计](docs/DESIGN_DIGEST_PIPELINE.md)、[架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)、[运维说明](docs/OPERATIONS.md)、[部署指南](docs/DEPLOYMENT.md)、[部署状态](docs/DEPLOYMENT_STATE.md)、[Ubuntu 验证记录](docs/VALIDATION_UBUNTU.md)、[飞书应用配置](README_FEISHU_BOT_SETUP.md)。
+提交约定与变更记录规则见 [AGENTS.md](AGENTS.md)。文档索引：[项目状态](docs/PROJECT_STATUS.md)、[分析与出图设计](docs/DESIGN_DIGEST_PIPELINE.md)、[架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)、[运维说明](docs/OPERATIONS.md)、[部署指南](docs/DEPLOYMENT.md)、[部署状态](docs/DEPLOYMENT_STATE.md)、[Ubuntu 验证记录](docs/VALIDATION_UBUNTU.md)、[QQ 发图](docs/QQ_BRIDGE.md)、[飞书应用配置](README_FEISHU_BOT_SETUP.md)。
