@@ -2,30 +2,30 @@
 
 > 这是本地代码与生产服务器差异的唯一事实来源。任何部署相关修改和每次生产发布都必须同步更新本文件。禁止记录密钥、密码、完整服务器地址或个人信息。
 
-更新时间：2026-10-06（已部署 0.13.1，验收通过，转入长期运行）
+更新时间：2026-10-07（已部署 0.13.2，验收通过，转入长期运行）
 
 ## 当前状态
 
-### Ubuntu 生产服务器实测基线（2026-10-06，0.13.1）
+### Ubuntu 生产服务器实测基线（2026-10-07，0.13.2）
 
 检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB（清理后已用约 26%，`/opt/oopz` 约 3.7 GB）。以下为实测事实，不含密钥或地址。
 
 | 项目 | 实测状态 |
 | --- | --- |
 | 账号 | 全机只有一个管理账号 `ubuntu`，所有操作者和 AI 共用，不另建服务账号；OOPZ 以 `ubuntu` 身份运行，靠 systemd 隔离（见下） |
-| 目录 | `/opt/oopz`（属主 `ubuntu`）：`current` → `releases/v0.13.1-645606439991`（唯一的发布目录，root 属主）；`.management.lock`、`backups/`（账号迁移备份）属主 root；`shared/` 持久数据（`config`、`models`、`output`、`feishu_state`、`logs`、`home`、`browsers`、`tools`、`python`、`assets/fonts`、`capture-tests`）、`artifacts/`（当前发布包与引导脚本）属主 `ubuntu` |
+| 目录 | `/opt/oopz`（属主 `ubuntu`）：`current` → `releases/v0.13.2-328fe2035eeb`（唯一的发布目录，root 属主）；`.management.lock`、`backups/`（账号迁移备份）属主 root；`shared/` 持久数据（`config`、`models`、`output`、`feishu_state`、`logs`、`home`、`browsers`、`tools`、`python`、`assets/fonts`、`capture-tests`）、`artifacts/`（当前发布包与引导脚本）属主 `ubuntu` |
 | 服务形态 | 持久 systemd 单元 `oopz-capture.service`（`enabled`，开机自启，`Restart=on-failure`）：`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`、`PrivateTmp=yes`、`UMask=0077`；日志在 `shared/logs/feishu_runtime.log` 与 `feishu_error.log`。原瞬时测试单元 `oopz-capture-test` 已停止 |
-| 运行进程 | `feishu_cli serve`（完整模式，非 capture-only），版本 0.13.1（标签 `linux-v0.13.1`）；录音后自动分析并发图 |
+| 运行进程 | `feishu_cli serve`（完整模式，非 capture-only），版本 0.13.2（标签 `linux-v0.13.2`）；录音后自动分析并发图 |
 | 最近一次实测 | 会话 `2026-10-03_14-32-31_BJT`（北京时间）：159 个分片全部转写成功、失败 0、共 7834 段，状态 `ready_for_analysis`；日志无错误。仅验证录音与转写；该会话音频已按用户批准删除，转写文本保留供分析测试 |
 | 配置 | `shared/config/.env` 共 12 个键：飞书应用与管理群、OOPZ 登录、`OOPZ_DEVICE=cpu`、`OOPZ_RETAIN_AUDIO=false`（转写成功即删分片音频）、`OOPZ_ANALYZER_CLI/HOME/MODEL/TIMEOUT_SECONDS`、`OOPZ_FONT_DIR=/opt/oopz/shared/assets/fonts`；已去掉 `OOPZ_PDF_BACKEND` |
 | 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；录音用的 Chromium 在 `shared/browsers`（PDF 用的 `/opt/oopz-browser-runtime` 已删除）；模型约 897 MB；字体在 `shared/assets/fonts`；分析器用的 Qoder CLI 在 `shared/tools/qodercn-*`（登录状态在 `qodercn-home`，须留在 `/opt` 下，`ProtectHome` 会挡住 `/home`） |
 
-### 2026-10-05～06 部署 0.12.1～0.13.1
+### 2026-10-05～07 部署 0.12.1～0.13.2
 
 - 每次发布：本地构建、上传并核对哈希、`update_release.sh`（空闲检查，不使用 `--force`）；成功后旧发布目录、旧包与引导日志自动清理，服务器上只保留当前版本。回滚方式仍是用标签重新构建旧版本。
 - 真实录音 `2026-10-05_13-38-03_BJT`（约 6 小时）：转写、音频删除、出入记录、头像、飞书发图均已验证；用同一场会话重放了各版本的分析（0.13.1：9 次请求、1 次重试、约 15 分钟、图高约 6500px）。会话保留期 30 天（`OOPZ_RETENTION_HOURS=720`）。
 - QQ 发图（0.13.0）：`.env` 增加 `OOPZ_QQ_GROUP_ID`（目标群）与 `OOPZ_QQ_RELAY_TOKEN`（取自 MaiBot 的 `ling_relay` 配置，不入库、不打印）；已在真实接口上向目标群发送成功（`sent`）。接口只有黑名单、没有白名单，机器人在群内且不在黑名单就能发；黑名单与"不在群内"两种飞书警告只在本地假接口测试中验证过。
-- 已知：头像下载失败的重试与原因日志（0.13.1）只能在下一次真实录音中验证；同一场录音每次分析的话题会略有不同（模型输出有随机性）。
+- 2026-10-07 第二场真实录音（9 小时 20 分，112 分片全部成功，分析 18 分 55 秒，飞书与 QQ 发送成功）：头像重试生效（一次 `resolver capacity exhausted` 一分钟后重试成功），0.13.2 改为分批下载（进入后等 10 秒、每批 3 个、批间 5 秒）。同一场录音每次分析的话题会略有不同（模型输出有随机性）。
 
 ### 2026-10-04 部署 0.12.0（Linux 主线首个发布）
 

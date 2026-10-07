@@ -10,10 +10,10 @@
 
 | 端 | 内容 | 状态 |
 | --- | --- | --- |
-| GitHub `main`、标签 `linux-v0.13.1` | Linux 主线，应用版本 0.13.1 | 已推送；服务器运行的就是它 |
+| GitHub `main`、标签 `linux-v0.13.2` | Linux 主线，应用版本 0.13.2 | 已推送；服务器运行的就是它 |
 | GitHub `windows-legacy`、标签 `v0.11.*`、Release | Windows 部署线，最后为 v0.11.15 | 已在生产验证、流程保持原样；其更新脚本依赖 GitHub 的 latest Release |
 | GitHub `recovery/server-v0.11.15-snapshots` | 服务器 4 个发布包的原样快照 | 只读存档 |
-| 服务器 `/opt/oopz` | `current` → `v0.13.1-645606439991`（唯一发布目录） | `oopz-capture.service` 运行中、开机自启 |
+| 服务器 `/opt/oopz` | `current` → `v0.13.2-328fe2035eeb`（唯一发布目录） | `oopz-capture.service` 运行中、开机自启 |
 
 注意：此前四个内容不同的构建共用了 0.11.15；0.12.0 起每个发布对应唯一内容，下一次修改须使用新版本号。Linux 发布使用 `linux-vX.Y.Z` 标签，GitHub Release（如要发）不得设为 Latest。
 
