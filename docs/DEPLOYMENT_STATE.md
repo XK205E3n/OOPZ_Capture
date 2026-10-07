@@ -74,7 +74,7 @@ Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux
 
 ```text
 /opt/oopz/
-  current -> releases/<release-id>       # 计划中的当前版本链接（尚未建立）
+  current -> releases/<release-id>       # 当前版本链接（只保留当前一个版本）
   releases/<release-id>/                 # 每次发布独立目录，含独立 .venv/node_modules
   shared/config/.env                     # 生产配置，发布间共享
   shared/{models,output,feishu_state,logs,tools,python,browsers,cache,home}
@@ -94,7 +94,7 @@ Ubuntu开发候选：在独立实现分支加入跨平台配置/Node/PDF、Linux
 ## Ubuntu 验收待办
 
 - [x] 建立 `current` 链接与 systemd 单元，使服务随开机恢复（2026-10-04 完成）。
-- [ ] 在真实群里验证"录音 → 自动分析 → 图和 digest.md 发到群"全链路，并检查真实头像下载、出入记录、音频删除（部署已完成，等第一次真实录音）。
-- [ ] 在目标机验证无人频道退出、服务重启恢复与版本回滚演练。
-- [ ] 清理测试残留（测试网关进程、`artifacts/` 中的探测脚本与分片，磁盘仅剩约 12 GB）并设置告警。
-- [ ] 完成 4 vCPU 下的长时间负载与 15 分钟转写期限复核。
+- [x] 在真实群里验证"录音 → 自动分析 → 图、digest.md 和用量文本发到群"全链路，并检查头像下载、出入记录、音频删除（2026-10-05 与 2026-10-07 两场真实录音通过）。
+- [x] 无人频道退出已在真实录音中验证（频道空 5 分钟自动结束）；服务重启恢复与版本回滚演练已决定不做。
+- [x] 测试残留已清理，磁盘用量约 28%；更新成功后自动删除旧版本与旧安装包。`shared/capture-tests` 里 10-03 的早期测试数据（约 27 MB）待用户决定是否删除。
+- [x] 4 vCPU 负载与 15 分钟转写期限复核已完成（见 [项目状态](PROJECT_STATUS.md)）。

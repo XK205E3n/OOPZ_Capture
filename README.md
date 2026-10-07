@@ -1,14 +1,16 @@
 # OOPZ Capture
 
-通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，用本地 CPU 模型分片转写；录音结束后自动用 Qoder CN CLI（免费 Qwen 模型）分析整场转写，生成一张"语音精华"长图并发到飞书群。
+通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，用本地 CPU 模型分片转写；录音结束后自动用 Qoder CN CLI（免费 Qwen 模型）分析整场转写，生成一张"语音精华"长图发到飞书群（可选再发到 QQ 群）。**当前 0.13.x 已在生产服务器稳定运行**，经过多场 6～9 小时真实录音验证。
 
-当前主线应用版本 **0.13.2（Linux 主线）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前主线应用版本 **0.13.2（Linux 主线，已验收、长期运行）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 核心能力
 
 - **独立音轨与分片录制**：基于 OOPZ SDK / Agora 浏览器音频后端，按 UID 采集，默认每 300 秒关闭一个分片。
 - **本地语音转写**：Silero VAD 检测语音，SenseVoiceSmall 在 CPU 上识别，无需 GPU。
-- **自动出图**：录音结束后无需任何确认，自动分析、渲染并把图发到群里；失败时发文字说明，可用"重新出图"重试。
+- **自动出图**：录音结束后无需任何确认，自动分析、渲染并把图发到群里；篇幅随录音时长自动调整；失败时发文字说明，可用"重新出图"重试。
+- **成品质量把关**：编辑改写后，模型再按中文读感和原文证据自审（最多 2 轮），标题要求通顺、抓眼球；同一件事不会在图上重复出现。
+- **QQ 发图（可选外挂）**：把成品图经同机 MaiBot 的本机接口发到 QQ 群，群号留空即关闭。
 - **可恢复的处理状态**：分片与转写写入会话目录；提供转写修复和分析重试。
 
 ## 项目结构
@@ -40,16 +42,17 @@
   → 选择 OOPZ 域与语音频道（点选后立即开始录音，没有任何确认步骤）→ 录音 → 分片转写
   → 结束录音（手动）或自动退出（频道无人 / 断线 / 北京时间强制结束时间）
   → 自动分析（Qoder CN CLI）→ 渲染 digest.png
-  → 同一个飞书群收到图片，随后收到图片上文字的 digest.md 文件（没有别的文字消息）
+  → 同一个飞书群依次收到：图片、图片上文字的 digest.md 文件、一条分析用量文本（模型、请求次数、总耗时）
+  → （可选）图片再发到配置的 QQ 群；成功不提示，出问题才在飞书群里发一条文字
 ```
 
 - 仅 `OOPZ_FEISHU_ADMIN_CHAT_ID` 指定的群可控制机器人；私聊被禁用，且消息必须 @ 机器人。该群所有成员权限相同。
 - 没有审核、批准、公开文档、Base 索引或撤回环节。
-- 默认成功转写后删除分片音频；会话（转写与图）默认保留 15 天，详见 [架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)。
+- 默认成功转写后删除分片音频；会话（转写、出入记录、头像、分析文件与图）默认保留 30 天，到期整个会话目录自动删除，详见 [架构与数据生命周期](docs/CURRENT_ARCHITECTURE.md)。
 
 ## 安装与运行
 
-**服务器**：见 [部署指南](docs/DEPLOYMENT.md)（Ubuntu 24.04，发布包分阶段安装，事务式更新与回滚）。服务器尚未完成验收，实际状态以 [部署状态](docs/DEPLOYMENT_STATE.md) 为准。
+**服务器**：见 [部署指南](docs/DEPLOYMENT.md)（Ubuntu 24.04，发布包分阶段安装，事务式更新与回滚）。服务器已验收并在运行，实际状态以 [部署状态](docs/DEPLOYMENT_STATE.md) 为准；更新由 `scripts/linux/update_release.sh` 完成，成功后自动删除旧版本与旧安装包。
 
 **本地开发**（Python 3.12）：
 
@@ -94,7 +97,7 @@ OOPZ_ANALYZER_CLI=      # qoderclicn 可执行文件路径
 OOPZ_ANALYZER_HOME=     # CLI 的 HOME（保存其登录，运行用户可读写）
 ```
 
-可选：`OOPZ_ANALYZER_MODEL`、`OOPZ_ANALYZER_TIMEOUT_SECONDS`、`OOPZ_NODE_PATH`（CLI 需要 Node）、`OOPZ_FONT_DIR`。整场录音完整送入模型、不抽样；一场 12 小时的录音约需 10–25 分钟，模型调用约 15–25 次。
+可选：`OOPZ_ANALYZER_MODEL`、`OOPZ_ANALYZER_TIMEOUT_SECONDS`、`OOPZ_NODE_PATH`（CLI 需要 Node）、`OOPZ_FONT_DIR`。整场录音完整送入模型、不抽样；一场 6～9 小时的录音约需 15～20 分钟，模型调用约 9～17 次（含编辑与审稿）。
 
 手动运行（排查或调试）：
 
