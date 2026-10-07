@@ -289,3 +289,61 @@ def test_presence_and_avatars_are_recorded_while_capturing(tmp_path: Path, monke
     intervals, names = observed_presence_intervals(data, data["monotonic_duration_ms"])
     assert names == {"u1": "Alice"} and intervals["u1"] and "self" not in intervals     # the recorder itself is not counted
     assert json.loads((session / "avatars" / "index.json").read_text(encoding="utf-8")) == {"u1": "avatar-x.png"}
+
+
+def test_avatars_are_downloaded_in_small_polite_batches(tmp_path: Path, monkeypatch) -> None:
+    import threading
+    import time as time_module
+
+    async def members(*_args, **_kwargs):
+        return [OopzParticipant("self", "bot-me")] + [
+            OopzParticipant(f"u{i}", f"User{i}", avatar_url=f"https://cdn.example/{i}.png") for i in range(7)]
+
+    class StableProbe(FakeProbe):
+        async def drain_audio(self, _max_chunks: int = 128) -> list[dict]:
+            return []
+
+    log: list[tuple[str, float]] = []
+    active = {"now": 0, "max": 0}
+    lock = threading.Lock()
+
+    class FakeAvatars:
+        last_failure = ""
+
+        def __init__(self, directory) -> None:
+            self.directory = Path(directory)
+
+        def get(self, uid, url):
+            with lock:
+                active["now"] += 1
+                active["max"] = max(active["max"], active["now"])
+                log.append((uid, time_module.monotonic()))
+            time_module.sleep(0.05)
+            with lock:
+                active["now"] -= 1
+            self.directory.mkdir(parents=True, exist_ok=True)
+            path = self.directory / f"avatar-{uid}.png"
+            path.write_bytes(b"png")
+            return path
+
+        def close(self) -> None:
+            return None
+
+    started = time_module.monotonic()
+    FakeBot.instances.clear()
+    monkeypatch.setattr("oopz_sdk.OopzBot", FakeBot)
+    monkeypatch.setattr(continuous, "AgoraBrowserProbe", StableProbe)
+    monkeypatch.setattr(continuous, "_resolve_participants", members)
+    monkeypatch.setattr(continuous, "AvatarCache", FakeAvatars)
+    monkeypatch.setattr(continuous, "AVATAR_START_DELAY", 0.3)
+    monkeypatch.setattr(continuous, "AVATAR_BATCH_PAUSE", 0.3)
+    value = request(chunk_seconds=30, poll_interval_seconds=0.05, connection_check_seconds=0.5,
+                    browser_operation_timeout_seconds=0.5, membership_refresh_seconds=5, max_runtime_seconds=6)
+    session = asyncio.run(run_continuous_capture(SimpleNamespace(person_uid="self"), value,
+                                                 output_root=tmp_path, session_id=str(uuid4())))
+
+    assert active["max"] <= 3                                               # never more than three at once
+    assert len(log) == 7 and json.loads((session / "avatars" / "index.json").read_text(encoding="utf-8")).keys() == {f"u{i}" for i in range(7)}
+    assert log[0][1] - started >= 0.3                                       # nothing starts right after joining
+    gaps = sorted(t for _, t in log)
+    assert gaps[3] - gaps[2] >= 0.3 and gaps[6] - gaps[5] >= 0.3             # a pause between batches

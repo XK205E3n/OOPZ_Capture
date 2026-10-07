@@ -35,6 +35,9 @@ BEIJING_TZ = timezone(timedelta(hours=8))
 CONTINUOUS_REQUEST_SCHEMA = "oopz.continuous.request.v1"
 CONTINUOUS_STOP_SCHEMA = "oopz.continuous.stop.v1"
 MAX_CHUNK_SECONDS = 300
+AVATAR_START_DELAY = 10.0     # seconds after joining before the first avatar download
+AVATAR_BATCH = 3              # downloads at the same time
+AVATAR_BATCH_PAUSE = 5.0      # seconds between one batch finishing and the next starting
 LOGGER = logging.getLogger(__name__)
 
 
@@ -778,6 +781,9 @@ async def run_continuous_capture(
     avatar_tries: dict[tuple[str, str], int] = {}        # downloads started per (uid, url)
     avatar_next: dict[tuple[str, str], float] = {}       # earliest time of the next try after a failure
     avatar_done: set[tuple[str, str]] = set()
+    avatar_queue: list[tuple[str, str]] = []             # waiting for the worker, in the order they were seen
+    avatar_queued: set[tuple[str, str]] = set()          # queued or being downloaded right now
+    avatar_flush = asyncio.Event()                       # set when the recording is over: no more waiting
     avatar_tasks: set[asyncio.Task[None]] = set()
     joined = False
     capture_started = False
@@ -879,10 +885,18 @@ async def run_continuous_capture(
         if presence is not None:
             presence.gap(at_ms=session_ms(loop_time), reason=reason)
 
+    async def avatar_pause(seconds: float) -> None:
+        """Waits, but a finished recording ends the wait so the last downloads are not lost."""
+        try:
+            await asyncio.wait_for(avatar_flush.wait(), seconds)
+        except asyncio.TimeoutError:
+            pass
+
     async def fetch_avatar(oopz_uid: str, url: str) -> None:
         """Best effort: a failed or refused download leaves the placeholder avatar, and is tried again on a
         later membership refresh (a few times, with a growing pause)."""
         key = (oopz_uid, url)
+        avatar_tries[key] = avatar_tries.get(key, 0) + 1
         try:
             path = await asyncio.to_thread(avatar_cache.get, oopz_uid, url)
             if path is not None:
@@ -894,19 +908,32 @@ async def run_continuous_capture(
         except Exception as error:
             reason = type(error).__name__
             LOGGER.debug("avatar download failed", exc_info=True)
-        tries = avatar_tries.get(key, 1)
-        avatar_next[key] = loop.time() + 60.0 * tries
-        print(f"[头像] 下载失败（{oopz_uid[:6]}，第{tries}次）：{reason}", flush=True)
+        avatar_next[key] = loop.time() + 60.0 * avatar_tries[key]
+        print(f"[头像] 下载失败（{oopz_uid[:6]}，第{avatar_tries[key]}次）：{reason}", flush=True)
+
+    async def avatar_worker() -> None:
+        """Downloads avatars politely: a pause after joining, then a few at a time with a pause between
+        batches (the name resolver only has a handful of slots; asking for more than that is refused)."""
+        await avatar_pause(AVATAR_START_DELAY)
+        while avatar_queue:
+            batch = [avatar_queue.pop(0) for _ in range(min(AVATAR_BATCH, len(avatar_queue)))]
+            try:
+                await asyncio.gather(*(fetch_avatar(*key) for key in batch))
+            finally:
+                avatar_queued.difference_update(batch)
+            if avatar_queue:
+                await avatar_pause(AVATAR_BATCH_PAUSE)
 
     def request_avatars() -> None:
         for person in current_membership:
             key = (person.oopz_uid, person.avatar_url)
-            if (not person.avatar_url or key in avatar_done or getattr(person, "is_bot", False)
-                    or avatar_tries.get(key, 0) >= 5 or avatar_next.get(key, 0.0) > loop.time()
-                    or any(t.get_name() == f"oopz_avatar:{key[0]}" for t in avatar_tasks)):
+            if (not person.avatar_url or key in avatar_done or key in avatar_queued or getattr(person, "is_bot", False)
+                    or avatar_tries.get(key, 0) >= 5 or avatar_next.get(key, 0.0) > loop.time()):
                 continue
-            avatar_tries[key] = avatar_tries.get(key, 0) + 1
-            task = asyncio.create_task(fetch_avatar(*key), name=f"oopz_avatar:{key[0]}")
+            avatar_queued.add(key)
+            avatar_queue.append(key)
+        if avatar_queue and not any(not task.done() for task in avatar_tasks):
+            task = asyncio.create_task(avatar_worker(), name="oopz_avatar_worker")
             avatar_tasks.add(task)
             task.add_done_callback(avatar_tasks.discard)
 
@@ -1468,8 +1495,11 @@ async def run_continuous_capture(
             presence.finish(
                 duration_ms=round(max(0.0, (capture_stopped_at - capture_started_wall).total_seconds()) * 1000),
                 monotonic_duration_ms=session_ms(loop.time()))
+        avatar_flush.set()
         if avatar_tasks:
-            await asyncio.wait(avatar_tasks, timeout=10)      # downloads still running are given up on
+            _, unfinished = await asyncio.wait(avatar_tasks, timeout=15)
+            for task in unfinished:                           # downloads still running are given up on
+                task.cancel()
         avatar_cache.close()
         try:
             await bot.stop()
