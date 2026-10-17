@@ -33,9 +33,6 @@ class QoderCli:
                    float(env.get("OOPZ_ANALYZER_TIMEOUT_SECONDS") or cls.timeout),
                    node_dir=str(Path(node).parent) if node else "")
 
-    def complete(self, system: str, user: str) -> str:
-        return self.complete_with_usage(system, user)[0]
-
     def complete_with_usage(self, system: str, user: str) -> tuple[str, dict]:
         """One model reply as text plus what the CLI reported about it; transient failures are retried,
         the last failure is raised.  ``usage["cli_runs"]`` counts every CLI run, failed ones included."""

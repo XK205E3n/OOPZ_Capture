@@ -54,7 +54,7 @@ def test_repair_retries_only_failed_chunks_and_rebuilds_parent(tmp_path: Path) -
 async def _repair_retries_only_failed_chunks_and_rebuilds_parent(tmp_path: Path) -> None:
     session_id = str(uuid4())
     request = ContinuousRequest(
-        request_id=str(uuid4()), area_id="area", channel_id="channel", consent_confirmed=True,
+        request_id=str(uuid4()), area_id="area", channel_id="channel",
     )
     session = tmp_path / session_id
     now = datetime.now(timezone.utc)
@@ -109,9 +109,6 @@ async def _repair_retries_only_failed_chunks_and_rebuilds_parent(tmp_path: Path)
     repaired_chunk = json.loads((second / "lifecycle.json").read_text(encoding="utf-8"))
     assert repaired_chunk["audio_deleted"] is True
     assert repaired_chunk["deleted_audio_files"] == [f"chunks/{second.name}/audio/123.wav"]
-    handoff = json.loads((session / "handoff" / "analyzer_request.json").read_text(encoding="utf-8"))
-    assert handoff["inputs"]["segment_count"] == 2
-    assert handoff["inputs"]["failed_chunk_ids"] == []
 
 
 def test_repair_preserves_audio_when_saved_request_requires_retention(tmp_path: Path) -> None:
@@ -123,7 +120,7 @@ async def _repair_preserves_audio_when_saved_request_requires_retention(tmp_path
     now = datetime.now(timezone.utc)
     request = ContinuousRequest(
         request_id=str(uuid4()), area_id="area", channel_id="channel",
-        consent_confirmed=True, retain_audio=True,
+        retain_audio=True,
     )
     session = tmp_path / session_id
     write_json(session / "request.json", request.to_dict())

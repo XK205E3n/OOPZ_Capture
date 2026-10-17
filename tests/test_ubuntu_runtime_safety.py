@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import errno
 import json
 import os
 from pathlib import Path
@@ -12,38 +11,9 @@ import threading
 
 import pytest
 
-from oopz_capture import process_utils
 from oopz_capture.controller import ControllerService
-from oopz_capture.workflow import _resolved_direct_child, _run_transcription_process
+from oopz_capture.workflow import _run_transcription_process
 from test_controller import controller_config
-
-
-@pytest.mark.parametrize('code,expected', [(errno.EPERM, True), (errno.EACCES, True),
-                                          (errno.EIO, True), (errno.ESRCH, False)])
-@pytest.mark.skipif(os.name == 'nt', reason='POSIX probe')
-def test_only_missing_process_proves_stale(monkeypatch, code, expected):
-    def probe(pid, sig):
-        assert sig == 0
-        raise OSError(code, 'test')
-    monkeypatch.setattr(process_utils.os, 'kill', probe)
-    assert process_utils.pid_is_running(123) is expected
-
-
-def test_shared_root_links_work_but_session_links_do_not(tmp_path):
-    shared = tmp_path / '共享 output'
-    session = shared / 'session'
-    session.mkdir(parents=True)
-    alias = tmp_path / 'release output'
-    try:
-        alias.symlink_to(shared, target_is_directory=True)
-    except OSError:
-        pytest.skip('symlinks unavailable')
-    root, resolved = _resolved_direct_child(alias, alias / 'session')
-    assert root == shared and resolved == session
-    session_alias = alias / 'session-alias'
-    session_alias.symlink_to(session, target_is_directory=True)
-    with pytest.raises(ValueError, match='linked session'):
-        _resolved_direct_child(alias, session_alias)
 
 
 @pytest.mark.parametrize('phase', ['recording', 'transcribing', 'api'])
@@ -149,7 +119,7 @@ def test_cancel_transcription_reaps_only_owned_process(tmp_path, monkeypatch):
     monkeypatch.setattr(asyncio, 'create_subprocess_exec', spawn)
     async def run():
         task = asyncio.create_task(_run_transcription_process(
-            tmp_path, WorkflowRequest('request', 'area', 'channel', 5, True), VADConfig(), 'cpu', 60,
+            tmp_path, WorkflowRequest('request', 'area', 'channel', 5), VADConfig(), 'cpu', 60,
         ))
         while not created:
             await asyncio.sleep(.001)

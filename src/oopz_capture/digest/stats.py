@@ -249,25 +249,13 @@ def merged_speech_runs(
     """
     _integer(merge_gap_ms, "merge_gap_ms")
     _integer(merge_max_span_ms, "merge_max_span_ms", minimum=1)
-    values = []
-    for item in segments:
-        if not _real_speech(item):
-            continue
-        start = _integer(item.get("start_ms"), "segment.start_ms")
-        end = _integer(item.get("end_ms"), "segment.end_ms")
-        if end < start:
-            raise ValueError("segment end precedes start")
-        if start < end:
-            values.append((start, end))
     # Canonicalize BEFORE the boundary test; otherwise a later ASR fragment
     # can manufacture a new start inside presence for an earlier utterance.
-    values = union_intervals(values)
+    values = union_intervals((item["start_ms"], item["end_ms"]) for item in segments)
     result: list[tuple[int, int]] = []
-    for presence_start, presence_end in union_intervals(presence_intervals):
-        continuous = union_intervals(
-            (start, min(end, presence_end))
-            for start, end in values if presence_start <= start < presence_end
-        )
+    for presence_start, presence_end in presence_intervals:
+        continuous = [(start, min(end, presence_end))
+                      for start, end in values if presence_start <= start < presence_end]
         runs: list[tuple[int, int]] = []
         for start, end in continuous:
             if (runs and start - runs[-1][1] <= merge_gap_ms

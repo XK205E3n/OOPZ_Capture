@@ -294,7 +294,7 @@ def _validate_headers(headers: Mapping[str, str], max_bytes: int) -> None:
             raise UnsafeAvatar("invalid avatar content length")
 
 
-def _normalize_image(body: bytes, limits: AvatarLimits, *, cache_hit: bool = False) -> bytes:
+def _normalize_image(body: bytes, limits: AvatarLimits) -> bytes:
     from PIL import Image, ImageOps
 
     if not body or len(body) > limits.max_bytes:
@@ -302,13 +302,11 @@ def _normalize_image(body: bytes, limits: AvatarLimits, *, cache_hit: bool = Fal
     with warnings.catch_warnings():
         warnings.simplefilter("error", Image.DecompressionBombWarning)
         with Image.open(io.BytesIO(body)) as candidate:
-            if candidate.format not in ({"PNG"} if cache_hit else _ALLOWED_FORMATS):
+            if candidate.format not in _ALLOWED_FORMATS:
                 raise UnsafeAvatar("unsupported avatar raster format")
             width, height = candidate.size
             if width < 1 or height < 1 or width * height > limits.max_pixels:
                 raise UnsafeAvatar("avatar exceeds pixel budget")
-            if cache_hit and max(width, height) > limits.max_side:
-                raise UnsafeAvatar("invalid cached avatar dimensions")
             candidate.verify()
         with Image.open(io.BytesIO(body)) as candidate:
             candidate.seek(0)  # animations are reduced to a single raster frame
@@ -513,10 +511,6 @@ class AvatarCache:
                 finally:
                     if fd >= 0:
                         os.close(fd)
-                try:
-                    _normalize_image(data, self.limits, cache_hit=True)
-                except Exception:
-                    return None
                 current = os.stat(path.name, dir_fd=directory, follow_symlinks=False)
                 if (not stat.S_ISREG(current.st_mode)
                         or (info.st_dev, info.st_ino) != (current.st_dev, current.st_ino)):

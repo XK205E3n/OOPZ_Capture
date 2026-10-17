@@ -39,11 +39,13 @@ def run_digest(session_dir: Path) -> dict:
     print(f"[分析进度] {session_dir.name}：{len(session.runs)} 段发言，{len(windows)} 个窗口", flush=True)
     try:
         backend = QoderCli.from_env()
-        analysis = analyze_session(session, backend, windows=windows, fit=card_fit_check(session, session_dir))
+        fit = card_fit_check(session, session_dir)
+        analysis = analyze_session(session, backend, windows=windows, fit=fit)
     except AnalysisError as error:
         save_failure(out, error)
         raise
-    save(session, session_dir, analysis, out)
+    save(session, session_dir, analysis, out,
+         stats=fit.stats if not analysis.coverage["missing"] else None)
     manifest = render(out)
     return {"png": str(out / "digest" / "digest.png"), "md": str(out / "digest" / "digest.md"),
             "warnings": manifest.get("warnings", []),

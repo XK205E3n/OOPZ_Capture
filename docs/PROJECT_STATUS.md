@@ -29,11 +29,11 @@
 | 渲染<br>`digest/`、`digest/render/` | 契约校验、发言频率统计、离线渲染 PNG/MD | 完成，成品图经用户验收 | 频率统计用录音时写下的出入记录；旧会话没有，图上如实写"缺少足够记录" |
 | 部署工具<br>`scripts/linux/*`、`build_release.ps1` | 发布包构建；安装、更新、回滚、任务锁与事务 | **生产运行中**：多次真实更新，成功后自动清理旧版本与旧安装包 | 重启恢复与版本回滚演练已决定不做（回滚 = 用标签重新构建旧版本） |
 | QQ 发图（外挂）<br>`qq_bridge/` | 成品图经 MaiBot 本机接口发到 QQ 群；群号留空即关闭 | **生产运行中**（目标群已真实发送成功） | 见 [QQ 发图](QQ_BRIDGE.md)；MaiBot 接口只有黑名单、没有白名单；黑名单/不在群内的飞书提示只在本地假接口验证过 |
-| 手动调试入口<br>`main`、`worker_cli`、`continuous_cli`、`analysis` | 手动探测、录音 | 生产路径基本不依赖；例外：控制器从 `main` 导入 `_config` | 可在后续结构整理时评估 |
+| 手动调试入口 | — | 已于 2026-10-16 移除（`main`、`worker_cli`、`continuous_cli`、`capture_session`、`analysis`、`process_utils`）；登录配置 `_config` 移入控制器，排障用 `oopz-transcribe` / `oopz-digest` / `oopz-feishu` | — |
 
 ## 测试
 
-`python -m pytest`：332 通过、11 跳过（缺 Linux 实机、符号链接权限或 PowerShell 条件）、0 失败（2026-10-07，本机 Windows）。覆盖飞书网关、控制器、录音与转写、分析器（含模型调用的假后端）、渲染与契约、QQ 发图（含对本机假接口的真实 HTTP 往返）、Linux 部署脚本；真实 OOPZ/飞书/Qoder/MaiBot 由生产录音验证。
+`python -m pytest`：322 通过、6 跳过（缺 Linux 实机或 PowerShell 条件）、0 失败（2026-10-16，本机 Windows；比 0.13.2 少的用例全部是随调试入口一并移除的旧功能测试）。覆盖飞书网关、控制器、录音与转写、分析器（含模型调用的假后端）、渲染与契约、QQ 发图（含对本机假接口的真实 HTTP 往返）、Linux 部署脚本；真实 OOPZ/飞书/Qoder/MaiBot 由生产录音验证。
 
 ## 还没做的事（按顺序）
 

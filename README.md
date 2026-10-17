@@ -21,7 +21,7 @@
 | --- | --- |
 | `feishu_gateway.py`、`feishu_protocol.py`、`feishu_cli.py`、`feishu_setup.py` | 长连接网关、消息与卡片、命令行入口（`oopz-feishu`）、一键配置 |
 | `controller.py`、`controller_protocol.py`、`send_request.py` | 录音任务控制、群内指令、录音后自动分析与发送、发件箱 |
-| `continuous.py`、`browser_probe.py`、`recorder.py`、`session.py`、`capture_session.py`、`identity.py` | 浏览器音频采集、身份映射、分片队列、断线处理与 WAV 写入 |
+| `continuous.py`、`browser_probe.py`、`recorder.py`、`session.py`、`identity.py` | 浏览器音频采集、身份映射、分片队列、断线处理与 WAV 写入 |
 | `vad.py`、`asr.py`、`transcript.py`、`speech_cli.py`、`pipeline.py` | 语音检测、模型推理、转写输出 |
 | `analyzer/` | 分析器：转写分段 → 窗口分析 → 汇总 → 编辑改写，调用 Qoder CLI，校验证据（见 [设计](docs/DESIGN_DIGEST_PIPELINE.md)） |
 | `digest/` | 回顾内容契约与校验、发言频率统计、头像、离线渲染器（`digest/render/`，Pillow） |
@@ -29,11 +29,11 @@
 | `digest_job.py`、`sessions.py` | 控制器调用的"一场录音 → 图"入口；查找没出图/已出图的录音 |
 | `settings.py`、`env_loader.py` | 配置读取与 `.env` 原地写入 |
 | `scripts/linux/`、`scripts/build_release.ps1`、`scripts/download_fonts.py` | Ubuntu 发布管理、发布包构建、出图字体下载 |
-| `tests/`、`schemas/` | 行为测试与数据契约 |
+| `tests/` | 行为测试 |
 | `docs/` | 项目状态、架构、运维、部署与验证记录 |
 | `output/`、`feishu_state/`、`logs/`、`models/`、`assets/fonts/` | 本地会话、网关状态、日志、模型、字体；均不进入 Git / 发布包 |
 
-`main.py`、`worker_cli.py`、`continuous_cli.py`、`analysis.py` 是手动调试入口，生产路径不依赖它们（控制器从 `main` 导入 `_config`）。
+手动调试入口（`main.py`、`worker_cli.py`、`continuous_cli.py`、`analysis.py`）已移除；OOPZ 登录配置由控制器内部自带。
 
 ## 生产流程
 

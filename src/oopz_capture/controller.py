@@ -119,7 +119,7 @@ class ControllerConfig:
             raise ValueError("OOPZ_TRANSCRIPTION_REPAIR_ATTEMPTS must be 0 to 3")
         ContinuousRequest(
             request_id=str(uuid4()), area_id="selection-required", channel_id="selection-required",
-            consent_confirmed=True, chunk_seconds=self.chunk_seconds,
+            chunk_seconds=self.chunk_seconds,
             cutoff_local_hour=self.cutoff_local_hour, language=self.language,
             processing_deadline_seconds=self.processing_deadline_seconds,
             retention_hours=self.retention_hours, poll_interval_seconds=self.poll_interval_seconds,
@@ -143,8 +143,15 @@ AnalysisRunner = Callable[[Path], dict[str, Any]]
 QqRunner = Callable[[Path, Path], "dict[str, Any] | None"]      # (session dir, digest image) -> QQ bridge outcome
 
 
+async def _config(*, show_browser: bool = False) -> Any:
+    from oopz_sdk import OopzConfig
+    # This deployment supports only phone/password login. Force the SDK route
+    # so inherited environment state cannot select a direct-credentials login.
+    os.environ["OOPZ_LOGIN_METHOD"] = "password"
+    return await OopzConfig.from_env_async(voice_backend="browser", voice_browser_headless=not show_browser)
+
+
 async def _default_config_loader(show_browser: bool) -> Any:
-    from .main import _config
     return await _config(show_browser=show_browser)
 
 
@@ -636,7 +643,6 @@ class ControllerService:
             request_id=request_id,
             area_id=area_id,
             channel_id=channel_id,
-            consent_confirmed=True,
             max_runtime_seconds=max_runtime,
             chunk_seconds=self.config.chunk_seconds,
             cutoff_local_hour=self.config.cutoff_local_hour,

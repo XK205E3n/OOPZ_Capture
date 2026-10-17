@@ -50,14 +50,14 @@ def avatar_paths(session: Session, session_dir: Path) -> dict[str, str]:
     return {uid: str(path) for uid, path in found.items()}
 
 
-def save(session: Session, session_dir: Path, analysis: Analysis, out_dir: Path) -> None:
+def save(session: Session, session_dir: Path, analysis: Analysis, out_dir: Path, stats: dict | None = None) -> None:
     """Everything the renderer needs plus the audit trail (what was asked, what was answered)."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     _write(out_dir / "content.json", analysis.content)
     _write(out_dir / "bundle.json", analysis.bundle)
     _write(out_dir / "meta.json", build_metadata(session, analysis.coverage, analysis.flow, analysis.labels))
-    _write(out_dir / "stats.json", compute_stats(session, session_dir, analysis))
+    _write(out_dir / "stats.json", stats if stats is not None else compute_stats(session, session_dir, analysis))
     _write(out_dir / "windows.json", analysis.units)
     _write(out_dir / "coverage.json", analysis.coverage)
     _write(out_dir / "avatars.json", avatar_paths(session, session_dir))
@@ -87,6 +87,7 @@ def card_fit_check(session: Session, session_dir: Path):
                 raise ValueError(f"card:too_tall the rendered card is {height}px high but at most {limit}px fit; "
                                  "shorten the texts (people comments and topics first) and keep the structure") from None
 
+    check.stats = stats
     return check
 
 
@@ -101,13 +102,12 @@ def save_failure(out_dir: Path, error) -> None:
             stream.write(json.dumps(call, ensure_ascii=False) + "\n")
 
 
-def render(out_dir: Path, avatars: dict | None = None) -> dict:
+def render(out_dir: Path) -> dict:
     """digest.png + digest.md next to the analysis files (needs Pillow and the fonts)."""
     from ..digest.render.pipeline import generate
 
     out_dir = Path(out_dir)
     load = lambda name: json.loads((out_dir / name).read_text(encoding="utf-8"))  # noqa: E731
-    if avatars is None and (out_dir / "avatars.json").is_file():
-        avatars = load("avatars.json")
+    avatars = load("avatars.json") if (out_dir / "avatars.json").is_file() else None
     return generate(load("content.json"), load("bundle.json"), load("meta.json"), load("stats.json"),
                     out_dir / "digest", avatars=avatars)

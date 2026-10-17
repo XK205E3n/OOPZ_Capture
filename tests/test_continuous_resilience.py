@@ -26,7 +26,6 @@ def request(**changes) -> ContinuousRequest:
         "request_id": str(uuid4()),
         "area_id": "area",
         "channel_id": "channel",
-        "consent_confirmed": True,
     }
     values.update(changes)
     value = ContinuousRequest(**values)

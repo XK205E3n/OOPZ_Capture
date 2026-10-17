@@ -72,7 +72,6 @@ class Analysis:
     calls: list[dict]
     flow: list[dict]     # "how the session went": one {"time", "text"} per final-level unit
     labels: dict         # corner tags written by the editor: {"odd", "topics", "moments"} (empty if the editor failed)
-    edited: bool         # False when the editor step failed and the plain draft is used
 
 
 class Aliases:
@@ -319,9 +318,7 @@ class Recorder:
 
 
 def _complete(backend, system: str, body: str) -> tuple[str, dict]:
-    if hasattr(backend, "complete_with_usage"):
-        return backend.complete_with_usage(system, body)
-    return backend.complete(system, body), {}
+    return backend.complete_with_usage(system, body)
 
 
 def ask(backend, system: str, request: dict, aliases: Aliases, bundle: dict, recorder: Recorder, *,
@@ -530,10 +527,19 @@ def analyze_session(session: Session, backend, *, parallelism: int = 3,
                       stage="final", unit="all", distinct=True, budget=budget)
     except AnalysisError as error:
         raise AnalysisError(str(error), units, recorder.calls) from None
+    fits: dict = {}
+
+    def memo_fit(content: dict, bundle: dict, coverage: dict, flow: list[dict]) -> None:
+        key = json.dumps(content, sort_keys=True, ensure_ascii=False)
+        if key not in fits:
+            fits[key] = fit(content, bundle, coverage, flow)
+        return fits[key]
+
     try:
-        edited, labels = edit_content(backend, content, bundle, flow, aliases, recorder, fit, coverage, budget)
+        edited, labels = edit_content(backend, content, bundle, flow, aliases, recorder,
+                                      memo_fit if fit else None, coverage, budget)
     except (AnalysisError, BackendError) as error:     # keep the checked draft rather than lose the run
         print(f"EDITOR FAILED, plain draft is used: {error}", flush=True)
-        return Analysis(content, bundle, units, coverage, recorder.calls, flow, {}, False)
+        return Analysis(content, bundle, units, coverage, recorder.calls, flow, {})
     flow = [{"time": item["time"], "text": text} for item, text in zip(flow, labels["timeline"])]
-    return Analysis(edited, bundle, units, coverage, recorder.calls, flow, labels, True)
+    return Analysis(edited, bundle, units, coverage, recorder.calls, flow, labels)

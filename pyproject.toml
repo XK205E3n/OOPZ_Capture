@@ -28,10 +28,7 @@ feishu = [
 ]
 
 [project.scripts]
-oopz-capture = "oopz_capture.main:main"
 oopz-transcribe = "oopz_capture.speech_cli:main"
-oopz-worker = "oopz_capture.worker_cli:main"
-oopz-continuous = "oopz_capture.continuous_cli:main"
 oopz-digest = "oopz_capture.analyzer.__main__:main"
 oopz-feishu = "oopz_capture.feishu_cli:main"
 

@@ -74,10 +74,10 @@ def test_completion_never_calls_model_without_requester(cfg):
  from oopz_capture.continuous import ContinuousRequest
  async def loader(*a):return object()
  async def capture(config,request,*,output_root,device,session_id):
-  p=output_root/session_id;(p/'handoff').mkdir(parents=True);(p/'handoff'/'analyzer_request.json').write_text('{}');(p/'lifecycle.json').write_text(json.dumps({'status':'ready_for_analysis','stop_reason':'test_done'}));return p
+  p=output_root/session_id;p.mkdir(parents=True);(p/'lifecycle.json').write_text(json.dumps({'status':'ready_for_analysis','stop_reason':'test_done'}));return p
  s=ControllerService(cfg.controller_config,config_loader=loader,capture_runner=capture,analysis_runner=forbidden)
  async def run():
-  req=ContinuousRequest(request_id='test',area_id='a',channel_id='c',consent_confirmed=True,requested_by={})
+  req=ContinuousRequest(request_id='test',area_id='a',channel_id='c',requested_by={})
   s._state['active']={'session_id':'test-session'};await s._run_session('test-session',req)
  asyncio.run(run());assert s._state['last_job']['status']=='capture_transcription_completed'
  assert not list_send_requests(cfg.state_root,statuses={'pending'})

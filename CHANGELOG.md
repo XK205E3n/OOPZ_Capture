@@ -6,6 +6,17 @@
 
 ## 未发布
 
+### 2026-10-16 — 精简：移除死代码、手动调试入口与遗留契约；出图流水线去重复计算
+
+- **移除生产不使用的模块与入口**（飞书群控的录音/转写/分析/出图/QQ 发图功能完全不变）：删除 `main.py`（登录配置 `_config` 移入 `controller.py`）、`worker_cli.py`、`continuous_cli.py`、`capture_session.py`、`analysis.py`、`process_utils.py`；`workflow.py` 缩减为生产在用的转写子进程、事件、校验工具（`run_workflow`/`write_analyzer_handoff`/`purge_session_audio`/`from_dict` 删除）；`session.py` 只保留成员解析；`pyproject.toml` 命令行入口只保留 `oopz-transcribe`、`oopz-digest`、`oopz-feishu`。删除 git 跟踪的 `schemas/`（零代码引用、已与现实漂移的文档）、`examples/`、`.codex/`。
+- **移除遗留的形式门与死契约**：`consent_confirmed`（生产恒为 true 的 POC 知情同意旗标）、`short/long_summary_seconds`（恒为 300/3600 的旧摘要字段）、`handoff/analyzer_request.json`（每场录音写入但分析器从不读取）。老会话 `request.json` 按已知字段过滤加载，无需迁移；新会话 `lifecycle.json`/`session.json` 不再含 `analyzer_handoff` 等键，属向后兼容的输出字段减少。
+- **digest 包死代码**：删除 `topic_icons.py`（被 `render/icons.py` 取代）、`render/simple_input.py`（无调用入口）及其专属分支、`markdown_literal.py`（仅测试对照）、`Painter.band/rect`、`check_coverage`、`contract.located` 与两个版本常量、`stats_rows`/`case`/`avatars` 死参数。
+- **出图流水线提速（输出逐字节不变，已用 5 组样例渲染前后比对验证）**：发言频率统计每场由两遍改为一遍（`card_fit_check` 与 `save` 共享）；同一段文字 sanitize/fix 由 2–3 遍改为一遍；模块顺序校验、labels 加载去重；头像缓存命中不再重新解码校验；`merged_speech_runs` 去掉重复过滤与重复区间合并；分析器 fit 检查按内容记忆化（审稿轮与编辑轮内容相同时不再重复整卡渲染，一场最多可省 3 次全卡渲染）。
+- **analyzer 清理**：删除 `Analysis.edited` 死字段、`QoderCli.complete` 死方法与无用的后端回退分支；`tests/test_analyzer.py` 删除约 240 行被同名后置定义覆盖、从不运行的重复测试块。
+- **仓库卫生**（未入 Git，不影响发布）：删除过期的旧云端配置快照（含已失效凭据，建议轮换仍生效的飞书 App Secret 与 OOPZ 密码）、`node_modules/`、`tmp/`、52 个历史验证日志目录、全部 `__pycache__` 幽灵残留与 0.11.x 旧发布包。
+- 验证：`python -m pytest` 322 通过、6 跳过、0 失败；渲染输出与改前逐字节一致；`import oopz_capture.feishu_cli` 冒烟通过。测试数量减少的 10 个用例全部来自被移除的调试入口（`test_main`、`test_process_utils`、`test_workflow_capture_failure`、`test_output` 等）。
+- 影响部署：是。控制台脚本减少（下次安装后服务器 `.venv/bin` 不再有 `oopz-capture`/`oopz-worker`/`oopz-continuous`，生产只用 `python -m oopz_capture.feishu_cli serve`，不受影响）；需按正常流程构建新版本号发布并更新服务器；回滚 = 用旧标签重新构建旧版本。
+
 ## 0.13.2 — 2026-10-07（标签 `linux-v0.13.2`）
 
 ### 2026-10-07 — 修复：头像分批下载，避免域名解析名额被占满

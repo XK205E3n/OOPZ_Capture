@@ -20,7 +20,7 @@ from .markdown import blocks_to_markdown, markdown_to_blocks
 from .paint import Painter
 from .textlayout import FontBook, FontSpec, RenderError
 from .tokens import FONT_DIR, load_tokens
-from .view import build_view, check_module_order, load_labels
+from .view import build_view, load_labels
 
 MAX_CANVAS_PIXELS = 60_000_000   # supersampled pixels; ~180 MB of RGB at the 12000 px limit
 
@@ -65,24 +65,21 @@ def verify_text_consistency(blocks: Sequence[Mapping], drawn: Sequence[Mapping],
 def render_digest_card(digest: Mapping, metadata: Mapping, output_path: str | Path | None = None, *,
                        width: int | None = None, max_height: int | None = None, scale: int | None = None,
                        regular_font: str | Path | None = None, bold_font: str | Path | None = None,
-                       stats_rows: Sequence[Mapping] = (), stats_view: Mapping | None = None,
+                       stats_view: Mapping | None = None,
                        avatars: Mapping[str, str | Path] | None = None,
-                       markdown_path: str | Path | None = None, tokens: Mapping | None = None) -> RenderResult:
+                       markdown_path: str | Path | None = None, tokens: Mapping | None = None,
+                       labels: Mapping | None = None) -> RenderResult:
     """Render one digest. ``digest`` is the validated ``oopz.digest.content.v2`` object.
 
     ``stats_view`` is the trusted, already formatted statistics block (see
-    ``stats_view.build_stats_view``); ``stats_rows`` is the older, flatter form.
+    ``stats_view.build_stats_view``).
     """
     tk = dict(tokens) if tokens else load_tokens(width=width, max_height=max_height, scale=scale)
     if tokens and (width or max_height or scale):
         tk = load_tokens(width=width or tokens["canvas"]["width"], max_height=max_height,
                          scale=scale or tokens["canvas"]["scale"])
-    labels = load_labels()
-    if stats_view is None and stats_rows:
-        stats_view = {"status": "available", "simulated": any(r.get("tag") for r in stats_rows), "notice": None,
-                      "scope_note": None, "rows": [dict(r) for r in stats_rows], "method_note": None}
+    labels = labels or load_labels()
     view = build_view(digest, metadata, stats_view=stats_view, labels=labels)
-    check_module_order(view)
     fonts = FontBook(FontSpec.from_tokens(tk, FONT_DIR, regular_font, bold_font), int(tk["canvas"]["scale"]))
     layout: LayoutResult = build_layout(view, tk, fonts)            # raises height_exceeded / missing_glyph
     S = int(tk["canvas"]["scale"])

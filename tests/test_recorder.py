@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import base64
-import math
 import struct
 import tempfile
 import unittest
 import wave
 from pathlib import Path
 
-from oopz_capture.analysis import analyze_session
-from oopz_capture.output import write_json
 from oopz_capture.readable import identity_label, readable_nickname
 from oopz_capture.recorder import CaptureRecorder
 
@@ -48,30 +45,6 @@ class RecorderTests(unittest.TestCase):
         self.assertIn("OOPZ UID=oopz-1", label)
         self.assertIn("Agora UID=123", label)
         self.assertNotIn(raw, label)
-
-    def test_overlap_analysis_detects_two_active_tracks(self) -> None:
-        with tempfile.TemporaryDirectory() as folder:
-            session = Path(folder)
-            audio = session / "audio"
-            audio.mkdir()
-            for uid, samples in {
-                "101": [0] * 100 + [10000] * 200,
-                "202": [0] * 200 + [10000] * 200,
-            }.items():
-                with wave.open(str(audio / f"{uid}.wav"), "wb") as stream:
-                    stream.setnchannels(1)
-                    stream.setsampwidth(2)
-                    stream.setframerate(1000)
-                    stream.writeframes(struct.pack(f"<{len(samples)}h", *samples))
-            write_json(session / "users.json", [
-                {"agora_uid": 101, "oopz_uid": "a", "nickname": "Alice"},
-                {"agora_uid": 202, "oopz_uid": "b", "nickname": "Bob"},
-            ])
-            result = analyze_session(session, threshold_dbfs=-20, window_ms=100)
-            self.assertEqual(result["overlaps"], [{"start_ms": 200, "end_ms": 300, "agora_uids": ["101", "202"]}])
-            report = (session / "analysis" / "overlap.md").read_text(encoding="utf-8")
-            self.assertIn("OOPZ UID=a", report)
-            self.assertIn("Agora UID=101", report)
 
 
 if __name__ == "__main__":

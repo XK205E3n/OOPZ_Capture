@@ -81,24 +81,6 @@ class Painter:
         self._paste_mask(rgb(op["color"]), (op["cx"] * self.S - size / 2, op["cy"] * self.S - size / 2,
                                             op["cx"] * self.S + size / 2, op["cy"] * self.S + size / 2), mask)
 
-    def band(self, op):
-        S = self.S
-        x0, y0, x1, y1 = (round(v * S) for v in op["box"])
-        w, h = x1 - x0, y1 - y0
-        row = bytes(round(255 * (op["alpha_l"] + (op["alpha_r"] - op["alpha_l"]) * i / max(1, w - 1))) for i in range(w))
-        mask = Image.frombytes("L", (w, 1), row).resize((w, h))
-        self.img.paste(Image.new("RGB", (w, h), rgb(op["color"])), (x0, y0), mask)
-        for yy in (y0, y1 - 2 * S):
-            self.d.rectangle((x0, yy, x1, yy + 2 * S - 1), fill=rgba(op["edge"], 0.55))
-
-    def rect(self, op):
-        S = self.S
-        box = [v * S for v in op["box"]]
-        self.d.rounded_rectangle(box, radius=op.get("r", 0) * S,
-                                 fill=rgba(op["fill"], op["alpha"]) if op.get("fill") else None,
-                                 outline=rgba(op["outline"], op.get("oalpha", 1.0)) if op.get("outline") else None,
-                                 width=round(op.get("ow", 0) * S))
-
     def disc(self, op):
         S, r = self.S, op["r"]
         box = ((op["cx"] - r) * S, (op["cy"] - r) * S, (op["cx"] + r) * S, (op["cy"] + r) * S)

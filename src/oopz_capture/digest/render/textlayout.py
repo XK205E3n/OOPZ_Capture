@@ -10,7 +10,6 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -245,7 +244,10 @@ def wrap(fonts: FontBook, text: str, bold: bool, size: float, max_w: float, hang
       ``hang_em`` em, which is why ``margin_x`` is larger than that); otherwise the
       character before it moves down together with it.
     """
-    text = fonts.fix(sanitize_text(text))
+    return _wrap_fixed(fonts, fonts.fix(sanitize_text(text)), bold, size, max_w, hang_em)
+
+
+def _wrap_fixed(fonts: FontBook, text: str, bold: bool, size: float, max_w: float, hang_em: float) -> list[str]:
     if not text:
         return [""]
     hang = hang_em * size
@@ -356,7 +358,8 @@ class TextLayout:
 
 def layout_text(fonts: FontBook, text: str, *, x: float, w: float, size: float, bold: bool,
                 lh: float, align: str = "left", hang_em: float = 1.5) -> TextLayout:
-    lines = wrap(fonts, text, bold, size, w, hang_em)
+    fixed = fonts.fix(sanitize_text(text))
+    lines = _wrap_fixed(fonts, fixed, bold, size, w, hang_em)
     asc, desc = fonts.metrics(bold, size)
     out = []
     for s in lines:
@@ -370,15 +373,4 @@ def layout_text(fonts: FontBook, text: str, *, x: float, w: float, size: float, 
         out.append(Line(s, lx, lw))
     lh_px = round(size * lh)
     return TextLayout(tuple(out), size, bold, lh_px, asc, desc, lh_px * len(out),
-                      max((l.width for l in out), default=0.0), fonts.fix(sanitize_text(text)))
-
-
-def check_coverage(fonts: FontBook, texts: Iterable[str]) -> None:
-    """Raise MissingGlyph for the first character no bundled face can draw."""
-    seen: set[str] = set()
-    for t in texts:
-        for ch in t:
-            if ch not in seen:
-                seen.add(ch)
-                fonts.face_for(ch, False)
-                fonts.face_for(ch, True)
+                      max((l.width for l in out), default=0.0), fixed)

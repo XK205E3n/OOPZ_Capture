@@ -91,10 +91,7 @@ class ContinuousRequest:
     request_id: str
     area_id: str
     channel_id: str
-    consent_confirmed: bool
     chunk_seconds: int = MAX_CHUNK_SECONDS
-    short_summary_seconds: int = 300
-    long_summary_seconds: int = 3600
     cutoff_local_hour: int = 4
     language: str = "auto"
     processing_deadline_seconds: int = 900
@@ -124,14 +121,8 @@ class ContinuousRequest:
             raise ValueError("request_id must be a UUID") from error
         if not self.area_id.strip() or not self.channel_id.strip():
             raise ValueError("area_id and channel_id are required")
-        if self.consent_confirmed is not True:
-            raise ValueError("consent_confirmed must be true")
         if not 30 <= self.chunk_seconds <= MAX_CHUNK_SECONDS:
             raise ValueError(f"chunk_seconds must be 30 to {MAX_CHUNK_SECONDS}; five minutes is the hard maximum")
-        if self.short_summary_seconds != 300:
-            raise ValueError("short_summary_seconds must be 300")
-        if self.long_summary_seconds != 3600:
-            raise ValueError("long_summary_seconds must be 3600")
         if not 0 <= self.cutoff_local_hour <= 23:
             raise ValueError("cutoff_local_hour must be 0 to 23")
         if not 60 <= self.processing_deadline_seconds <= 3600:
@@ -359,7 +350,6 @@ async def _process_chunk(
                 area_id=request.area_id,
                 channel_id=request.channel_id,
                 duration_seconds=float(request.chunk_seconds),
-                consent_confirmed=True,
                 language=request.language,
                 processing_deadline_seconds=request.processing_deadline_seconds,
                 retention_hours=request.retention_hours,
@@ -461,53 +451,6 @@ def _merge_transcripts(session_dir: Path, chunk_results: list[dict[str, Any]]) -
     return len(records), markdown
 
 
-def _write_final_handoff(
-    session_dir: Path,
-    request: ContinuousRequest,
-    *,
-    stopped_at: datetime,
-    delete_after: datetime,
-    segment_count: int,
-    chunk_results: list[dict[str, Any]],
-    analysis_requested_at: datetime | None = None,
-) -> Path:
-    path = session_dir / "handoff" / "analyzer_request.json"
-    write_json(path, {
-        "schema_version": "oopz.analyzer.request.v1",
-        "request_id": request.request_id,
-        "session_id": session_dir.name,
-        "created_at": _iso(utc_now()),
-        "analysis_deadline_at": _iso((analysis_requested_at or stopped_at) + timedelta(seconds=request.processing_deadline_seconds)),
-        "encoding": "UTF-8",
-        "delivery_mode": "final_only",
-        "summary_windows": {
-            "short_summary_seconds": request.short_summary_seconds,
-            "long_summary_seconds": request.long_summary_seconds,
-        },
-        "inputs": {
-            "transcript_jsonl": "transcript.jsonl",
-            "transcript_markdown": "transcript.md",
-            "transcript_summary": "transcript_summary.json",
-            "users": "users.json",
-            "session": "session.json",
-            "segment_count": segment_count,
-            "chunks_total": len(chunk_results),
-            "failed_chunk_ids": [Path(item["chunk_dir"]).name for item in chunk_results if not item["ok"]],
-        },
-        "required_outputs": {
-            "analysis_result": "analysis/result.json",
-            "human_summary": "analysis/summary.md",
-            "report_messages": "handoff/report_messages.jsonl",
-        },
-        "retention": {
-            "delete_after": _iso(delete_after),
-            "maximum_hours": request.retention_hours,
-            "audio_retained_for_testing": request.retain_audio,
-        },
-    })
-    return path
-
-
 def _saved_continuous_request(value: dict[str, Any]) -> ContinuousRequest:
     allowed = set(ContinuousRequest.__dataclass_fields__)
     request = ContinuousRequest(**{key: item for key, item in value.items() if key in allowed})
@@ -585,23 +528,10 @@ async def repair_continuous_session(
         results.append(result)
     segment_count, markdown = _merge_transcripts(session_dir, results)
     # Hard-killed sessions were retired as "interrupted" and never wrote a
-    # stopped_at; fall back to the interrupted/started markers so repair can
-    # still converge instead of crashing after all transcription work.
-    stopped_at_text = str(lifecycle.get("stopped_at") or lifecycle.get("interrupted_at") or lifecycle.get("started_at") or "").strip()
-    if not stopped_at_text:
+    # stopped_at; require a stop marker so repair still converges instead of
+    # accepting a corrupted lifecycle after all transcription work.
+    if not str(lifecycle.get("stopped_at") or lifecycle.get("interrupted_at") or lifecycle.get("started_at") or "").strip():
         raise ValueError("Session lifecycle lacks a usable stop time for repair")
-    stopped_at = datetime.fromisoformat(stopped_at_text.replace("Z", "+00:00"))
-    delete_after_text = str(lifecycle.get("delete_after") or "").strip()
-    if delete_after_text:
-        delete_after = datetime.fromisoformat(delete_after_text.replace("Z", "+00:00"))
-    else:
-        # Keep a recovered session for the maximum retention horizon when the
-        # crash happened before the deadline was persisted.
-        delete_after = stopped_at + timedelta(hours=720)
-    handoff = _write_final_handoff(
-        session_dir, request, stopped_at=stopped_at, delete_after=delete_after,
-        segment_count=segment_count, chunk_results=results, analysis_requested_at=utc_now(),
-    )
     failed = [item for item in results if not item["ok"]]
     lifecycle.update({
         "status": "ready_for_analysis" if not failed else "ready_for_analysis_with_errors",
@@ -612,14 +542,13 @@ async def repair_continuous_session(
         "transcript_segments": segment_count,
         "audio_deleted": not request.retain_audio and not failed,
         "audio_retained_for_testing": request.retain_audio,
-        "analyzer_handoff": str(handoff.relative_to(session_dir)).replace("\\", "/"),
         "repair_failures": [str(item.get("error") or "unknown") for item in failed],
     })
     write_json(lifecycle_path, lifecycle)
     emit_event(
         "continuous.repair_completed", request.request_id, session_id=session_id,
         chunks_total=len(results), chunks_failed=len(failed), transcript_segments=segment_count,
-        transcript_markdown=str(markdown), analyzer_request=str(handoff),
+        transcript_markdown=str(markdown),
         audio_deleted=not request.retain_audio and not failed,
         audio_retained_for_testing=request.retain_audio,
     )
@@ -732,8 +661,6 @@ async def run_continuous_capture(
         "area": request.area_id,
         "channel": request.channel_id,
         "chunk_seconds": request.chunk_seconds,
-        "short_summary_seconds": request.short_summary_seconds,
-        "long_summary_seconds": request.long_summary_seconds,
         "resilience": {
             "membership_refresh_seconds": request.membership_refresh_seconds,
             "empty_channel_timeout_seconds": request.empty_channel_timeout_seconds,
@@ -1524,10 +1451,6 @@ async def run_continuous_capture(
         f"失败分片={sum(1 for item in results if not item['ok'])}；总段落={segment_count}。",
         flush=True,
     )
-    handoff = _write_final_handoff(
-        session_dir, request, stopped_at=capture_stopped_at, delete_after=delete_after,
-        segment_count=segment_count, chunk_results=results,
-    )
     failed_chunks = [item for item in results if not item["ok"]]
     lifecycle.update({
         "status": "ready_for_analysis" if not failed_chunks and failure is None else "ready_for_analysis_with_errors",
@@ -1539,7 +1462,6 @@ async def run_continuous_capture(
         "transcript_segments": segment_count,
         "audio_deleted": not request.retain_audio and not failed_chunks,
         "audio_retained_for_testing": request.retain_audio,
-        "analyzer_handoff": str(handoff.relative_to(session_dir)).replace("\\", "/"),
         "connection_episode": current_connection_episode,
         "successful_connections": successful_connections,
         "reconnect_count": max(0, successful_connections - 1),
@@ -1562,7 +1484,7 @@ async def run_continuous_capture(
         "continuous.ready_for_analysis", request.request_id,
         session_id=session_id, stop_reason=stop_reason, chunks_total=len(results),
         chunks_failed=len(failed_chunks), transcript_segments=segment_count,
-        transcript_markdown=str(markdown), analyzer_request=str(handoff),
+        transcript_markdown=str(markdown),
         audio_deleted=not request.retain_audio and not failed_chunks,
         audio_retained_for_testing=request.retain_audio,
     )

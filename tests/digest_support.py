@@ -68,7 +68,7 @@ def run(case: str = "normal", out: Path | None = None) -> dict:
     stats = build_stats(roster=roster) if case != "sparse" else None
     avatars = {p.stem: p for p in (FIX / "avatars").glob("*.png")}
     out = Path(out) if out else Path(tempfile.mkdtemp(prefix=f"oopz-digest-{case}-"))
-    return generate(model, bundle, meta, stats, out, avatars=avatars, case=case)
+    return generate(model, bundle, meta, stats, out, avatars=avatars)
 
 
 __all__ = ["ROOT", "FIX", "CASES", "run", "build_stats", "generate", "load", "base_case", "tmpdir", "copy"]

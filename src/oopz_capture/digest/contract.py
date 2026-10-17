@@ -6,10 +6,6 @@ from typing import Any
 
 import re
 
-DIGEST_VERSION = "oopz.digest.v2"
-
-AUTHORING_VERSION = "2.1.0-review"
-
 MAX_CARD_CHARS = 12000
 
 UNSUPPORTED = re.compile(r"最(?!后|近|初|终)|唯一|全场第一|第一名|冠军|冠军级|全员|所有人|百分之|\d+(?:\.\d+)?\s*%|\b(?:best|worst|most|least|only|everyone|always|never)\b", re.I)
@@ -20,15 +16,6 @@ QUOTATION = re.compile(r"""[“”‘’「」『』\"'`<>]|https?://""", re.I)
 
 class DigestValidationError(ValueError):
     """Safe machine-readable validation reason (never model/source text)."""
-
-def located(where: str, function, *args, **kwargs):
-    """Run a check and tag a failure with where it happened, e.g. ``anchor:not_verbatim_source@topics[1]``."""
-    try:
-        return function(*args, **kwargs)
-    except DigestValidationError as error:
-        if "@" in str(error):
-            raise
-        raise DigestValidationError(f"{error}@{where}") from None
 
 def _object(value: Any, keys: set[str], code: str) -> dict:
     if not isinstance(value, dict) or set(value) != keys:

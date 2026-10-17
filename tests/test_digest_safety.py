@@ -20,7 +20,6 @@ from oopz_capture.digest.render.textlayout import FontBook, FontSpec, MissingGly
 from oopz_capture.digest.render.tokens import FONT_DIR, load_tokens, validate_tokens
 from oopz_capture.digest.render.view import build_view, check_module_order, load_labels
 from oopz_capture.digest.contract import DigestValidationError, validate_content
-from oopz_capture.digest.markdown_literal import visible_text_markdown
 
 TOKENS = load_tokens()
 FONTS = FontBook(FontSpec.from_tokens(TOKENS, FONT_DIR), TOKENS["canvas"]["scale"])
@@ -54,10 +53,10 @@ class UntrustedInput(unittest.TestCase):
     def test_control_and_bidi_characters_removed_not_executed(self):
         self.assertEqual(sanitize_text("a\u202eb\u200bc\x00d\n e"), "abcd e")
 
-    def test_markdown_escape_matches_upstream_exporter(self):
+    def test_markdown_escape_round_trips_visible_text(self):
         for s in ["普通文字", "a_b*c [x](y) #1. - + ! | ~ = : / @ \\ `", "<b>&amp;</b>", "2000.01.01 · 合成示例"]:
             ours = escape_literal(s) + "\n"
-            theirs = visible_text_markdown([s]).decode("utf-8")
+            theirs = blocks_to_markdown([{"md": "p", "text": s}])
             self.assertEqual(ours, theirs)
             self.assertEqual(markdown_to_blocks(ours)[0][1], s)
 
@@ -268,8 +267,7 @@ class ResourcesAndOffline(unittest.TestCase):
         with mock.patch.object(socket, "socket", boom), mock.patch.object(socket, "create_connection", boom), \
                 mock.patch.object(socket, "getaddrinfo", boom):
             with tmpdir() as t:
-                m = run("normal", Path(t) / "o")
-        self.assertEqual(m["case"], "normal")
+                run("normal", Path(t) / "o")
 
     def test_source_contains_no_network_or_provider_code(self):
         import re

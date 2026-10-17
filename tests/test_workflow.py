@@ -1,37 +1,11 @@
 from __future__ import annotations
 
-import asyncio
-import json
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
-import pytest
-
 from oopz_capture.output import write_json, write_jsonl
-from oopz_capture.workflow import (
-    REQUEST_SCHEMA,
-    WorkflowRequest,
-    run_workflow,
-    validate_transcript,
-)
-
-
-def request(**changes) -> WorkflowRequest:
-    value = {
-        "schema_version": REQUEST_SCHEMA,
-        "command": "record_and_transcribe",
-        "request_id": str(uuid4()),
-        "area_id": "area-id",
-        "channel_id": "channel-id",
-        "duration_seconds": 90,
-        "consent_confirmed": True,
-        "language": "zh",
-        "processing_deadline_seconds": 900,
-        "retention_hours": 168,
-    }
-    value.update(changes)
-    return WorkflowRequest.from_dict(value)
+from oopz_capture.workflow import validate_transcript
 
 
 def make_capture(session_dir: Path) -> None:
@@ -72,13 +46,6 @@ def make_transcript(session_dir: Path) -> None:
     )
 
 
-def test_request_rejects_missing_consent_and_more_than_fifteen_days() -> None:
-    with pytest.raises(ValueError, match="consent_confirmed"):
-        request(consent_confirmed=False)
-    with pytest.raises(ValueError, match="retention_hours"):
-        request(retention_hours=721)
-
-
 def test_validate_transcript_preserves_utf8_and_ids(tmp_path: Path) -> None:
     session_dir = tmp_path / str(uuid4())
     make_capture(session_dir)
@@ -86,86 +53,3 @@ def test_validate_transcript_preserves_utf8_and_ids(tmp_path: Path) -> None:
     result = validate_transcript(session_dir)
     assert result == {"session_id": session_dir.name, "segment_count": 1}
     assert "中文内容可读" in (session_dir / "transcript.md").read_text(encoding="utf-8")
-
-
-def test_workflow_handoff_then_deletes_audio(tmp_path: Path) -> None:
-    async def capture_runner(config, **kwargs):
-        del config
-        session_dir = kwargs["output_root"] / str(uuid4())
-        make_capture(session_dir)
-        return session_dir
-
-    async def transcription_runner(session_dir, workflow_request, vad_config, device, timeout):
-        del workflow_request, vad_config, device
-        assert timeout > 0
-        make_transcript(session_dir)
-        return "转写完成\n", ""
-
-    session_dir = asyncio.run(run_workflow(
-        object(),
-        request(),
-        output_root=tmp_path,
-        capture_runner=capture_runner,
-        transcription_runner=transcription_runner,
-    ))
-    lifecycle = json.loads((session_dir / "lifecycle.json").read_text(encoding="utf-8"))
-    handoff = json.loads((session_dir / "handoff" / "analyzer_request.json").read_text(encoding="utf-8"))
-    assert lifecycle["status"] == "ready_for_analysis"
-    assert lifecycle["audio_deleted"] is True
-    assert not (session_dir / "audio").exists()
-    assert handoff["session_id"] == session_dir.name
-    assert handoff["inputs"]["segment_count"] == 1
-    assert handoff["summary_windows"] == {
-        "short_summary_seconds": 300,
-        "long_summary_seconds": 3600,
-    }
-    assert (session_dir / "transcript.jsonl").is_file()
-
-
-def test_workflow_retain_audio_for_asr_experiment(tmp_path: Path) -> None:
-    async def capture_runner(config, **kwargs):
-        del config
-        session_dir = kwargs["output_root"] / str(uuid4())
-        make_capture(session_dir)
-        return session_dir
-
-    async def transcription_runner(session_dir, workflow_request, vad_config, device, timeout):
-        del workflow_request, vad_config, device
-        assert timeout > 0
-        make_transcript(session_dir)
-        return "转写完成\n", ""
-
-    session_dir = asyncio.run(run_workflow(
-        object(), request(retain_audio=True), output_root=tmp_path,
-        capture_runner=capture_runner,
-        transcription_runner=transcription_runner,
-    ))
-    lifecycle = json.loads((session_dir / "lifecycle.json").read_text(encoding="utf-8"))
-    handoff = json.loads((session_dir / "handoff" / "analyzer_request.json").read_text(encoding="utf-8"))
-    assert lifecycle["audio_deleted"] is False
-    assert lifecycle["audio_retained_for_testing"] is True
-    assert (session_dir / "audio" / "308348510.wav").is_file()
-    assert handoff["retention"]["audio_retained_for_testing"] is True
-
-
-def test_workflow_failure_retains_audio(tmp_path: Path) -> None:
-    async def capture_runner(config, **kwargs):
-        del config
-        session_dir = kwargs["output_root"] / str(uuid4())
-        make_capture(session_dir)
-        return session_dir
-
-    async def failed_transcription(*args):
-        raise RuntimeError("ASR unavailable")
-
-    with pytest.raises(RuntimeError, match="ASR unavailable"):
-        asyncio.run(run_workflow(
-            object(), request(), output_root=tmp_path,
-            capture_runner=capture_runner,
-            transcription_runner=failed_transcription,
-        ))
-    session_dir = next(path for path in tmp_path.iterdir() if path.is_dir())
-    lifecycle = json.loads((session_dir / "lifecycle.json").read_text(encoding="utf-8"))
-    assert lifecycle["status"] == "failed"
-    assert lifecycle["audio_deleted"] is False
-    assert (session_dir / "audio" / "308348510.wav").is_file()

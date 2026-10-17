@@ -29,7 +29,7 @@ def _sha(path: Path) -> str:
 
 
 def generate(model: Mapping, bundle: Mapping | None, metadata: Mapping, stats: Mapping | None, out_dir: Path, *,
-             avatars: Mapping[str, str | Path] | None = None, case: str | None = None,
+             avatars: Mapping[str, str | Path] | None = None,
              tokens: Mapping | None = None) -> dict:
     """Produce ``out_dir/digest.png`` and ``out_dir/digest.md``; return the manifest dict.
 
@@ -39,19 +39,19 @@ def generate(model: Mapping, bundle: Mapping | None, metadata: Mapping, stats: M
     if bundle is not None:
         from ..contract import validate_content
         validate_content(model, bundle)
-    # fill-in files carry no statistics: say nothing about them instead of printing an "unavailable" note
-    sv = None if (stats is None and metadata.get("hide_stats_when_unavailable"))         else build_stats_view(stats, metadata=metadata, labels=load_labels())
+    labels = load_labels()
+    sv = build_stats_view(stats, metadata=metadata, labels=labels)
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".build-", dir=out_dir) as tmp:
         tmp = Path(tmp)
         res: RenderResult = render_digest_card(model, metadata, tmp / "digest.png", markdown_path=tmp / "digest.md",
-                                               stats_view=sv, avatars=avatars, tokens=tokens)
+                                               stats_view=sv, avatars=avatars, tokens=tokens, labels=labels)
         kinds = [m["kind"] for m in res.modules]
         manifest = {
             "schema_version": MANIFEST_VERSION, "contract": "oopz.digest.content.v2",
             "view_contract": "oopz.design.view.v2", "renderer": __version__, "pillow": PIL.__version__,
-            "synthetic": bool(metadata.get("synthetic")), "case": case,
+            "synthetic": bool(metadata.get("synthetic")),
             "width": res.width, "height": res.height, "png_bytes": res.byte_count,
             "min_font_px": res.min_font_px, "visible_text_blocks": len(res.blocks), "text_runs": res.text_runs,
             "content_modules": kinds, "odd_topic_position": kinds.index("odd_topic") + 1,

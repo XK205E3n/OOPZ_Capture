@@ -2,8 +2,7 @@
 
 Heading markers (# .. ####) and blank lines are the only Markdown structure. Every
 character of every block is escaped so untrusted names/text cannot become HTML,
-links, images, tables, emphasis or code. ``escape_literal`` produces the same
-bytes as the upstream ``oopz_capture.markdown_literal`` exporter (tested).
+links, images, tables, emphasis or code.
 """
 from __future__ import annotations
 

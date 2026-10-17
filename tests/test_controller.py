@@ -200,7 +200,7 @@ def test_a_finished_recording_is_analysed_and_the_image_and_text_file_are_queued
     service = ControllerService(controller_config(tmp_path), config_loader=loader, capture_runner=capture, analysis_runner=analyse)
 
     async def run():
-        request = ContinuousRequest(request_id="r", area_id="a", channel_id="c", consent_confirmed=True, requested_by={})
+        request = ContinuousRequest(request_id="r", area_id="a", channel_id="c", requested_by={})
         service._state["active"] = {"session_id": "s1", "status": "recording"}
         await service._run_session("s1", request)
         await service.shutdown()
