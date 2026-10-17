@@ -6,6 +6,8 @@
 
 ## 未发布
 
+## 0.13.3 — 2026-10-16（标签 `linux-v0.13.3`）
+
 ### 2026-10-16 — 精简：移除死代码、手动调试入口与遗留契约；出图流水线去重复计算
 
 - **移除生产不使用的模块与入口**（飞书群控的录音/转写/分析/出图/QQ 发图功能完全不变）：删除 `main.py`（登录配置 `_config` 移入 `controller.py`）、`worker_cli.py`、`continuous_cli.py`、`capture_session.py`、`analysis.py`、`process_utils.py`；`workflow.py` 缩减为生产在用的转写子进程、事件、校验工具（`run_workflow`/`write_analyzer_handoff`/`purge_session_audio`/`from_dict` 删除）；`session.py` 只保留成员解析；`pyproject.toml` 命令行入口只保留 `oopz-transcribe`、`oopz-digest`、`oopz-feishu`。删除 git 跟踪的 `schemas/`（零代码引用、已与现实漂移的文档）、`examples/`、`.codex/`。
