@@ -18,6 +18,7 @@
 - **仓库卫生**（未入 Git，不影响发布）：删除过期的旧云端配置快照（含已失效凭据，建议轮换仍生效的飞书 App Secret 与 OOPZ 密码）、`node_modules/`、`tmp/`、52 个历史验证日志目录、全部 `__pycache__` 幽灵残留与 0.11.x 旧发布包。
 - 验证：`python -m pytest` 322 通过、6 跳过、0 失败；渲染输出与改前逐字节一致；`import oopz_capture.feishu_cli` 冒烟通过。测试数量减少的 10 个用例全部来自被移除的调试入口（`test_main`、`test_process_utils`、`test_workflow_capture_failure`、`test_output` 等）。
 - 影响部署：是。控制台脚本减少（下次安装后服务器 `.venv/bin` 不再有 `oopz-capture`/`oopz-worker`/`oopz-continuous`，生产只用 `python -m oopz_capture.feishu_cli serve`，不受影响）；需按正常流程构建新版本号发布并更新服务器；回滚 = 用旧标签重新构建旧版本。
+- 部署记录：2026-10-17 已按标准流程发布并部署 `v0.13.3-6861b1c6d96b`（SHA-256 `07b0d18b…394ca8`），更新成功后旧版本与旧包自动清理，服务重启就绪；部署过程中的 PATH/PyPI 镜像经验见 [部署状态](docs/DEPLOYMENT_STATE.md)。
 
 ## 0.13.2 — 2026-10-07（标签 `linux-v0.13.2`）
 

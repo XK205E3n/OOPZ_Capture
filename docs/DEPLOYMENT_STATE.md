@@ -2,20 +2,35 @@
 
 > 这是本地代码与生产服务器差异的唯一事实来源。任何部署相关修改和每次生产发布都必须同步更新本文件。禁止记录密钥、密码、完整服务器地址或个人信息。
 
-更新时间：2026-10-07（已部署 0.13.2，验收通过，转入长期运行）
+更新时间：2026-10-17（已部署 0.13.3，代码精简版，功能不变）
 
 ## 当前状态
 
-### Ubuntu 生产服务器实测基线（2026-10-07，0.13.2）
+### Ubuntu 生产服务器实测基线（2026-10-17，0.13.3）
+
+检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB（已用约 32%）。以下为实测事实，不含密钥或地址。
+
+### 2026-10-17 部署 0.13.3（v0.13.3-6861b1c6d96b，提交 6861b1c）
+
+- 内容：全量代码精简（删除死代码、手动调试入口、consent/摘要/handoff 遗留契约；出图流水线去重复计算；净减约 2400 行），功能与渲染输出不变（详见 CHANGELOG 0.13.3）。
+- 流程：本地 `build_release.ps1`（构建内测试 322 通过）→ 上传核对 SHA-256（`07b0d18b…394ca8`）→ `update_release.sh`（空闲检查通过，未用 `--force`）→ 切换成功，旧版本目录与旧包自动清理，服务器只保留 v0.13.3。服务重启后日志出现新的"飞书长连接已就绪"，`active`。
+- 部署中遇到的三个环境问题（均已解决，未改任何脚本/发布内容）：
+  1. 首次 prepare 失败：调用时未把 `/opt/oopz/shared/python/cpython-3.12.15-*/bin` 前置到 PATH，`python3.12` 落到系统 Python（未装 `python3.12-venv`）。按 DEPLOYMENT.md 既有要求用 `sudo env PATH=…` 重试即好。**经验：以后每次更新都必须显式带这个 PATH。**
+  2. PyPI CDN 到本机带宽被压到约 20 KB/s，pip 长时间停滞；改用腾讯云内网镜像 `PIP_INDEX_URL=https://mirrors.cloud.tencent.com/pypi/simple`（仅作为调用环境变量传入）后约 6 分钟装完。
+  3. Playwright Chromium（v1248，Chrome for Testing 156）从官方 CDN 下载约 190 KB/s，靠其自带断点重试跑完（约 1 小时）；下载期间旧服务始终正常运行。
+- 浏览器：`shared/browsers` 现有 `chromium-1243`（旧）与 `chromium-1248`（新，当前使用）；旧目录暂留未删。ffmpeg 更新到 v1013。
+- 遗留观察项：PyPI/Playwright CDN 到本机带宽差，下次部署仍建议带腾讯云镜像变量；本地 `.venv/Scripts` 残留已删命令的旧 exe 包装器（下次 `pip install -e .` 自动消失）。
+
+### 2026-10-07 基线（0.13.2，已由 0.13.3 取代）
 
 检查对象：腾讯云 CVM，Ubuntu 24.04.4 LTS，4 vCPU / 7.5 GiB，根分区 59 GB（清理后已用约 26%，`/opt/oopz` 约 3.7 GB）。以下为实测事实，不含密钥或地址。
 
 | 项目 | 实测状态 |
 | --- | --- |
 | 账号 | 全机只有一个管理账号 `ubuntu`，所有操作者和 AI 共用，不另建服务账号；OOPZ 以 `ubuntu` 身份运行，靠 systemd 隔离（见下） |
-| 目录 | `/opt/oopz`（属主 `ubuntu`）：`current` → `releases/v0.13.2-328fe2035eeb`（唯一的发布目录，root 属主）；`.management.lock`、`backups/`（账号迁移备份）属主 root；`shared/` 持久数据（`config`、`models`、`output`、`feishu_state`、`logs`、`home`、`browsers`、`tools`、`python`、`assets/fonts`、`capture-tests`）、`artifacts/`（当前发布包与引导脚本）属主 `ubuntu` |
+| 目录 | `/opt/oopz`（属主 `ubuntu`）：`current` → `releases/v0.13.3-6861b1c6d96b`（唯一的发布目录，root 属主）；`.management.lock`、`backups/`（账号迁移备份）属主 root；`shared/` 持久数据（`config`、`models`、`output`、`feishu_state`、`logs`、`home`、`browsers`、`tools`、`python`、`assets/fonts`、`capture-tests`）、`artifacts/`（当前发布包与引导脚本）属主 `ubuntu` |
 | 服务形态 | 持久 systemd 单元 `oopz-capture.service`（`enabled`，开机自启，`Restart=on-failure`）：`User=ubuntu`、`NoNewPrivileges=yes`、`ProtectHome=yes`、`PrivateTmp=yes`、`UMask=0077`；日志在 `shared/logs/feishu_runtime.log` 与 `feishu_error.log`。原瞬时测试单元 `oopz-capture-test` 已停止 |
-| 运行进程 | `feishu_cli serve`（完整模式，非 capture-only），版本 0.13.2（标签 `linux-v0.13.2`）；录音后自动分析并发图 |
+| 运行进程 | `feishu_cli serve`（完整模式，非 capture-only），版本 0.13.3（标签 `linux-v0.13.3`）；录音后自动分析并发图 |
 | 最近一次实测 | 会话 `2026-10-03_14-32-31_BJT`（北京时间）：159 个分片全部转写成功、失败 0、共 7834 段，状态 `ready_for_analysis`；日志无错误。仅验证录音与转写；该会话音频已按用户批准删除，转写文本保留供分析测试 |
 | 配置 | `shared/config/.env` 共 12 个键：飞书应用与管理群、OOPZ 登录、`OOPZ_DEVICE=cpu`、`OOPZ_RETAIN_AUDIO=false`（转写成功即删分片音频）、`OOPZ_ANALYZER_CLI/HOME/MODEL/TIMEOUT_SECONDS`、`OOPZ_FONT_DIR=/opt/oopz/shared/assets/fonts`；已去掉 `OOPZ_PDF_BACKEND` |
 | 依赖 | Python 3.12 与 Node v22.23.3 位于 `shared/`；录音用的 Chromium 在 `shared/browsers`（PDF 用的 `/opt/oopz-browser-runtime` 已删除）；模型约 897 MB；字体在 `shared/assets/fonts`；分析器用的 Qoder CLI 在 `shared/tools/qodercn-*`（登录状态在 `qodercn-home`，须留在 `/opt` 下，`ProtectHome` 会挡住 `/home`） |
