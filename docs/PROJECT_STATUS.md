@@ -1,6 +1,6 @@
 # 项目状态
 
-更新：2026-10-06（验收通过，转入长期运行）。本文回答"各模块现在做到哪一步"；服务器的实测细节见 [部署状态](DEPLOYMENT_STATE.md)，架构见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)，分析与出图的设计见 [DESIGN_DIGEST_PIPELINE.md](DESIGN_DIGEST_PIPELINE.md)。
+更新：2026-10-19（验收通过，转入长期运行）。本文回答"各模块现在做到哪一步"；服务器的实测细节见 [部署状态](DEPLOYMENT_STATE.md)，架构见 [CURRENT_ARCHITECTURE.md](CURRENT_ARCHITECTURE.md)，分析与出图的设计见 [DESIGN_DIGEST_PIPELINE.md](DESIGN_DIGEST_PIPELINE.md)。
 
 ## 一句话
 
@@ -10,10 +10,10 @@
 
 | 端 | 内容 | 状态 |
 | --- | --- | --- |
-| GitHub `main`、标签 `linux-v0.13.2` | Linux 主线，应用版本 0.13.2 | 已推送；服务器运行的就是它 |
+| GitHub `main`、标签 `linux-v0.13.3` | Linux 主线：应用版本 0.13.4（仅两处小修，尚未发布）；最近发布 0.13.3 | 已推送；服务器运行的是 0.13.3 |
 | GitHub `windows-legacy`、标签 `v0.11.*`、Release | Windows 部署线，最后为 v0.11.15 | 已在生产验证、流程保持原样；其更新脚本依赖 GitHub 的 latest Release |
 | GitHub `recovery/server-v0.11.15-snapshots` | 服务器 4 个发布包的原样快照 | 只读存档 |
-| 服务器 `/opt/oopz` | `current` → `v0.13.2-328fe2035eeb`（唯一发布目录） | `oopz-capture.service` 运行中、开机自启 |
+| 服务器 `/opt/oopz` | `current` → `v0.13.3-6861b1c6d96b`（唯一发布目录） | `oopz-capture.service` 运行中、开机自启 |
 
 注意：此前四个内容不同的构建共用了 0.11.15；0.12.0 起每个发布对应唯一内容，下一次修改须使用新版本号。Linux 发布使用 `linux-vX.Y.Z` 标签，GitHub Release（如要发）不得设为 Latest。
 
@@ -33,13 +33,13 @@
 
 ## 测试
 
-`python -m pytest`：322 通过、6 跳过（缺 Linux 实机或 PowerShell 条件）、0 失败（2026-10-16，本机 Windows；比 0.13.2 少的用例全部是随调试入口一并移除的旧功能测试）。覆盖飞书网关、控制器、录音与转写、分析器（含模型调用的假后端）、渲染与契约、QQ 发图（含对本机假接口的真实 HTTP 往返）、Linux 部署脚本；真实 OOPZ/飞书/Qoder/MaiBot 由生产录音验证。
+`python -m pytest`：323 通过、6 跳过（缺 Linux 实机或 PowerShell 条件）、0 失败（2026-10-19，本机 Windows；比 0.13.2 少的用例全部是随调试入口一并移除的旧功能测试）。覆盖飞书网关、控制器、录音与转写、分析器（含模型调用的假后端）、渲染与契约、QQ 发图（含对本机假接口的真实 HTTP 往返）、Linux 部署脚本；真实 OOPZ/飞书/Qoder/MaiBot 由生产录音验证。
 
 ## 还没做的事（按顺序）
 
 项目已通过验收，处于长期运行状态，没有排期中的开发项。只剩观察项：
 
-1. 下一次真实录音后确认头像分批下载（0.13.2）在日志里不再出现失败记录。
+1. **0.13.3（代码精简版）在服务器上还没有跑过真实录音**：下一次正式录音后确认转写、音频删除、头像分批下载（日志里不再出现失败记录）、分析出图、飞书与 QQ 发送都正常。精简后的分析与渲染已在服务器上用会话副本重跑验证（出图与改前一致，模型分析正常）。
 2. QQ 发图在"目标群在 MaiBot 黑名单"和"机器人不在群内"两种情况下的飞书提示，只在本地假接口验证过，真实接口上还没触发过。
 3. 录音叠加分析的重叠场景（上一场刚结束又开始新录音）没有实测。
 4. 重启恢复、版本回滚演练已决定不做；回滚 = 用 Git 标签重新构建旧版本。

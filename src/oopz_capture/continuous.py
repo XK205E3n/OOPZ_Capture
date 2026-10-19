@@ -1201,11 +1201,7 @@ async def run_continuous_capture(
                     session_offset_ms=session_elapsed_ms,
                 )
                 if successful_connections == 1:
-                    emit_event(
-                        "continuous.recording", request.request_id,
-                        session_id=session_id,
-                        stop_command=f'oopz-continuous stop --session "{session_id}"',
-                    )
+                    emit_event("continuous.recording", request.request_id, session_id=session_id)
                 else:
                     emit_event(
                         "continuous.reconnected", request.request_id,

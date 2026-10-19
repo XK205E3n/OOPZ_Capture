@@ -2,7 +2,7 @@
 
 通过飞书群控制 OOPZ 语音录制，按参与者保存独立音轨，用本地 CPU 模型分片转写；录音结束后自动用 Qoder CN CLI（免费 Qwen 模型）分析整场转写，生成一张"语音精华"长图发到飞书群（可选再发到 QQ 群）。**当前 0.13.x 已在生产服务器稳定运行**，经过多场 6～9 小时真实录音验证。
 
-当前主线应用版本 **0.13.2（Linux 主线，已验收、长期运行）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
+当前主线应用版本 **0.13.4（Linux 主线，已验收、长期运行；生产服务器运行 0.13.3，0.13.4 只含两处小修，尚未部署）**。远程控制入口为飞书群，部署目标为 **Ubuntu 24.04 LTS x86_64**；Windows 部署线（已在生产验证、原流程保持不变）保留在分支 `windows-legacy`。各模块的实际进度见 [项目状态](docs/PROJECT_STATUS.md)；已有发布包（≤0.11.15，均为 Windows 版）见 [Releases](https://github.com/XK205E3n/OOPZ_Capture/releases)，变更见 [CHANGELOG.md](CHANGELOG.md)。
 
 ## 核心能力
 
